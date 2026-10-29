@@ -1,0 +1,16 @@
+# Forzar LF en todo el repo de texto.
+#
+# Motivo: el build tiene que ser IDENTICO en la maquina del alumno y en la del
+# profesor. Con core.autocrlf=true (default de Windows) el Makefile llega con
+# CRLF en una maquina y con LF en otra. mingw32-make lo tolera, pero un byte
+# distinto por archivo es un byte distinto por build.
+#
+# Verificado: mingw32-make, g++ y cmake compilan igual con LF que con CRLF.
+* text=auto eol=lf
+
+# Los archivos de datos de ejemplo son parte de la entrega: se guardan tal
+# cual, sin conversion de fin de linea.
+data/*.dat -text
+
+# Los scripts de shell (si los hay) necesitan LF o fallan en Linux.
+*.sh text eol=lf

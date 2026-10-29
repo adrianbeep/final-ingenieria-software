@@ -1,0 +1,27 @@
+# --- Binarios y artefactos de build ---
+bin/
+build/
+cmake-build-*/
+*.exe
+*.a
+*.o
+*.obj
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.out
+
+# --- Temporales (escritura atomica de la Fase 4) ---
+*.tmp
+*~
+
+# --- Editores / IDE ---
+.vscode/
+.idea/
+.vs/
+*.swp
+
+# --- Sistema ---
+Thumbs.db
+.DS_Store
