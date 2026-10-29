@@ -53,6 +53,18 @@ endif()
 #   servicios   STATIC    src/services/ServicioTurnos.cpp            [Fase 5]
 # ---------------------------------------------------------------------------
 
+# --- core: dominio + utilidades + excepciones ---
+# Es un target STATIC, no INTERFACE: por eso puede usar PUBLIC para propagar
+# las opciones de `warnings` (un target INTERFACE solo puede ser DESTINO de
+# target_link_libraries, nunca origen).
+file(GLOB CORE_SRCS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/domain/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/exceptions/*.cpp")
+add_library(core STATIC ${CORE_SRCS})
+target_include_directories(core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(core PUBLIC warnings)
+
 # --- ui: consola, menu, tema ---
 file(GLOB UI_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp")
 add_library(ui STATIC ${UI_SRCS})
@@ -72,5 +84,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE warnings)
+target_link_libraries(tests PRIVATE core warnings)
 add_test(NAME tests COMMAND tests)
