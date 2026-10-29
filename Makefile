@@ -36,15 +36,15 @@ TEST_TARGET := $(BUILD_DIR)/tests$(EXE)
 # Por eso las rutas se convierten a barra invertida antes de borrarse.
 ifeq ($(OS),Windows_NT)
   MKDIR    := cmd /c mkdir
-  DEL_BINS := cmd /c del /q $(subst /,\,$(TARGET)) 2>nul
+  DEL_BINS := cmd /c del /q $(subst /,\,$(TARGET)) $(subst /,\,$(TEST_TARGET)) 2>nul
   DEL_DIR  := cmd /c rmdir /s /q $(subst /,\,$(BUILD_DIR))
 else
   MKDIR    := mkdir -p
-  DEL_BINS := rm -f $(TARGET)
+  DEL_BINS := rm -f $(TARGET) $(TEST_TARGET)
   DEL_DIR  := rm -rf $(BUILD_DIR)
 endif
 
-.PHONY: all run clean distclean rebuild
+.PHONY: all run test clean distclean rebuild
 
 all: $(TARGET)
 
@@ -56,6 +56,13 @@ $(TARGET): $(ALL_SRCS) | $(BUILD_DIR)
 
 run: $(TARGET)
 	$(TARGET)
+
+test: $(TEST_TARGET)
+	$(TEST_TARGET)
+
+# El binario de tests NO linkea src/main.cpp: habria dos main().
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) -o $@ $(LDFLAGS)
 
 clean:
 	$(DEL_BINS)

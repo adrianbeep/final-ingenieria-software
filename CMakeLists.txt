@@ -63,3 +63,14 @@ target_link_libraries(ui PUBLIC warnings)
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(sistema_turnos PRIVATE ui warnings)
+
+# ---------------------------------------------------------------------------
+# Tests. El objetivo existe desde la Fase 0 para que la Fase 1 solo AGREGUE
+# archivos de test, sin tocar el build.
+# ---------------------------------------------------------------------------
+enable_testing()
+file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+add_executable(tests ${TEST_SRCS})
+target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(tests PRIVATE warnings)
+add_test(NAME tests COMMAND tests)

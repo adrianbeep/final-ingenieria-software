@@ -10,7 +10,7 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 
 | Fase | Contenido | Issue | Estado |
 |---|---|---|---|
-| 0 | Scaffold y build | [#5](https://github.com/adrianbeep/final-ingenieria-software/issues/5) | En curso |
+| 0 | Scaffold y build | [#5](https://github.com/adrianbeep/final-ingenieria-software/issues/5) | Completada |
 | 1 | Cimientos: excepciones, validacion y fecha | [#2](https://github.com/adrianbeep/final-ingenieria-software/issues/2) | Pendiente |
 | 2 | Entidades, operadores y catalogo de materias | [#3](https://github.com/adrianbeep/final-ingenieria-software/issues/3) | Pendiente |
 | 3 | Estructuras de datos propias | [#6](https://github.com/adrianbeep/final-ingenieria-software/issues/6) | Pendiente |
@@ -43,6 +43,20 @@ make clean
 ```
 
 > En Windows con MinGW el comando es `mingw32-make` (no existe `make`).
+
+### Verificacion
+
+```bash
+ctest --test-dir build --output-on-failure
+# 100% tests passed, 0 tests failed out of 1
+
+mingw32-make test
+# 1 caso(s), 0 fallo(s)
+```
+
+El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
+`CHECK`, sin framework externo. Un `CHECK` fallido no corta el caso, acumula
+el fallo y sigue, para ver todos los problemas de una vez.
 
 ## Estructura
 
