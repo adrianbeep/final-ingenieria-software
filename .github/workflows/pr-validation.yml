@@ -1,0 +1,71 @@
+name: PR Validation
+
+# Reglas de convencion del repo, verificadas automaticamente:
+#   1. El body del PR referencia un issue.
+#   2. Ese issue tiene la label `status:approved`.
+#   3. El PR tiene EXACTAMENTE una label `type:*`.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  issues: read
+  # La API de labels exige `pull-requests: read` cuando el numero es el de un
+  # PR (con solo `issues: read` responde 403 "Resource not accessible by
+  # integration").
+  pull-requests: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: El body referencia un issue
+        run: |
+          set -euo pipefail
+          nums=$(printf '%s\n' "$PR_BODY" \
+                 | grep -Eio '\b(closes|fixes|resolves)[[:space:]]+#[0-9]+' \
+                 | grep -Eo '#[0-9]+' | tr -d '#' | sort -u || true)
+          if [ -z "$nums" ]; then
+            echo "::error::El body del PR debe contener 'Closes #N', 'Fixes #N' o 'Resolves #N'."
+            exit 1
+          fi
+          echo "Issues referenciados: $(echo "$nums" | tr '\n' ' ')"
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      - name: El issue referenciado tiene status:approved
+        run: |
+          set -euo pipefail
+          nums=$(printf '%s\n' "$PR_BODY" \
+                 | grep -Eio '\b(closes|fixes|resolves)[[:space:]]+#[0-9]+' \
+                 | grep -Eo '#[0-9]+' | tr -d '#' | sort -u || true)
+          for n in $nums; do
+            labels=$(gh api "repos/$REPO/issues/$n/labels" --jq '.[].name')
+            if ! printf '%s\n' "$labels" | grep -qx "status:approved"; then
+              echo "::error::El issue #$n no tiene la label 'status:approved'. Labels: $(printf '%s ' $labels)"
+              exit 1
+            fi
+            echo "OK: el issue #$n tiene status:approved"
+          done
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: El PR tiene exactamente una label type:*
+        run: |
+          set -euo pipefail
+          count=$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" \
+                  --jq '[.[].name | select(startswith("type:"))] | length')
+          if [ "$count" -ne 1 ]; then
+            echo "::error::El PR debe tener exactamente una label 'type:*' (tiene $count)."
+            gh api "repos/$REPO/issues/$PR_NUMBER/labels" --jq '.[].name' || true
+            exit 1
+          fi
+          echo "OK: el PR tiene exactamente una label type:*"
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

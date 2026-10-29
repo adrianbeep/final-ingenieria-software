@@ -1,0 +1,55 @@
+name: CI
+
+# "make clean && make && make run funciona en una maquina limpia" es un criterio
+# de aceptacion del proyecto, asi que se verifica automaticamente.
+#
+# Se compila por los DOS caminos: CMake (build principal) y el Makefile de
+# fallback. Si uno de los dos se rompe, el PR no se mergea.
+#
+# El job es Linux a proposito: es la rama del Makefile que NO se puede
+# verificar a mano en la maquina de desarrollo (Windows), y ademas es la
+# plataforma mas probable del profesor. El camino Windows se verifico a mano
+# sobre MinGW-w64.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Build y tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      - name: Compilar con CMake
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Tests (ctest)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: El ejecutable arranca
+        run: ./build/bin/sistema_turnos
+
+      - name: Build con el Makefile de fallback
+        run: |
+          make clean
+          make
+          make test
+          make run
+
+      - name: Shellcheck (si hay scripts de shell)
+        if: ${{ hashFiles('**/*.sh') != '' }}
+        run: shellcheck $(find . -name '*.sh' -not -path './.git/*')
