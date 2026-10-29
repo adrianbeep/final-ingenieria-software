@@ -61,8 +61,9 @@ test: $(TEST_TARGET)
 	$(TEST_TARGET)
 
 # El binario de tests NO linkea src/main.cpp: habria dos main().
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) -o $@ $(LDFLAGS)
+# Linkea UI_SRCS porque los tests de la Fase 1 ejercitan ui::Consola::leerEntero.
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) -o $@ $(LDFLAGS)
 
 clean:
 	$(DEL_BINS)
