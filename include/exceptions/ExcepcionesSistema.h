@@ -50,9 +50,15 @@ public:
     const std::string& campo() const;
     const std::string& valor() const;
 
+    // El MOTIVO solo (sin el prefijo "Dato invalido en campo '...': '...'"):
+    // la capa de persistencia lo usa para re-lanzar el error agregandole el
+    // archivo y el numero de linea, sin duplicar el mensaje entero.
+    const std::string& motivo() const;
+
 private:
     std::string campo_;
     std::string valor_;
+    std::string motivo_;
 };
 
 // SeBusco una entidad por identificador y no existe.
@@ -71,4 +77,19 @@ public:
 class TurnoNoExisteException : public ExcepcionSistema {
 public:
     explicit TurnoNoExisteException(int id);
+};
+
+// El archivo de datos NO tiene el formato que el codigo espera.
+//
+// Cubre los cuatro casos de la Fase 4:
+//   - falta el header (la primera linea no empieza con '#')
+//   - el magic no coincide (es un archivo de otra entidad)
+//   - la version del formato es otra
+//   - la linea de esquema declara otros campos
+//
+// El mensaje lleva el detalle EXACTO de que no calza: sin el, el error
+// obligaria a debuggear a ciegas.
+class FormatoDesconocidoException : public ExcepcionSistema {
+public:
+    explicit FormatoDesconocidoException(const std::string& mensaje);
 };
