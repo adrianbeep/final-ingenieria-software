@@ -14,7 +14,7 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 | 1 | Cimientos: excepciones, validacion y fecha | [#2](https://github.com/adrianbeep/final-ingenieria-software/issues/2) | Completada |
 | 2 | Entidades, operadores y catalogo de materias | [#3](https://github.com/adrianbeep/final-ingenieria-software/issues/3) | Completada |
 | 3 | Estructuras de datos propias | [#6](https://github.com/adrianbeep/final-ingenieria-software/issues/6) | Completada |
-| 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Pendiente |
+| 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Completada |
 
 ## Requisitos
 
@@ -51,7 +51,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 141 caso(s), 0 fallo(s)
+# 173 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
