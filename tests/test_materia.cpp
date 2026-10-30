@@ -22,19 +22,8 @@
 
 namespace {
 
-// Ejecuta la funcion y dice si lanzo `DatoInvalidoException` con el campo
-// esperado. Si lanzo otra excepcion (o ninguna), devuelve false.
-template <typename F>
-bool lanzaConCampo(F funcion, const std::string& campoEsperado) {
-    try {
-        funcion();
-    } catch (const DatoInvalidoException& excepcion) {
-        return excepcion.campo() == campoEsperado;
-    } catch (...) {
-        return false;
-    }
-    return false;
-}
+// `lanzaConCampo` viene de test_framework.h: es el helper compartido para
+// comprobar el lanzamiento de una excepcion del dominio con su campo.
 
 // El catalogo esperado, escrito a mano para detectar que la tabla de
 // `Materia.cpp` no se desincronice con la descripcion de cada materia.
