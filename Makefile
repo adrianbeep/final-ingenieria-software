@@ -66,9 +66,9 @@ $(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) -o $@ $(LDFLAGS)
 
 clean:
-	$(DEL_BINS)
+	-$(DEL_BINS)
 
 distclean: clean
-	$(DEL_DIR)
+	-$(DEL_DIR)
 
 rebuild: distclean all
