@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -302,4 +303,21 @@ bool Utils::esFormatoHora(const std::string& texto) {
         return false;
     }
     return sonDigitos(texto, 0, 2) && sonDigitos(texto, 3, 2);
+}
+
+std::vector<std::string> Utils::separar(const std::string& texto, char delimitador) {
+    std::vector<std::string> campos;
+    std::string actual;
+
+    for (const char caracter : texto) {
+        if (caracter == delimitador) {
+            campos.push_back(trim(actual));
+            actual.clear();
+        } else {
+            actual.push_back(caracter);
+        }
+    }
+    campos.push_back(trim(actual));
+
+    return campos;
 }
