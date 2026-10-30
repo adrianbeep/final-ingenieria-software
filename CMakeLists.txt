@@ -90,6 +90,16 @@ add_library(turnos STATIC src/entities/Turno.cpp)
 target_include_directories(turnos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(turnos PUBLIC core warnings)
 
+# --- structures: templates header-only (ArbolBST, ListaEnlazada) ---
+# Es un target INTERFACE porque los dos TAD son TEMPLATES: un template no se
+# puede compilar sin conocer `T`, asi que viven en headers y no hay .cpp que
+# compilar.
+#
+# OJO: un target INTERFACE solo puede ser DESTINO de target_link_libraries,
+# nunca origen. Por eso aca no hay `target_link_libraries(structures ...)`.
+add_library(structures INTERFACE)
+target_include_directories(structures INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -103,5 +113,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui profesores alumnos turnos warnings)
+target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures warnings)
 add_test(NAME tests COMMAND tests)
