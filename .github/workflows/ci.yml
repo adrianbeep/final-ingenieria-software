@@ -32,6 +32,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build g++
 
+      # El dominio es PURO: no puede abrir archivos, ni imprimir, ni llamar a
+      # comandos del sistema. Si una entidad necesita hacer E/S, es que la
+      # responsabilidad esta mal puesta.
+      # Las entidades si usan <ostream> (para el operator<<), y eso NO es
+      # E/S: <ostream> no declara std::cout.
+      - name: El dominio no toca I/O
+        run: |
+          if grep -rnE '\b(fstream|iostream|system[[:space:]]*\()' include/domain include/entities; then
+            echo "::error::El dominio no puede incluir fstream, iostream ni system()."
+            exit 1
+          fi
+
       - name: Compilar con CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

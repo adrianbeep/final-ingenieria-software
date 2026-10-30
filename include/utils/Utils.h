@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Utilidades de validacion y manipulacion de texto.
@@ -49,4 +50,16 @@ public:
     // NO valida el rango ni la granularidad: "08:99" tiene formato valido
     // (eso lo decide `Hora::esValida`).
     static bool esFormatoHora(const std::string& texto);
+
+    // Parte el texto en campos usando el delimitador indicado y RECORTA
+    // (trim) cada campo.
+    //
+    // POR QUE RECORTA: el archivo de la Fase 4 se escribe en modo texto, asi
+    // que en Windows los finales de linea son "\r\n" y un "\r" pegado al
+    // ultimo campo haria fallar el parseo de una fecha. Los campos del
+    // formato canonico no tienen espacios significantes en los extremos.
+    //
+    // Un texto vacio devuelve UN campo vacio (no cero campos): la cantidad
+    // de campos es la cantidad de delimitadores + 1.
+    static std::vector<std::string> separar(const std::string& texto, char delimitador);
 };

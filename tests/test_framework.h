@@ -1,5 +1,7 @@
 #pragma once
 
+#include "exceptions/ExcepcionesSistema.h"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -39,6 +41,44 @@ struct Registrar {
 };
 
 } // namespace testing
+
+// ---------------------------------------------------------------------------
+// Helpers compartidos para probar el lanzamiento de excepciones del dominio.
+// Van en el ambito global (y no en `namespace testing`) porque las llamadas
+// de los tests son `lanzaConCampo(...)` a secas, sin calificar.
+// ---------------------------------------------------------------------------
+// Lo que se aprendio de la excepcion: si lanzo la esperada, el campo, el
+// valor y el mensaje quedan capturados.
+struct ErrorCapturado {
+    bool lanzo = false;
+    bool lanzoOtraExcepcion = false;
+    std::string campo;
+    std::string valor;
+    std::string mensaje;
+};
+
+template <typename F>
+ErrorCapturado capturarError(F funcion) {
+    ErrorCapturado error;
+    try {
+        funcion();
+    } catch (const DatoInvalidoException& excepcion) {
+        error.lanzo = true;
+        error.campo = excepcion.campo();
+        error.valor = excepcion.valor();
+        error.mensaje = excepcion.what();
+    } catch (...) {
+        error.lanzoOtraExcepcion = true;
+    }
+    return error;
+}
+
+// Dice si la funcion lanzo `DatoInvalidoException` con el campo esperado.
+template <typename F>
+bool lanzaConCampo(F funcion, const std::string& campoEsperado) {
+    const ErrorCapturado error = capturarError(funcion);
+    return error.lanzo && error.campo == campoEsperado;
+}
 
 // TEST_CASE(descripcion, funcion)
 //   descripcion: texto que se muestra en la salida (puede tener espacios)
