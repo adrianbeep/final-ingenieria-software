@@ -16,10 +16,11 @@ BUILD_DIR := bin
 # tocar este archivo.
 CORE_SRCS := $(wildcard src/domain/*.cpp) $(wildcard src/utils/*.cpp) $(wildcard src/exceptions/*.cpp)
 UI_SRCS   := $(wildcard src/ui/*.cpp)
+ENTITIES_SRCS := $(wildcard src/entities/*.cpp)
 MAIN_SRCS := $(wildcard src/*.cpp)
 TEST_SRCS := $(wildcard tests/*.cpp)
 
-ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(MAIN_SRCS)
+ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(MAIN_SRCS)
 
 ifeq ($(OS),Windows_NT)
   EXE := .exe
@@ -62,9 +63,13 @@ test: $(TEST_TARGET)
 
 # El binario de tests NO linkea src/main.cpp: habria dos main().
 # Linkea UI_SRCS porque los tests de la Fase 1 ejercitan ui::Consola::leerEntero.
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) -o $@ $(LDFLAGS)
+# Linkea ENTITIES_SRCS porque los tests de la Fase 2 ejercitan las entidades.
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) -o $@ $(LDFLAGS)
 
+# El prefijo `-` hace que make NO falle si el archivo no existe: `del` y
+# `rmdir` devuelven error cuando el destino no esta, y un `make clean` sobre
+# un arbol ya limpio tiene que terminar en 0 igual.
 clean:
 	-$(DEL_BINS)
 

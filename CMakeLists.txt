@@ -71,6 +71,21 @@ add_library(ui STATIC ${UI_SRCS})
 target_include_directories(ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(ui PUBLIC core warnings)
 
+# --- Entidades: profesor, alumno y turno ---
+# Son tres targets y no uno solo porque son modulos independientes: cada uno
+# depende de `core` (donde estan `Materia`, `Fecha`, `Hora`, `Utils` y las
+# excepciones) y ninguno depende de los otros dos.
+#
+# `Persona` NO tiene target propio: es header-only (ver include/entities/
+# Persona.h), asi que su codigo entra en cada uno de los tres.
+add_library(profesores STATIC src/entities/Profesor.cpp)
+target_include_directories(profesores PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(profesores PUBLIC core warnings)
+
+add_library(alumnos STATIC src/entities/Alumno.cpp)
+target_include_directories(alumnos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(alumnos PUBLIC core warnings)
+
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -84,5 +99,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui warnings)
+target_link_libraries(tests PRIVATE core ui profesores alumnos warnings)
 add_test(NAME tests COMMAND tests)
