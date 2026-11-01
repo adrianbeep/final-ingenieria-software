@@ -30,7 +30,8 @@ DatoInvalidoException::DatoInvalidoException(const std::string& campo,
                                              const std::string& motivo)
     : ExcepcionSistema(componerMensajeDatoInvalido(campo, valor, motivo)),
       campo_(campo),
-      valor_(valor) {
+      valor_(valor),
+      motivo_(motivo) {
 }
 
 const std::string& DatoInvalidoException::campo() const {
@@ -39,6 +40,10 @@ const std::string& DatoInvalidoException::campo() const {
 
 const std::string& DatoInvalidoException::valor() const {
     return valor_;
+}
+
+const std::string& DatoInvalidoException::motivo() const {
+    return motivo_;
 }
 
 EntidadNoExisteException::EntidadNoExisteException(int id, const std::string& entidad)
@@ -52,4 +57,8 @@ TurnoOcupadoException::TurnoOcupadoException(int idTurnoExistente, const std::st
 
 TurnoNoExisteException::TurnoNoExisteException(int id)
     : ExcepcionSistema("No existe el turno #" + std::to_string(id)) {
+}
+
+FormatoDesconocidoException::FormatoDesconocidoException(const std::string& mensaje)
+    : ExcepcionSistema(mensaje) {
 }

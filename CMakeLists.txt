@@ -100,6 +100,19 @@ target_link_libraries(turnos PUBLIC core warnings)
 add_library(structures INTERFACE)
 target_include_directories(structures INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+# --- persistencia: ArchivoTexto<T>, template header-only ---
+# Mismo caso que `structures`: `ArchivoTexto<T>` es un TEMPLATE, asi que vive
+# entero en include/persistence/ArchivoTexto.h y no hay .cpp que compilar.
+#
+# A diferencia de `structures`, este SI propaga una dependencia: usa
+# `Utils::separar` y `DatoInvalidoException`, que estan en `core`. Se declara
+# con la palabra clave INTERFACE, que es la unica valida para un target
+# INTERFACE: lo que se lista aca lo reciben TODOS los que enlacen con
+# `persistencia` (incluidos sus directorios de include y la libreria `core`).
+add_library(persistencia INTERFACE)
+target_include_directories(persistencia INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(persistencia INTERFACE core)
+
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -113,5 +126,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures warnings)
+target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia warnings)
 add_test(NAME tests COMMAND tests)
