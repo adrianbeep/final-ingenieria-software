@@ -51,7 +51,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 173 caso(s), 0 fallo(s)
+# 184 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -71,6 +71,15 @@ docs/       trazabilidad y decisiones de diseno
 
 Los TADs genericos (`ArbolBST`, `ListaEnlazada`, `ArchivoTexto`, `RepositorioCRUD`)
 son **templates header-only**: viven en `include/` y no tienen `.cpp`.
+
+### Los archivos de datos de ejemplo
+
+`data/alumnos.dat`, `data/profesores.dat` y `data/turnos.dat` estan escritos con
+**LF** (no CRLF) y **UTF-8 sin BOM**. La capa de persistencia escribe en modo
+**binario**, asi que los bytes que produce son **identicos en cualquier sistema
+operativo**: el archivo generado en Windows es byte a byte el mismo que el
+generado en Linux. Por eso `.gitattributes` los marca `-text` y se guardan tal
+cual, sin conversion de fin de linea.
 
 ## Convenciones
 
