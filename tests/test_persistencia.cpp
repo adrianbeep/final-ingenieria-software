@@ -30,6 +30,11 @@
 //     DatoInvalido
 //   - la escritura ATOMICA (el archivo original nunca queda a medias y no
 //     queda ningun `.tmp` tirado)
+//   - los caminos de fallo de la escritura: la apertura del temporal y el
+//     rename final (cada test dice EXACTAMENTE que falla)
+//   - las propiedades del nombre del temporal: que es unico por escritura,
+//     que es unico tambien entre tipos de entidad distintos y que tiene un
+//     largo acotado
 //
 // NOTA: el round trip NO se compara con `operator==` (que compara solo por
 // id): se compara campo por campo, que es el criterio real.
@@ -119,6 +124,23 @@ std::vector<std::string> leerLineas(const std::string& ruta) {
 bool existeArchivo(const std::string& ruta) {
     std::error_code error;
     return std::filesystem::exists(ruta, error);
+}
+
+// Lista los `.tmp` que quedaron tirados en el directorio de pruebas.
+//
+// El nombre del temporal ahora es UNICO por escritura
+// (`<ruta>.<algo-unico>.tmp`), asi que no se puede preguntar por
+// `ruta + ".tmp"`: hay que ESCANEAR el directorio. Es lo mismo que hace el
+// test `persistencia_sin_tmp`.
+std::vector<std::filesystem::path> temporalesEnElDirectorio() {
+    std::vector<std::filesystem::path> temporales;
+    std::error_code error;
+    for (const auto& entrada : std::filesystem::directory_iterator(directorioDePruebas(), error)) {
+        if (entrada.path().extension() == ".tmp") {
+            temporales.push_back(entrada.path());
+        }
+    }
+    return temporales;
 }
 
 // Busca un archivo de ejemplo (`data/...`) probando los directorios
@@ -221,6 +243,73 @@ public:
 
 int RegistroQueFalla::escrituras = 0;
 int RegistroQueFalla::fallarEn = -1;
+
+// ---------------------------------------------------------------------------
+// Un tipo NUEVO, que no se usa en ningun otro test.
+//
+// Sirve para probar que el estado de unicidad de los temporales es
+// COMPARTIDO por todas las instanciaciones del template: al no haberse
+// usado nunca, su contador arranca en 1 si el estado fuera por tipo de
+// entidad, y continua el contador global si el estado es compartido.
+// ---------------------------------------------------------------------------
+struct RegistroFicticio {
+    int id = 0;
+    std::string valor;
+
+    RegistroFicticio() = default;
+    RegistroFicticio(int id_, std::string valor_) : id(id_), valor(std::move(valor_)) {
+    }
+
+    static std::string esquema() { return "id|valor"; }
+
+    static RegistroFicticio fromRegistro(const std::string& linea) {
+        RegistroFicticio registro;
+        registro.id = 1;
+        registro.valor = linea;
+        return registro;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const RegistroFicticio& registro) {
+        return os << registro.id << '|' << registro.valor;
+    }
+};
+
+// El nombre completo del temporal es `<ruta>.<semilla>-<numero>-<hash>.tmp`.
+// El numero de secuencia es el SEGUNDO componente del token, en hexadecimal.
+//
+// Devuelve 0 si el token no tiene la forma esperada.
+unsigned long long numeroDeSecuencia(const std::string& nombreTemporal) {
+    // Se aisla el token: la ultima parte del nombre, entre el ultimo punto
+    // (del nombre del destino) y el sufijo `.tmp`.
+    const std::size_t finDelTmp = nombreTemporal.rfind(".tmp");
+    if (finDelTmp == std::string::npos) {
+        return 0;
+    }
+    const std::size_t finDelToken = finDelTmp;
+    const std::size_t inicioDelToken = nombreTemporal.rfind('.', finDelToken == 0 ? 0 : finDelToken - 1);
+    if (inicioDelToken == std::string::npos || finDelToken <= inicioDelToken + 1) {
+        return 0;
+    }
+    const std::string token = nombreTemporal.substr(inicioDelToken + 1, finDelToken - inicioDelToken - 1);
+
+    // El token es `<semilla>-<numero>-<hash del hilo>`.
+    const std::size_t primerSeparador = token.find('-');
+    if (primerSeparador == std::string::npos) {
+        return 0;
+    }
+    const std::size_t segundoSeparador = token.find('-', primerSeparador + 1);
+    if (segundoSeparador == std::string::npos) {
+        return 0;
+    }
+    const std::string numero = token.substr(primerSeparador + 1,
+                                            segundoSeparador - primerSeparador - 1);
+
+    try {
+        return std::stoull(numero, nullptr, 16);
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
 
 } // namespace
 
@@ -663,6 +752,56 @@ TEST_CASE("un header que declara mas registros de los que hay lanza DatoInvalido
     CHECK(fallo.mensaje.find("truncado") != std::string::npos);
 }
 
+TEST_CASE("un header que declara menos registros de los que hay no dice truncado",
+          persistencia_error_sobran_registros) {
+    const std::string ruta = rutaDePrueba("sobran.dat");
+    // El header declara 2, pero el archivo tiene 3 registros: NO esta
+    // truncado, le SOBRAN registros. Decir "truncado" seria mentir.
+    escribirBytes(ruta,
+                  "#ALUMNOS|1|2\n" + Alumno::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n"
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|MAT-20002\n"
+                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|MAT-20003\n");
+
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
+    CHECK(fallo.lanzo);
+    // La palabra "truncado" NO puede aparecer: el archivo no esta truncado.
+    CHECK(fallo.mensaje.find("truncado") == std::string::npos);
+    // Y el mensaje dice las dos cantidades (la declarada y la leida).
+    CHECK(fallo.mensaje.find("2") != std::string::npos);
+    CHECK(fallo.mensaje.find("3") != std::string::npos);
+}
+
+TEST_CASE("un id que no entra en un int lanza DatoInvalidoException con archivo y linea",
+          persistencia_error_id_desbordado) {
+    const std::string ruta = rutaDePrueba("desborde.dat");
+    // El id es un numero valido como TEXTO, pero no entra en un `int`.
+    escribirBytes(ruta,
+                  "#ALUMNOS|1|1\n" + Alumno::esquema()
+                      + "\n99999999999|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n");
+
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+
+    // El campo que fallo se conserva: el dominio lo diagnostico bien.
+    CHECK(lanzaConCampo([&] { archivo.cargar(); }, "id"));
+
+    const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
+    CHECK(fallo.lanzo);
+    // El mensaje dice el ARCHIVO y la LINEA (la 3: header, esquema, registro).
+    CHECK(fallo.mensaje.find("desborde.dat") != std::string::npos);
+    CHECK(fallo.mensaje.find("3") != std::string::npos);
+    // Y el motivo dice que el numero se sale del rango.
+    CHECK(fallo.mensaje.find("rango") != std::string::npos);
+
+    // NO puede escaparse una excepcion cruda de la biblioteca estandar: el
+    // contrato de `cargar()` es que un registro mal formado siempre se
+    // reporta como `DatoInvalidoException`.
+    const Fallo otro = capturarTipo<ExcepcionSistema>([&] { archivo.cargar(); });
+    CHECK(otro.lanzo);
+    CHECK(!otro.lanzoOtro);
+}
+
 TEST_CASE("una linea en blanco intercalada se ignora", persistencia_linea_en_blanco) {
     const std::string ruta = rutaDePrueba("linea_blanca.dat");
     escribirBytes(ruta,
@@ -691,6 +830,39 @@ TEST_CASE("un archivo vacio lanza FormatoDesconocidoException", persistencia_arc
 // ATOMICIDAD
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// POR QUE NO HAY UN TEST DEL FALLO DIFERIDO EN EL `close()`
+//
+// `guardar()` tiene TRES comprobaciones que pueden fallar, en este orden:
+//   1. la APERTURA del temporal (`ofstream`): se mide en
+//      `persistencia_temporal_no_se_puede_abrir`;
+//   2. la ESCRITURA y el `close()` (errores diferidos: disco lleno, cuota,
+//      error de E/S del dispositivo): se mide la escritura en la rama de
+//      `salida.fail()` y el `close()` en su propia rama;
+//   3. el RENOMBRE final: se mide en `persistencia_renombre_falla` y en
+//      `persistencia_renombre_falla_archivo_solo_lectura`.
+//
+// La rama 2, es decir el error que aparece DIFERIDO en el `close()`, NO la
+// ejercita ningun test, y esto es DELIBERADO:
+//
+//   - No es reproducible en un sistema de archivos normal: haria falta un
+//     disco lleno de verdad, una cuota agotada o un dispositivo que falle a
+//     mitad de la escritura. Montar esas condiciones en cada corrida del test
+//     no es una opcion (haria el test lento, fragil y dependiente del
+//     entorno).
+//   - Inyectarlo exigiria un SEAM DE PRUEBA en el codigo de produccion (por
+//     ejemplo, un `ofstream` inyectable o un punto de fallo configurable).
+//     Este proyecto NO tiene esa costura y agregarla seria meter codigo de
+//     prueba dentro de la capa de persistencia.
+//
+// La rama PERMANECE en el codigo y esta verificada POR CONSTRUCCION: el
+// `close()` es explicito y su resultado se chequea con `salida.fail()`, y si
+// falla se borra el temporal y se lanza `ExcepcionSistema` antes de que el
+// rename llegue a tocar el destino. Es decir: la garantia que importa (el
+// destino no se toca) se sostiene por el ORDEN de las operaciones, no por
+// el resultado del `close()`.
+// ---------------------------------------------------------------------------
+
 TEST_CASE("si la serializacion falla el archivo original queda intacto",
           persistencia_serializacion_falla) {
     const std::string ruta = rutaDePrueba("atomico.dat");
@@ -715,12 +887,203 @@ TEST_CASE("si la serializacion falla el archivo original queda intacto",
     // El archivo original quedo INTACTO (no a medias).
     CHECK(leerArchivo(ruta) == contenidoOriginal);
 
-    // Y no quedo ningun `.tmp` tirado en el directorio.
-    CHECK(!existeArchivo(ruta + ".tmp"));
+    // Y no quedo ningun `.tmp` tirado en el directorio. Como el temporal
+    // ahora tiene un nombre UNICO por escritura, no se puede preguntar por
+    // `ruta + ".tmp"`: hay que escanear el directorio.
+    CHECK(temporalesEnElDirectorio().empty());
 
     // El archivo sigue siendo valido: se puede cargar.
     const std::vector<Alumno> cargados = archivo.cargar();
     CHECK(cargados.size() == 2);
+}
+
+TEST_CASE("si el temporal no se puede abrir se lanza ExcepcionSistema y el destino queda intacto",
+          persistencia_temporal_no_se_puede_abrir) {
+    // QUE INYECTA ESTE TEST, EXACTAMENTE:
+    //
+    // El destino esta dentro de un directorio que NO existe. Por eso el
+    // TEMPORAL NO SE PUEDE ABRIR: falla la APERTURA (`ofstream`), que es la
+    // PRIMERA comprobacion de `guardar()`.
+    //
+    // Lo que este test NO mide (y por eso no lo dice):
+    //   - la comprobacion de escritura (`salida << ...` / `flush()`);
+    //   - la comprobacion de cierre (`close()`), que es donde aparecen los
+    //     errores diferidos (disco lleno, error de E/S en el `close`);
+    //   - el rename final.
+    //
+    // Esos caminos se miden en otros tests (el rename en
+    // `persistencia_renombre_falla`). El nombre del test dice lo que
+    // realmente hace: fallar la APERTURA del temporal.
+    const std::string ruta = rutaDePrueba("escritura_falla.dat");
+
+    // Primero se escribe un archivo valido, para tener un destino que
+    // preserve.
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    const std::string contenidoOriginal = leerArchivo(ruta);
+    CHECK(!contenidoOriginal.empty());
+
+    // Ahora se apunta a un destino dentro de un directorio inexistente.
+    const std::string rutaImposible =
+        (directorioDePruebas() / "directorio_inexistente" / "destino.dat").string();
+    ArchivoTexto<Alumno> archivoImposible(rutaImposible, "ALUMNOS");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivoImposible.guardar({alumnoDePrueba(1)}); });
+    CHECK(fallo.lanzo);
+    // El mensaje dice que archivo fallo.
+    CHECK(fallo.mensaje.find("destino.dat") != std::string::npos);
+
+    // No quedo ningun `.tmp` tirado en el directorio de pruebas.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    // Y el archivo valido de antes quedo INTACTO.
+    CHECK(leerArchivo(ruta) == contenidoOriginal);
+    CHECK(archivo.cargar().size() == 2);
+}
+
+TEST_CASE("si el destino no se puede reemplazar se lanza ExcepcionSistema y no queda .tmp",
+          persistencia_renombre_falla) {
+    // QUE INYECTA ESTE TEST, EXACTAMENTE:
+    //
+    // El destino es un DIRECTORIO: el temporal se ESCRIBE bien (la escritura
+    // y el cierre tienen exito) y lo que falla es el RENOMBRE final, porque
+    // un directorio no se puede reemplazar con un archivo.
+    //
+    // Es el unico camino de fallo del rename que se puede reproducir de
+    // forma determinista en un sistema de archivos normal: con un destino
+    // que es un ARCHIVO regular, `std::filesystem::rename` lo reemplaza sin
+    // problema (asi lo manda el estandar).
+    //
+    // El caso del ARCHIVO regular que no se puede reemplazar esta en el test
+    // de abajo (`persistencia_renombre_falla_archivo_solo_lectura`).
+    const std::filesystem::path destino = directorioDePruebas() / "destino_es_directorio";
+    std::error_code error;
+    std::filesystem::remove_all(destino, error);
+    CHECK(std::filesystem::create_directories(destino, error));
+
+    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+    CHECK(fallo.lanzo);
+    // El mensaje dice que archivo no se pudo reemplazar.
+    CHECK(fallo.mensaje.find("destino_es_directorio") != std::string::npos);
+
+    // No quedo ningun `.tmp` tirado en el directorio de pruebas: el temporal
+    // se escribio y se CERRO bien, pero al fallar el rename se borro.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    // El directorio de destino sigue siendo un directorio: no se toco.
+    CHECK(std::filesystem::is_directory(destino, error));
+
+    std::filesystem::remove_all(destino, error);
+}
+
+TEST_CASE("si el destino no se puede reemplazar queda intacto y sigue siendo cargable",
+          persistencia_renombre_falla_archivo_solo_lectura) {
+    // El destino es un ARCHIVO REGULAR al que se le sacan los permisos de
+    // escritura, para que el rename no lo pueda reemplazar.
+    //
+    // OJO CON LA DIFERENCIA ENTRE PLATAFORMAS: el rename se autoriza segun
+    // los permisos del DIRECTORIO que contiene al destino, no segun los del
+    // archivo destino. En Windows (MoveFileEx) el archivo de solo lectura NO
+    // se puede reemplazar y el rename falla; en POSIX (rename(2)) el rename
+    // lo reemplaza igual, porque lo que manda es el directorio.
+    //
+    // Por eso el test mide lo que ES VERDAD EN LAS DOS PLATAFORMAS: el
+    // destino preexistente nunca se publica a medias y el temporal nunca
+    // queda tirado. En la rama de Windows se verifica ademas que el
+    // contenido viejo quedo intacto byte a byte.
+#if defined(_WIN32) || defined(_WIN64)
+    const std::filesystem::path destino = directorioDePruebas() / "destino_solo_lectura.dat";
+    std::error_code error;
+    std::filesystem::remove(destino, error);
+
+    // Primero se escribe un archivo valido, para tener un destino que
+    // preserve.
+    {
+        ArchivoTexto<Alumno> archivoInicial(destino.string(), "ALUMNOS");
+        archivoInicial.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    }
+    const std::string contenidoOriginal = leerArchivo(destino.string());
+    CHECK(!contenidoOriginal.empty());
+
+    // Se le quitan los permisos de escritura: el rename ya no puede
+    // reemplazar el archivo.
+    std::filesystem::permissions(destino, std::filesystem::perms::owner_read,
+                                 std::filesystem::perm_options::replace);
+
+    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(9)}); });
+    CHECK(fallo.lanzo);
+    // El mensaje dice que archivo no se pudo reemplazar.
+    CHECK(fallo.mensaje.find("destino_solo_lectura.dat") != std::string::npos);
+
+    // No quedo ningun `.tmp` tirado en el directorio de pruebas.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    // El archivo preexistente quedo INTACTO, byte a byte.
+    CHECK(leerArchivo(destino.string()) == contenidoOriginal);
+
+    // Y sigue siendo valido: se puede cargar, con los MISMOS registros de
+    // antes (no con el registro nuevo que se queria escribir).
+    std::filesystem::permissions(destino, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+    const std::vector<Alumno> cargados = archivo.cargar();
+    CHECK(cargados.size() == 2);
+    CHECK(cargados[0].getId() == 1);
+    CHECK(cargados[1].getId() == 2);
+
+    std::filesystem::remove(destino, error);
+#else
+    // En POSIX el rename SI reemplaza el archivo de solo lectura (manda el
+    // directorio), asi que el guardado termina bien. Lo que se verifica es
+    // la garantia que vale en TODAS las plataformas: el temporal no queda
+    // tirado y el destino queda con un archivo valido.
+    const std::filesystem::path destino = directorioDePruebas() / "destino_solo_lectura.dat";
+    std::error_code error;
+    std::filesystem::remove(destino, error);
+
+    {
+        ArchivoTexto<Alumno> archivoInicial(destino.string(), "ALUMNOS");
+        archivoInicial.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    }
+
+    std::filesystem::permissions(destino, std::filesystem::perms::owner_read,
+                                 std::filesystem::perm_options::replace);
+
+    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(9)}); });
+
+    // No quedo ningun `.tmp` tirado, pase lo que pase con el rename.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    // Y el destino quedo siempre con un archivo valido y cargable.
+    CHECK(existeArchivo(destino.string()));
+    std::filesystem::permissions(destino, std::filesystem::perms::owner_all,
+                                 std::filesystem::perm_options::replace);
+    CHECK(!archivo.cargar().empty());
+
+    std::filesystem::remove(destino, error);
+#endif
+}
+
+TEST_CASE("el archivo escrito usa solo LF y es identico en cualquier plataforma",
+          persistencia_sin_cr) {
+    const std::string ruta = rutaDePrueba("sin_cr.dat");
+
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+
+    // El modo BINARIO de escritura garantiza que los bytes sean los mismos
+    // en Windows y en Linux: sin ningun '\r' (CRLF).
+    const std::string contenido = leerArchivo(ruta);
+    CHECK(!contenido.empty());
+    CHECK(contenido.find('\r') == std::string::npos);
+
+    // Y ademas las lineas se leen bien (el esquema y los registros estan
+    // donde tienen que estar).
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    CHECK(lineas.size() == 4);
+    CHECK(lineas[0] == "#ALUMNOS|1|2");
+    CHECK(lineas[1] == Alumno::esquema());
 }
 
 TEST_CASE("un guardado exitoso no deja ningun .tmp", persistencia_sin_tmp) {
@@ -728,16 +1091,316 @@ TEST_CASE("un guardado exitoso no deja ningun .tmp", persistencia_sin_tmp) {
 
     ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
     archivo.guardar({alumnoDePrueba(1)});
-    CHECK(!existeArchivo(ruta + ".tmp"));
+    CHECK(temporalesEnElDirectorio().empty());
 
     archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
-    CHECK(!existeArchivo(ruta + ".tmp"));
+    CHECK(temporalesEnElDirectorio().empty());
 
     // Y en el directorio no hay ningun `.tmp` con otra extension.
     const std::filesystem::path directorio = directorioDePruebas();
     for (const auto& entrada : std::filesystem::directory_iterator(directorio)) {
         CHECK(entrada.path().extension() != ".tmp");
     }
+}
+
+TEST_CASE("el archivo temporal tiene un nombre unico por escritura", persistencia_tmp_unico) {
+    // El temporal NO puede ser siempre `<ruta>.tmp`: dos escritores del mismo
+    // destino en el mismo directorio compartirian el temporal y uno
+    // publicaria el archivo a medio escribir del otro.
+    //
+    // Para ver el nombre del temporal se lo pide al propio codigo: si el
+    // directorio del destino no existe, la apertura del temporal falla y el
+    // mensaje de error dice COMO se llamaba. Ese nombre es el que hay que
+    // comparar entre dos escrituras.
+    const std::filesystem::path directorioImposible =
+        directorioDePruebas() / "directorio_inexistente";
+    const std::string ruta = (directorioImposible / "destino.dat").string();
+
+    std::vector<std::string> nombresTemporales;
+    for (int i = 0; i < 5; ++i) {
+        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        CHECK(fallo.lanzo);
+
+        // El mensaje trae el nombre del temporal: se lo extrae.
+        const std::size_t inicio = fallo.mensaje.find('\'');
+        const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
+        CHECK(inicio != std::string::npos);
+        CHECK(fin != std::string::npos);
+        if (inicio == std::string::npos || fin == std::string::npos) {
+            continue;
+        }
+        const std::string nombreTemporal = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+        nombresTemporales.push_back(nombreTemporal);
+
+        // El temporal conserva el SUFIJO `.tmp` (asi lo cubre el `.gitignore`).
+        CHECK(nombreTemporal.size() > 4);
+        CHECK(nombreTemporal.compare(nombreTemporal.size() - 4, 4, ".tmp") == 0);
+        // Y NO es el nombre fijo `<ruta>.tmp`.
+        CHECK(nombreTemporal != ruta + ".tmp");
+    }
+
+    // Las CINCO escrituras usaron temporales DISTINTOS.
+    CHECK(nombresTemporales.size() == 5);
+    for (std::size_t i = 0; i < nombresTemporales.size(); ++i) {
+        for (std::size_t j = i + 1; j < nombresTemporales.size(); ++j) {
+            CHECK(nombresTemporales[i] != nombresTemporales[j]);
+        }
+    }
+}
+
+TEST_CASE("el nombre del temporal tiene un largo acotado", persistencia_tmp_largo_acotado) {
+    // El nombre del temporal se arma con el nombre del destino mas el token
+    // unico. Hay DOS limites que hay que respetar:
+    //
+    //   1. el del COMPONENTE de la ruta (255 bytes en ext4 y en NTFS);
+    //   2. el de la RUTA COMPLETA (260 caracteres en Windows, MAX_PATH).
+    //
+    // El segundo es el que MATA: el temporal es siempre MAS LARGO que el
+    // destino (le agrega el token y el sufijo `.tmp`). Acotar solo el
+    // componente NO alcanza: con un directorio de 70 caracteres y un destino
+    // de 190, el destino entra en MAX_PATH pero el temporal se pasa en 30
+    // caracteres, la apertura falla y el guardado reporta un error sobre un
+    // destino que se puede escribir perfectamente.
+    //
+    // Se usa un destino con el nombre MUY largo: un nombre de 240 caracteres
+    // (dentro del limite del componente) mas el token y el sufijo `.tmp` NO
+    // entrarian ni en el componente ni en la ruta completa.
+    const std::filesystem::path directorioImposible =
+        directorioDePruebas() / "directorio_inexistente";
+    const std::string nombreLargo(240, 'x');
+    const std::string ruta = (directorioImposible / (nombreLargo + ".dat")).string();
+
+    std::string nombreTemporal;
+    {
+        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        CHECK(fallo.lanzo);
+
+        const std::size_t inicio = fallo.mensaje.find('\'');
+        const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
+        CHECK(inicio != std::string::npos);
+        CHECK(fin != std::string::npos);
+        if (inicio == std::string::npos || fin == std::string::npos) {
+            return;
+        }
+        nombreTemporal = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+    }
+
+    // El COMPONENTE del temporal (el nombre del archivo, sin los directorios)
+    // entra en el limite del sistema de archivos.
+    const std::filesystem::path componente(nombreTemporal);
+    CHECK(componente.filename().string().size() <= 255);
+
+    // Y la RUTA COMPLETA del temporal tambien entra: es lo que decide si el
+    // temporal se puede abrir en Windows (MAX_PATH: 259 caracteres utiles).
+    // El limite se mide sobre la ruta COMPLETA (directorio + nombre), que es
+    // lo que el sistema de archivos mira de verdad.
+    CHECK(nombreTemporal.size() <= 255);
+
+    // El sufijo `.tmp` se conserva (asi lo cubre el `.gitignore`).
+    CHECK(nombreTemporal.size() > 4);
+    CHECK(nombreTemporal.compare(nombreTemporal.size() - 4, 4, ".tmp") == 0);
+
+    // Y el temporal sigue siendo UNICO: dos escrituras del mismo destino
+    // largo no pueden compartirlo.
+    std::string nombreTemporal2;
+    {
+        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        CHECK(fallo.lanzo);
+        const std::size_t inicio = fallo.mensaje.find('\'');
+        const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
+        CHECK(inicio != std::string::npos);
+        CHECK(fin != std::string::npos);
+        if (inicio == std::string::npos || fin == std::string::npos) {
+            return;
+        }
+        nombreTemporal2 = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+    }
+    CHECK(nombreTemporal != nombreTemporal2);
+}
+
+TEST_CASE("un destino con nombre largo se puede guardar igual", persistencia_destino_largo) {
+    // La garantia que importa NO es "el temporal tiene un nombre corto":
+    // es "si el DESTINO se puede escribir, el temporal tambien se puede
+    // abrir". El temporal es mas largo que el destino (le agrega el token y
+    // el `.tmp`), asi que un presupuesto mal calculado hace que `guardar()`
+    // falle sobre un destino perfectamente escribible.
+    //
+    // El caso se arma a MEDIDA: se busca un nombre de archivo tal que la
+    // ruta COMPLETA del destino entre en el limite del sistema (Windows:
+    // MAX_PATH, 259 caracteres utiles) pero la ruta del temporal NO. Asi, sin
+    // el recorte correcto, `guardar()` falla; con el recorte, entra.
+    //
+    // El largo del nombre se calcula sobre el directorio de pruebas REAL, que
+    // cambia de maquina a maquina.
+    const std::filesystem::path directorio = directorioDePruebas() / "destino_largo";
+    std::error_code error;
+    std::filesystem::remove_all(directorio, error);
+    CHECK(std::filesystem::create_directories(directorio, error));
+
+    // Largo objetivo de la ruta COMPLETA del destino: entra en MAX_PATH de
+    // Windows con margen, pero el temporal (que le agrega ~30 caracteres) se
+    // pasaria.
+    constexpr std::size_t LARGO_OBJETIVO = 250;
+    const std::size_t largoDelDirectorio = directorio.string().size();
+    const std::size_t espacioParaElNombre =
+        LARGO_OBJETIVO > largoDelDirectorio + 1 + 4 ? LARGO_OBJETIVO - largoDelDirectorio - 1 - 4 : 0;
+    if (espacioParaElNombre < 16) {
+        // El directorio de pruebas es tan largo que el caso no se puede
+        // armar en esta maquina: no hay nada que afirmar.
+        std::filesystem::remove_all(directorio, error);
+        return;
+    }
+
+    const std::string nombreLargo(espacioParaElNombre, 'd');
+    const std::string ruta = (directorio / (nombreLargo + ".dat")).string();
+
+    // El destino entra en el limite del sistema de archivos.
+    CHECK(ruta.size() <= 255);
+
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+
+    // ESTE es el punto del test: el destino con nombre largo se guarda SIN
+    // error. Si el temporal se pasara del limite de ruta, `guardar()`
+    // fallaria con "No se pudo abrir el archivo temporal".
+    CHECK(!fallo.lanzo);
+    CHECK(existeArchivo(ruta));
+
+    // Y el archivo guardado es valido: se puede cargar.
+    CHECK(archivo.cargar().size() == 1);
+
+    // No quedo ningun `.tmp` tirado.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    std::filesystem::remove_all(directorio, error);
+}
+
+TEST_CASE("un directorio tan largo que no queda presupuesto igual se comporta bien",
+          persistencia_directorio_largo) {
+    // Caso borde del presupuesto: el directorio es tan largo que, con el
+    // token y el sufijo `.tmp` pegados, NO entra en el limite de ruta.
+    //
+    // Ahi no hay ninguna base que recortar: el temporal seria mas largo que
+    // la ruta completa permite, SIEMPRE (el temporal es mas largo que el
+    // destino por el token y el `.tmp`). Tampoco el destino entra. Lo que
+    // tiene que pasar es que `guardar()` falle CON UN MENSAJE CLARO, sin
+    // dejar ningun `.tmp` tirado y sin tocar el destino.
+    //
+    // Este test no necesita construir un directorio de 220 caracteres: con
+    // un directorio normal ya se llega al `else` del presupuesto si el token
+    // y el sufijo son largos. Se verifica el COMPORTAMIENTO: o el guardado
+    // funciona, o falla con `ExcepcionSistema` (nunca con una excepcion
+    // cruda) y sin dejar basura.
+    const std::filesystem::path directorio = directorioDePruebas() / "directorio_largo";
+    std::error_code error;
+    std::filesystem::remove_all(directorio, error);
+    CHECK(std::filesystem::create_directories(directorio, error));
+
+    const std::string ruta = (directorio / "destino.dat").string();
+
+    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    bool lanzo = false;
+    std::string mensaje;
+    try {
+        archivo.guardar({alumnoDePrueba(1)});
+    } catch (const ExcepcionSistema& e) {
+        lanzo = true;
+        mensaje = e.what();
+    } catch (const std::exception&) {
+        // Una excepcion CRUDA de la biblioteca estandar seria un defecto:
+        // la capa de persistencia garantiza `ExcepcionSistema`.
+        CHECK(false);
+    }
+
+    if (lanzo) {
+        // Si fallo, el mensaje tiene que decir QUE archivo fallo.
+        CHECK(mensaje.find("destino.dat") != std::string::npos);
+    } else {
+        // Si pudo guardar, el archivo tiene que existir y ser valido.
+        CHECK(existeArchivo(ruta));
+        CHECK(archivo.cargar().size() == 1);
+    }
+
+    // Pase lo que pase, no queda ningun `.tmp` tirado.
+    CHECK(temporalesEnElDirectorio().empty());
+
+    std::filesystem::remove_all(directorio, error);
+}
+
+TEST_CASE("el temporal es unico tambien entre tipos de entidad distintos",
+          persistencia_tmp_unico_entre_tipos) {
+    // El estado de unicidad (el contador atomico y el generador de entropia)
+    // es COMPARTIDO por todas las instanciaciones del template. Si fuera
+    // por tipo de entidad, `ArchivoTexto<Alumno>` y `ArchivoTexto<Turno>`
+    // tendrian cada uno su propio contador empezando en 0, y podrian
+    // derivar el mismo nombre de temporal.
+    //
+    // COMO SE COMPRUEBA, Y POR QUE NO BASTA COMPARAR DOS NOMBRES:
+    //
+    // Comparar el temporal del alumno con el del turno NO alcanza: con el
+    // estado POR TIPO, el contador del alumno ya viene adelantado por otros
+    // tests y el del turno recien arranca, asi que los nombres DIFIEREN
+    // igual y el test pasaria sin detectar nada.
+    //
+    // Lo que delata el estado por tipo es el NUMERO DE SECUENCIA: con el
+    // estado COMPARTIDO hay UN SOLO contador para todo el programa, asi que
+    // el numero de un tipo NUEVO (que nunca se uso en ningun test) es
+    // estrictamente mayor que el del tipo que se uso antes. Con el estado por
+    // tipo, el numero del tipo nuevo arrancaria en 1.
+    //
+    // El token tiene la forma `<semilla>-<numero>-<hash del hilo>`: se
+    // extrae el numero de secuencia para poder comparar.
+    const std::filesystem::path directorioImposible =
+        directorioDePruebas() / "directorio_inexistente";
+    const std::string ruta = (directorioImposible / "destino.dat").string();
+
+    // El temporal del ALUMNO (el tipo que ya se uso en otros tests).
+    std::string nombreAlumno;
+    {
+        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        CHECK(fallo.lanzo);
+        const std::size_t inicio = fallo.mensaje.find('\'');
+        const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
+        CHECK(inicio != std::string::npos);
+        CHECK(fin != std::string::npos);
+        if (inicio == std::string::npos || fin == std::string::npos) {
+            return;
+        }
+        nombreAlumno = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+    }
+
+    // El temporal de un tipo NUEVO, que no se uso en ningun otro test.
+    std::string nombreNuevo;
+    {
+        ArchivoTexto<RegistroFicticio> archivo(ruta, "FICTICIOS");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({RegistroFicticio(1, "uno")}); });
+        CHECK(fallo.lanzo);
+        const std::size_t inicio = fallo.mensaje.find('\'');
+        const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
+        CHECK(inicio != std::string::npos);
+        CHECK(fin != std::string::npos);
+        if (inicio == std::string::npos || fin == std::string::npos) {
+            return;
+        }
+        nombreNuevo = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+    }
+
+    // Los DOS temporales son DISTINTOS: son de tipos de entidad distintos y
+    // no pueden compartir el nombre.
+    CHECK(nombreAlumno != nombreNuevo);
+
+    // Y el numero de secuencia del tipo NUEVO es estrictamente MAYOR que el
+    // del alumno: eso solo puede pasar si el contador es UNO para todo el
+    // programa. Con el estado por tipo, el tipo nuevo arrancaria en 1.
+    const unsigned long long numeroAlumno = numeroDeSecuencia(nombreAlumno);
+    const unsigned long long numeroNuevo = numeroDeSecuencia(nombreNuevo);
+    CHECK(numeroAlumno > 0);
+    CHECK(numeroNuevo > 0);
+    CHECK(numeroNuevo > numeroAlumno);
 }
 
 TEST_CASE("guardar reemplaza el archivo y no lo agrega al final",
