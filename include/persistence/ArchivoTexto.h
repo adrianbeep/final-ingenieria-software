@@ -3,13 +3,21 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "utils/Utils.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <ostream>
+#include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -79,6 +87,21 @@
 // atomicidad.
 //
 // ---------------------------------------------------------------------------
+// EL NOMBRE DEL TEMPORAL TIENE UN LARGO ACOTADO
+//
+// Los sistemas de archivos limitan el largo de un COMPONENTE de ruta (255
+// bytes en ext4 y en NTFS). Como el temporal se llama `<destino>.<token>.tmp`,
+// un destino con el nombre al limite de lo permitido dejaria el temporal
+// fuera del limite: la apertura falla y `guardar()` reporta un error sobre un
+// destino que, en realidad, se puede escribir perfecto.
+//
+// Por eso el temporal NO se arma pegando el token al final del nombre del
+// destino. Se arma dentro del directorio del destino (mismo volumen, asi que
+// el rename sigue siendo atomico) con un nombre ACOTADO: se recorta el
+// nombre del destino lo que haga falta y se le agrega el token unico. El
+// resultado siempre entra, y el temporal sigue siendo unico.
+//
+// ---------------------------------------------------------------------------
 // LO QUE ESTA CAPA NO HACE
 //
 //   - No filtra inactivos: `cargar()` trae todos los registros. El `activo`
@@ -101,6 +124,105 @@
 // "TURNOS"): es el magic del header. NO es mecanico a partir de `getTipo()`:
 // `getTipo()` devuelve "Alumno" y "Profesor", y el plural no sale de ahi
 // ("Profesor" -> "Profesores", no "PROFESORS").
+// ---------------------------------------------------------------------------
+// ESTADO COMPARTIDO DE LOS NOMBRES TEMPORALES
+//
+// `ArchivoTexto<T>` es un TEMPLATE, asi que si el estado de unicidad viviera
+// en un miembro del template, existiria UNA COPIA POR INSTANTIACION:
+// `ArchivoTexto<Alumno>`, `ArchivoTexto<Profesor>` y `ArchivoTexto<Turno>`
+// tendrian cada una su propio contador (empezando en 0) y su propio
+// `std::random_device`. Dos escrituras de DISTINTOS tipos de entidad
+// podrian entonces derivar el mismo nombre de temporal.
+//
+// Por eso el estado vive ACA, en una clase que NO es template: hay UN solo
+// contador y UN solo generador para todo el programa.
+//
+// Es HEADER-ONLY seguro: el estado son `static` locales de funcion dentro de
+// una funcion `static` de una clase no template. En C++17 hay exactamente una
+// copia de un `static` local de funcion, aunque la funcion se defina en
+// varios archivos, asi que no hay riesgo de definicion multiple al linkear.
+// ---------------------------------------------------------------------------
+class GeneradorDeNombresTemporales {
+public:
+    // Largo MAXIMO del token unico (en caracteres). Es un techo, no un ancho
+    // fijo: el token real puede ser mas corto.
+    static constexpr std::size_t LARGO_MAXIMO_TOKEN = 32;
+
+    // Devuelve el siguiente token unico del proceso.
+    //
+    // TRES fuentes de unicidad, todas del estandar (nada de POSIX):
+    //   1. `random_device`: entropia del sistema (diferente por proceso).
+    //   2. un contador atomico: Diferente que dos escrituras del MISMO
+    //      proceso no puedan obtener el mismo numero.
+    //   3. el hash del hilo: dos hilos del mismo proceso tampoco chocan.
+    //
+    // NO LANZA NUNCA: si la fuente de entropia no esta disponible (el
+    // `std::random_device` esta especificado para lanzar `std::runtime_error`
+    // cuando el sistema no puede darle entropia), se degrada con elegancia al
+    // contador atomico mas el hash del hilo, que ya dan la unicidad dentro
+    // del proceso.
+    static std::string siguienteToken() {
+        // Unica vez en todo el programa: los `static` locales de funcion
+        // tienen UNA sola instancia, compartida por todos los tipos `T`.
+        static std::atomic<unsigned long long> contador(0);
+
+        const unsigned long long numero = ++contador;
+        const std::hash<std::thread::id> hashHilo;
+        const unsigned long long hashDelHilo =
+            static_cast<unsigned long long>(hashHilo(std::this_thread::get_id()));
+
+        // La semilla sale del generador de entropia. Se construye y se usa
+        // DENTRO del `try`: tanto el constructor del `std::random_device`
+        // como su `operator()` estan especificados para lanzar
+        // `std::runtime_error` cuando la fuente de entropia no esta
+        // disponible, y el constructor no puede quedar fuera del `try`.
+        //
+        // El generador vive en un `unique_ptr` para que la inicializacion
+        // (que puede lanzar) quede dentro del `try` y no en la inicializacion
+        // estatica de la funcion.
+        static std::unique_ptr<std::random_device> generador = crearGenerador();
+
+        std::ostringstream nombre;
+        if (generador) {
+            try {
+                nombre << std::hex << static_cast<unsigned long long>((*generador)()) << '-';
+            } catch (const std::exception&) {
+                // Sin entropia: se sigue igual (ver la nota de abajo).
+            } catch (...) {
+            }
+        }
+        nombre << std::hex << numero << '-' << hashDelHilo;
+
+        std::string token = nombre.str();
+        if (token.size() > LARGO_MAXIMO_TOKEN) {
+            // No deberia pasar (los tres componentes son cortos), pero el
+            // techo se RESPETA igual: el nombre del temporal tiene un largo
+            // acotado por construccion.
+            token.resize(LARGO_MAXIMO_TOKEN);
+        }
+        return token;
+    }
+
+private:
+    // Crea el generador de entropia. Si el sistema no puede darle entropia,
+    // devuelve un puntero NULO y el llamador sigue con el contador atomico
+    // mas el hash del hilo.
+    //
+    // Sin entropia NO se pierde ninguna garantia: el contador atomico mas el
+    // hash del hilo dan unicidad dentro del proceso, que es lo que protege
+    // el rename atomico. La entropia solo agrega que dos PROCESOS distintos
+    // no se pisen entre si.
+    static std::unique_ptr<std::random_device> crearGenerador() {
+        try {
+            return std::unique_ptr<std::random_device>(new std::random_device());
+        } catch (const std::exception&) {
+            return std::unique_ptr<std::random_device>();
+        } catch (...) {
+            return std::unique_ptr<std::random_device>();
+        }
+    }
+};
+
 // ---------------------------------------------------------------------------
 template <class T>
 class ArchivoTexto {
@@ -146,6 +268,36 @@ private:
     // valido, y `std::stoll` lanzaria `std::out_of_range`).
     static long long enteroEstricto(const std::string& texto);
 
+    // Nombre UNICO del archivo temporal de una escritura.
+    //
+    // El temporal va en el MISMO directorio del destino (requisito del
+    // rename atomico) y con el SUFIJO `.tmp` (asi lo cubre el `.gitignore`).
+    // Lo que cambia es la parte de en medio: dos escritores del mismo
+    // destino en el mismo directorio NO pueden compartir el temporal, o uno
+    // publicaria el archivo a medio escribir del otro.
+    //
+    // La unicidad NO depende de APIs POSIX: se arma con un `std::random_device`
+    // (entropia del sistema) mas un contador atomico (unicidad dentro del
+    // proceso, incluso entre hilos) mas el hash del hilo actual. El estado es
+    // COMPARTIDO por todos los tipos `T` (ver
+    // `GeneradorDeNombresTemporales`).
+    //
+    // NO LANZA NUNCA.
+    static std::string nombreTemporalUnico();
+
+    // Ruta del archivo temporal de una escritura, lista para usar.
+    //
+    // Propiedades que garantiza:
+    //   - vive en el MISMO DIRECTORIO que el destino (el rename atomico solo
+    //     funciona dentro del mismo volumen);
+    //   - termina en `.tmp` (asi lo cubre el `.gitignore`);
+    //   - el nombre del componente tiene un largo ACOTADO (dentro del limite
+    //     que imponen los sistemas de archivos), sea cual sea el largo del
+    //     nombre del destino;
+    //   - es UNICO por escritura: dos escrituras del mismo destino en el
+    //     mismo directorio nunca comparten el temporal.
+    static std::filesystem::path rutaTemporalEnMismoDirectorio(const std::filesystem::path& destino);
+
     // Cantidad de campos del header: ENTIDAD, VERSION y CANTIDAD.
     static constexpr std::size_t CANTIDAD_CAMPOS_HEADER = 3;
 
@@ -176,13 +328,58 @@ void ArchivoTexto<T>::guardar(const std::vector<T>& registros) {
     }
 
     // --- PASO 2: escribir el `.tmp`, en el MISMO directorio del destino ---
-    const std::filesystem::path destino(_ruta);
-    const std::filesystem::path temporal(destino.string() + ".tmp");
+    //
+    // TODO lo que arma el temporal (la conversion de la ruta a
+    // `std::filesystem::path` y el calculo del nombre) va DENTRO del `try`:
+    // cualquiera de esas operaciones puede lanzar una excepcion de la
+    // biblioteca estandar (por ejemplo, `std::filesystem::filesystem_error`
+    // si la ruta no se puede convertir al formato del sistema de archivos) y
+    // esa excepcion NO es una `ExcepcionSistema`.
+    std::filesystem::path destino;
+    std::filesystem::path temporal;
+    try {
+        destino = std::filesystem::path(_ruta);
+
+        // --- PASO 2.0: armar el nombre del temporal ---
+        //
+        // El temporal es UNICO por escritura (ver `nombreTemporalUnico`), pero
+        // mantiene el sufijo `.tmp` y vive en el mismo directorio: el rename
+        // atomico solo funciona dentro del mismo volumen.
+        //
+        // El nombre se arma con el nombre del DESTINO (para que se entienda
+        // cual es) mas el token unico, y su largo esta ACOTADO: los sistemas de
+        // archivos limitan el largo de un componente de ruta (255 bytes en ext4 y
+        // en NTFS) y, sin ese tope, un destino con el nombre largo dejaria al
+        // temporal fuera del limite. La apertura fallaria y el guardado reportaria
+        // un error sobre un destino que se puede escribir perfecto.
+        //
+        // Si el temporal no se puede armar, el error se reporta como
+        // `ExcepcionSistema` (NO como una excepcion cruda de la biblioteca
+        // estandar) y el destino NO se toca.
+        temporal = rutaTemporalEnMismoDirectorio(destino);
+    } catch (const ExcepcionSistema&) {
+        // Ya es un error del sistema: se respeta tal cual.
+        throw;
+    } catch (const std::exception& error) {
+        // RED DE SEGURIDAD: cualquier excepcion de la biblioteca estandar
+        // que se escape del armado del temporal se traduce al error del
+        // sistema, que si dice QUE archivo fallo.
+        throw ExcepcionSistema("No se pudo preparar el archivo temporal para '"
+                                + _ruta + "': " + error.what());
+    } catch (...) {
+        throw ExcepcionSistema("No se pudo preparar el archivo temporal para '"
+                                + _ruta + "'");
+    }
 
     {
         // `trunc` explicito: guardar REEMPLAZA el archivo, no lo agrega al
         // final (el bug clasico del `ofstream` mal abierto).
-        std::ofstream salida(temporal, std::ios::out | std::ios::trunc);
+        //
+        // `binary` explicito: en modo TEXTO el runtime traduce cada '\n' a
+        // CRLF en Windows, asi que los bytes dependen de la plataforma. En
+        // modo BINARIO el '\n' se escribe tal cual (LF) en todas partes y el
+        // archivo generado es IDENTICO byte a byte en cualquier SO.
+        std::ofstream salida(temporal, std::ios::out | std::ios::binary | std::ios::trunc);
         if (!salida.is_open()) {
             throw ExcepcionSistema("No se pudo abrir el archivo temporal '" + temporal.string() + "'");
         }
@@ -197,7 +394,21 @@ void ArchivoTexto<T>::guardar(const std::vector<T>& registros) {
             std::filesystem::remove(temporal, errorAlBorrar);
             throw ExcepcionSistema("No se pudo escribir el archivo temporal '" + temporal.string() + "'");
         }
-    }  // <- close(): flush al sistema de archivos
+
+        // --- PASO 2.1: el `close()` EXPLICITO y su resultado ---
+        // El `close()` es el que de verdad manda los bytes al sistema de
+        // archivos, y es donde aparecen los errores diferidos (cuota, error de
+        // E/S del dispositivo). Si se deja al destructor, ese error llega
+        // tarde y el rename publicaria un archivo a medio escribir. Por eso
+        // se cierra explicitamente y se CHECKEA: si falla, el destino NO se
+        // toca (sigue con los datos viejos) y el `.tmp` se borra.
+        salida.close();
+        if (salida.fail()) {
+            std::error_code errorAlBorrar;
+            std::filesystem::remove(temporal, errorAlBorrar);
+            throw ExcepcionSistema("No se pudo cerrar el archivo temporal '" + temporal.string() + "'");
+        }
+    }
 
     // --- PASO 3: el rename ATOMICO ---
     // `std::filesystem::rename` reemplaza el destino (a diferencia de
@@ -210,7 +421,11 @@ void ArchivoTexto<T>::guardar(const std::vector<T>& registros) {
         // estaba.
         std::error_code errorAlBorrar;
         std::filesystem::remove(temporal, errorAlBorrar);
-        throw ExcepcionSistema("No se pudo reemplazar el archivo '" + destino.string() + "': "
+        // El mensaje usa `_ruta` (la ruta tal como la dio el llamador) y no
+        // `destino.string()`: la conversion de un `std::filesystem::path` a
+        // texto puede fallar y no hace falta arriesgar eso dentro del
+        // mensaje de un error.
+        throw ExcepcionSistema("No se pudo reemplazar el archivo '" + _ruta + "': "
                                 + error.message());
     }
 }
@@ -301,12 +516,19 @@ std::vector<T> ArchivoTexto<T>::cargar() {
     }
 
     // --- PASO 4: la cantidad declarada tiene que coincidir ---
-    // Si no coincide, el archivo esta truncado (o le sobran lineas).
+    // Si no coincide, hay DOS casos opuestos y el mensaje tiene que decir
+    // CUAL de los dos es: decir siempre "truncado" cuando sobran registros
+    // seria mentir sobre el archivo.
     if (static_cast<long long>(registros.size()) != cantidadDeclarada) {
+        const std::string detalle = "el header declara " + std::to_string(cantidadDeclarada)
+            + " registro(s) y se leyeron " + std::to_string(registros.size());
+        if (static_cast<long long>(registros.size()) < cantidadDeclarada) {
+            // Faltan registros: el archivo esta truncado.
+            throw DatoInvalidoException("archivo", _ruta, "archivo truncado: " + detalle);
+        }
+        // Sobran registros: el archivo tiene mas de los que declara.
         throw DatoInvalidoException("archivo", _ruta,
-                                    "archivo truncado: el header declara "
-                                        + std::to_string(cantidadDeclarada) + " registro(s) y se leyeron "
-                                        + std::to_string(registros.size()));
+                                    "el archivo tiene mas registros que los declarados: " + detalle);
     }
 
     return registros;
@@ -367,6 +589,15 @@ T ArchivoTexto<T>::leerRegistro(const std::string& linea, int numeroLinea) const
         throw DatoInvalidoException("registro", linea,
                                     _ruta + " linea " + std::to_string(numeroLinea) + ": "
                                         + error.what());
+    } catch (const std::exception& error) {
+        // RED DE SEGURIDAD: cualquier otra excepcion de la biblioteca
+        // estandar (por ejemplo un `std::out_of_range` de un `std::stoi`
+        // que el dominio no haya traduido) se traduce igual. El contrato de
+        // `cargar()` es que un registro mal formado NUNCA escapa como
+        // excepcion cruda: siempre dice que archivo es y en que linea esta.
+        throw DatoInvalidoException("registro", linea,
+                                    _ruta + " linea " + std::to_string(numeroLinea) + ": "
+                                        + error.what());
     }
 }
 
@@ -388,4 +619,133 @@ long long ArchivoTexto<T>::enteroEstricto(const std::string& texto) {
     } catch (const std::invalid_argument&) {
         return -1;
     }
+}
+
+template <class T>
+std::string ArchivoTexto<T>::nombreTemporalUnico() {
+    // Delega en el generador COMPARTIDO (ver
+    // `GeneradorDeNombresTemporales`): asi el contador y el
+    // `std::random_device` son UNOS SOLOS para todo el programa y no uno por
+    // cada instanciacion del template.
+    //
+    // Esta funcion NO LANZA NUNCA: `siguienteToken()` ya degrada con
+    // elegancia si la fuente de entropia no esta disponible. El `catch` de
+    // abajo es la ultima red: si alguna vez se escapara una excepcion de la
+    // biblioteca estandar, se reintenta una vez (que es el camino que el
+    // generador ya sabe recorrer sin fallar) y, si tampoco, se devuelve un
+    // token de repuesto derivado del reloj. Nunca se propaga.
+    try {
+        return GeneradorDeNombresTemporales::siguienteToken();
+    } catch (...) {
+        try {
+            return GeneradorDeNombresTemporales::siguienteToken();
+        } catch (...) {
+            // Token de repuesto: el reloj del sistema mas el hilo actual.
+            // Es la ULTIMA red: en la practica no se llega aca, porque
+            // `siguienteToken()` ya no puede lanzar.
+            const std::hash<std::thread::id> hashHilo;
+            const unsigned long long marcaDelReloj =
+                static_cast<unsigned long long>(
+                    std::chrono::steady_clock::now().time_since_epoch().count());
+            const unsigned long long hashDelHilo =
+                static_cast<unsigned long long>(hashHilo(std::this_thread::get_id()));
+
+            std::ostringstream nombre;
+            nombre << std::hex << marcaDelReloj << '-' << hashDelHilo;
+
+            std::string token = nombre.str();
+            if (token.size() > GeneradorDeNombresTemporales::LARGO_MAXIMO_TOKEN) {
+                token.resize(GeneradorDeNombresTemporales::LARGO_MAXIMO_TOKEN);
+            }
+            return token;
+        }
+    }
+}
+
+template <class T>
+std::filesystem::path ArchivoTexto<T>::rutaTemporalEnMismoDirectorio(
+    const std::filesystem::path& destino) {
+    // Hay DOS limites distintos y hay que respetar los DOS:
+    //
+    //   1. el del COMPONENTE de la ruta (el nombre del archivo): 255 bytes en
+    //      ext4 y en NTFS;
+    //   2. el de la RUTA COMPLETA (directorio + nombre): MAX_PATH en Windows
+    //      (259 caracteres utiles, con la terminacion nula) y PATH_MAX en
+    //      Linux (4096).
+    //
+    // El segundo es el que MATA: el temporal es siempre MAS LARGO que el
+    // destino (le agrega el token y el sufijo `.tmp`), asi que acotar solo el
+    // componente NO alcanza. Con un directorio de 50 caracteres y un destino
+    // de 190, el destino entra en MAX_PATH pero el temporal se pasa en 20
+    // caracteres, la apertura falla y `guardar()` reporta un error sobre un
+    // destino que se puede escribir perfectamente.
+    //
+    // Por eso el presupuesto se calcula sobre la RUTA COMPLETA. El tope de
+    // 255 deja margen bajo los 259 caracteres utiles de MAX_PATH.
+    constexpr std::size_t LARGO_MAXIMO_COMPONENTE = 255;
+    constexpr std::size_t LARGO_MAXIMO_RUTA = 255;
+
+    const std::string token = nombreTemporalUnico();
+
+    // El nombre del temporal es `<nombre-del-destino>.<token>.tmp`.
+    //
+    // El SUFIJO `.tmp` se conserva (asi lo cubre el `.gitignore`) y el token
+    // ya viene acotado.
+    const std::string sufijo = "." + token + ".tmp";
+
+    // Se usa el NOMBRE COMPLETO del destino (con su extension) para que el
+    // temporal se parezca a el y se entienda cual es.
+    std::string base = destino.filename().string();
+    if (base.empty()) {
+        // Un destino sin nombre de archivo (por ejemplo, una ruta que termina
+        // en un separador) usa una base neutra.
+        base = "archivo";
+    }
+
+    // El presupuesto del nombre es el MINIMO de los dos limites:
+    //   - lo que sobra del limite de componente;
+    //   - lo que sobra del limite de RUTA COMPLETA, que es el que manda:
+    //     se resta el directorio (y su separador) del total.
+    std::size_t presupuesto = LARGO_MAXIMO_COMPONENTE > sufijo.size()
+        ? LARGO_MAXIMO_COMPONENTE - sufijo.size()
+        : 1;
+
+    const std::string directorio = destino.parent_path().string();
+    if (!directorio.empty()) {
+        // `directorio` + separador + nombre <= LARGO_MAXIMO_RUTA.
+        const std::size_t rutaParcial = directorio.size() + 1 + sufijo.size();
+        if (rutaParcial < LARGO_MAXIMO_RUTA) {
+            const std::size_t presupuestoPorRuta = LARGO_MAXIMO_RUTA - rutaParcial;
+            if (presupuestoPorRuta < presupuesto) {
+                presupuesto = presupuestoPorRuta;
+            }
+        } else {
+            // El directorio, con el token y el sufijo pegados, ya se pasa del
+            // limite de ruta. NO se puede llamar a `guardar()` con un destino
+            // asi sin que el temporal sea mas largo todavia: el temporal es
+            // SIEMPRE mas largo que el destino.
+            //
+            // Que se llegue aca significa que el DIRECTORIO es tan largo que
+            // no entra ningun nombre de archivo con el sufijo `.tmp`. El
+            // destino tampoco va a entrar. Se deja el presupuesto minimo (un
+            // caracter) y se deja que la apertura falle con su mensaje
+            // claro, en vez de acortar el token y romper la unicidad.
+            presupuesto = 1;
+        }
+    }
+    if (presupuesto < 1) {
+        presupuesto = 1;
+    }
+
+    if (base.size() > presupuesto) {
+        // El nombre del destino NO entra con el token pegado: se recorta.
+        // Se conserva el COMIENZO del nombre (que es lo que identifica al
+        // archivo) y se le agrega el token, que ya es unico: dos escrituras
+        // del mismo destino largo siguen teniendo temporales distintos.
+        base.resize(presupuesto);
+    }
+
+    // El DIRECTORIO es el del destino: el rename atomico solo funciona
+    // dentro del mismo volumen.
+    return destino.parent_path() / (base + sufijo);
 }

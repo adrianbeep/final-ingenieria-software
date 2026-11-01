@@ -5,17 +5,34 @@
 #include "utils/Utils.h"
 
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace {
 
-// Convierte un texto a entero, validando el formato antes de convertir.
+// Convierte un texto a entero, validando el formato ANTES de convertir.
+//
+// El desborde de rango tambien se valida: `std::stoi` lanza
+// `std::out_of_range` (una excepcion de la biblioteca estandar, NO una
+// `ExcepcionSistema`) cuando el numero no entra en un `int`, y esa excepcion
+// se escapa sin archivo ni linea. Aqui se la traduce al error del dominio,
+// que si sabe decir QUE campo fallo y con QUE valor.
 int enteroDesdeTexto(const std::string& texto, const std::string& campo) {
     if (!Utils::esEntero(texto)) {
         throw DatoInvalidoException(campo, texto, "se esperaba un numero entero");
     }
-    return std::stoi(texto);
+    try {
+        return std::stoi(texto);
+    } catch (const std::out_of_range&) {
+        throw DatoInvalidoException(campo, texto,
+                                    "el numero esta fuera del rango de un entero de 32 bits");
+    } catch (const std::invalid_argument&) {
+        // No deberia llegar aca (el formato ya se valido con
+        // `Utils::esEntero`), pero se traduce igual para no dejar escapar una
+        // excepcion de la biblioteca estandar.
+        throw DatoInvalidoException(campo, texto, "se esperaba un numero entero");
+    }
 }
 
 } // namespace
