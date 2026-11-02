@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,30 @@ public:
     // Acepta letras ASCII, espacio, apostrofo y guion, y las letras latinas
     // acentuadas/enye del rango U+00C0..U+024F. Exige al menos una letra.
     static bool esAlfabetico(const std::string& texto);
+
+    // Indica si el texto solo tiene letras, digitos y los signos admitidos.
+    //
+    // Las letras son las del DOMINIO (ASCII mas el rango Latin-1 Supplement /
+    // Latin Extended), las mismas que acepta `esAlfabetico`: por eso las
+    // tildes y la enye se admiten igual que en los nombres. Los digitos SI
+    // se admiten (a diferencia de `esAlfabetico`), porque hay campos del
+    // dominio que son una mezcla de letras y digitos.
+    //
+    // `signosAdmitidos` es el conjunto de signos EXTRA que se permiten,
+    // escrito como un texto con los caracteres ASCII admitidos (por ejemplo
+    // ".@-" para un correo). La comparacion se hace contra el CODEPOINT
+    // DECODIFICADO, asi que un caracter de mas de un byte nunca puede
+    // confundirse con un signo ASCII: el separador '|' del formato canonico
+    // queda excluido por construccion si no esta en el conjunto.
+    //
+    // El texto se recorre decodificando UTF-8: una secuencia malformada hace
+    // que la funcion devuelva false. Un texto vacio tambien es invalido.
+    static bool esAlfanumericoConSignos(const std::string& texto, const std::string& signosAdmitidos);
+
+    // Cantidad de CARACTERES del texto (codepoints UTF-8), no de bytes.
+    // Sirve para medir el largo de un valor que puede traer tildes: "Sala
+    // Anio" con tilde son 8 caracteres, aunque sean 9 bytes.
+    static std::size_t cantidadCaracteres(const std::string& texto);
 
     // Convierte a minuscula (ASCII y rango Latin-1 Supplement).
     static std::string aMinusculas(const std::string& texto);

@@ -89,8 +89,56 @@ TEST_CASE("esAlfabetico rechaza lo que no es un nombre", utils_alfabetico_falla)
     CHECK(!Utils::esAlfabetico("3 \xC3\xB7 4"));
 }
 
-TEST_CASE("aMinusculas pasa a minuscula el ASCII y el rango Latin-1", utils_a_minusculas) {
-    CHECK(Utils::aMinusculas("HOLA") == "hola");
+TEST_CASE("esAlfanumericoConSignos acepta letras, digitos y los signos admitidos",
+          utils_alfanumerico_signos_ok) {
+    CHECK(Utils::esAlfanumericoConSignos("abc", ""));
+    CHECK(Utils::esAlfanumericoConSignos("abc123", ""));
+    CHECK(Utils::esAlfanumericoConSignos("123", ""));        // los digitos tambien
+    CHECK(Utils::esAlfanumericoConSignos("ana.garcia@unlp.edu.ar", ".@-_"));
+    CHECK(Utils::esAlfanumericoConSignos("Redes y Comunicacion", " ,-.+"));
+    CHECK(Utils::esAlfanumericoConSignos("A-3", " -."));
+    // Con tilde, enye y e acute: las letras del dominio, como en
+    // `esAlfabetico`. 'é' es 0xC3 0xA9, 'ñ' es 0xC3 0xB1, 'í' es 0xC3 0xAD.
+    CHECK(Utils::esAlfanumericoConSignos("Jos\xC3\xA9", ""));
+    CHECK(Utils::esAlfanumericoConSignos("Mu\xC3\xB1oz", ""));
+    CHECK(Utils::esAlfanumericoConSignos("Redes y Comunicaci\xC3\xB3n", " ,-.+"));
+    CHECK(Utils::esAlfanumericoConSignos("Sala A\xC3\xB1o", " -."));
+}
+
+TEST_CASE("esAlfanumericoConSignos rechaza lo que no esta en el conjunto", utils_alfanumerico_signos_falla) {
+    CHECK(!Utils::esAlfanumericoConSignos("", ".-"));         // vacio
+    CHECK(!Utils::esAlfanumericoConSignos("a b", ""));        // espacio no admitido
+    CHECK(!Utils::esAlfanumericoConSignos("a|b", ""));        // el separador canonico
+    CHECK(!Utils::esAlfanumericoConSignos("a|b", ".-"));      // tampoco si hay signos
+    CHECK(!Utils::esAlfanumericoConSignos("a_b", ".-"));      // '_' no esta admitido
+    CHECK(!Utils::esAlfanumericoConSignos("a+b", ".-"));
+    CHECK(!Utils::esAlfanumericoConSignos("a,b", ".-"));
+    // Emoji (U+1F600): es UTF-8 valido, pero no es una letra ni un signo.
+    CHECK(!Utils::esAlfanumericoConSignos("\xF0\x9F\x98\x80", ".-"));
+    // Ideograma japones (U+65E5): tampoco.
+    CHECK(!Utils::esAlfanumericoConSignos("\xE6\x97\xA5", ".-"));
+    // UTF-8 malformado: la cadena no es valida.
+    CHECK(!Utils::esAlfanumericoConSignos("\xC3", ".-"));
+    // Signos de multiplicacion y division: viven en el rango Latin-1 pero NO
+    // son letras.
+    CHECK(!Utils::esAlfanumericoConSignos("3 \xC3\x97 4", ".-"));
+    CHECK(!Utils::esAlfanumericoConSignos("3 \xC3\xB7 4", ".-"));
+}
+
+TEST_CASE("cantidadCaracteres cuenta codepoints y no bytes", utils_cantidad_caracteres) {
+    CHECK(Utils::cantidadCaracteres("") == 0);
+    CHECK(Utils::cantidadCaracteres("abc") == 3);
+    CHECK(Utils::cantidadCaracteres("Aula 3") == 6);
+    // Con tilde: 4 caracteres, pero 5 bytes.
+    CHECK(Utils::cantidadCaracteres("A\xC3\xB1o") == 3);
+    CHECK(std::string("A\xC3\xB1o").size() == 4);
+    // Con e acute.
+    CHECK(Utils::cantidadCaracteres("Jos\xC3\xA9") == 4);
+    // Emoji de 4 bytes: 1 caracter.
+    CHECK(Utils::cantidadCaracteres("\xF0\x9F\x98\x80") == 1);
+}
+
+TEST_CASE("aMinusculas pasa a minuscula el ASCII y el rango Latin-1", utils_a_minusculas) {    CHECK(Utils::aMinusculas("HOLA") == "hola");
     CHECK(Utils::aMinusculas("MUNOZ") == "munoz");
     CHECK(Utils::aMinusculas("ANDRES") == "andres");
     CHECK(Utils::aMinusculas("Jose Perez") == "jose perez");

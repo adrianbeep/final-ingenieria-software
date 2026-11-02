@@ -4,6 +4,7 @@
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "utils/Fecha.h"
+#include "utils/Utils.h"
 
 #include <string>
 #include <type_traits>
@@ -66,6 +67,41 @@ TEST_CASE("el setter de aula rechaza un dato invalido", entidades_set_aula) {
     CHECK(lanzaConCampo([&] { turno.setAula("123456789012345678901"); }, "aula"));
     CHECK(!lanzaConCampo([&] { turno.setAula("A-3"); }, "aula"));
     CHECK(!lanzaConCampo([&] { turno.setAula("Aula 3"); }, "aula"));
+}
+
+TEST_CASE("el aula acepta letras acentuadas y las guarda intactas", entidades_aula_acentuada) {
+    Turno turno;
+    // 'ñ' (U+00F1) son 0xC3 0xB1. El escape hexadecimal va en un literal
+    // propio porque se extiende hasta el proximo caracter hexadecimal.
+    const std::string aulaAcentuada = "Sala A" "\xC3\xB1" "o";
+    CHECK(!lanzaConCampo([&] { turno.setAula(aulaAcentuada); }, "aula"));
+    // El valor vuelve IDENTICO: la tilde no se convierte ni se pierde.
+    CHECK(turno.getAula() == aulaAcentuada);
+    CHECK(turno.getAula() == "Sala A" "\xC3\xB1" "o");
+    // Con 'ó' (U+00F3, 0xC3 0xB3) tambien.
+    CHECK(!lanzaConCampo([&] { turno.setAula("Sala A" "\xC3\xB3" "o"); }, "aula"));
+    CHECK(turno.getAula() == "Sala A" "\xC3\xB3" "o");
+}
+
+TEST_CASE("el limite del aula se cuenta en caracteres y no en bytes", entidades_aula_longitud) {
+    Turno turno;
+    // Un aula de EXACTAMENTE 20 caracteres que incluye una tilde: son 21
+    // bytes, pero 20 caracteres, y el limite es de 20 CARACTERES. Si se
+    // contaran bytes, este valor seria rechazado sin motivo.
+    const std::string aulaConTilde = "Sala A" "\xC3\xB1" "o";
+    std::string aulaAlLimite = aulaConTilde;
+    aulaAlLimite.append(20 - Utils::cantidadCaracteres(aulaConTilde), 'X');
+    CHECK(Utils::cantidadCaracteres(aulaAlLimite) == 20);  // 20 caracteres
+    CHECK(aulaAlLimite.size() == 21);                      // 21 bytes
+    CHECK(!lanzaConCampo([&] { turno.setAula(aulaAlLimite); }, "aula"));
+    CHECK(turno.getAula() == aulaAlLimite);
+    // Un caracter mas (21 caracteres) SI se rechaza: el limite se cuenta en
+    // caracteres, con o sin tildes.
+    const std::string aulaAlLimiteMasUno = aulaAlLimite + "X";
+    CHECK(Utils::cantidadCaracteres(aulaAlLimiteMasUno) == 21);
+    CHECK(lanzaConCampo([&] { turno.setAula(aulaAlLimiteMasUno); }, "aula"));
+    // Vacio.
+    CHECK(lanzaConCampo([&] { turno.setAula(""); }, "aula"));
 }
 
 TEST_CASE("el setter de idTurnoReemplazante rechaza un dato invalido", entidades_set_reemplazante) {

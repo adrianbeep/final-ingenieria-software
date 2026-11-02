@@ -180,7 +180,10 @@ private:
 
     static bool emailValido(const std::string& v) {
         const std::string t = Utils::trim(v);
-        if (t.size() < EMAIL_LONGITUD_MINIMA || t.size() > EMAIL_LONGITUD_MAXIMA) {
+        // El largo se mide en CARACTERES (codepoints), no en bytes: un correo
+        // con tilde es mas largo en bytes, pero ocupa los mismos caracteres.
+        const std::size_t largo = Utils::cantidadCaracteres(t);
+        if (largo < EMAIL_LONGITUD_MINIMA || largo > EMAIL_LONGITUD_MAXIMA) {
             return false;
         }
         // Ademas del alfabeto cerrado, el correo tiene que tener una arroba:
@@ -190,13 +193,9 @@ private:
         }
         // ALFABETO CERRADO: el separador del formato canonico queda excluido
         // por construccion, sin meter una regla de persistencia en el
-        // dominio.
-        for (const char c : t) {
-            if (!esCaracterAlfanumerico(c) && c != '.' && c != '@' && c != '-' && c != '_') {
-                return false;
-            }
-        }
-        return true;
+        // dominio. Las tildes y la enye SI se admiten (son letras del
+        // dominio, las mismas que acepta `Utils::esAlfabetico`).
+        return Utils::esAlfanumericoConSignos(t, ".@-_");
     }
 
     static bool telefonoValido(const std::string& v) {
@@ -214,12 +213,9 @@ private:
         return true;
     }
 
-    // Caracter alfanumerico ASCII (los correos y los telefonos no llevan
-    // letras acentuadas).
-    static bool esCaracterAlfanumerico(char c) {
-        return esCaracterDigito(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-    }
-
+    // Caracter digito ASCII. Solo lo usa `telefonoValido`: el correo y la
+    // especialidad delegan en `Utils::esAlfanumericoConSignos`, que ya sabe
+    // que letra del dominio es una letra acentuada.
     static bool esCaracterDigito(char c) { return c >= '0' && c <= '9'; }
 
     // Convierte un texto a entero, validando el formato ANTES de convertir.

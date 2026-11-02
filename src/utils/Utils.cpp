@@ -164,6 +164,11 @@ bool esSeparador(std::uint32_t codepoint) {
     return codepoint == ' ' || codepoint == '\'' || codepoint == '-';
 }
 
+// Indica si el codepoint es un digito decimal ASCII.
+bool esDigito(std::uint32_t codepoint) {
+    return codepoint >= '0' && codepoint <= '9';
+}
+
 // Indica si el tramo [inicio, inicio+cantidad) del texto son solo digitos.
 bool sonDigitos(const std::string& texto, std::size_t inicio, std::size_t cantidad) {
     if (inicio + cantidad > texto.size()) {
@@ -242,6 +247,62 @@ bool Utils::esAlfabetico(const std::string& texto) {
 
     // Exige al menos una letra: "   " y "---" no son nombres.
     return tieneLetra;
+}
+
+bool Utils::esAlfanumericoConSignos(const std::string& texto, const std::string& signosAdmitidos) {
+    // Un texto vacio no es un valor valido de ningun campo: no aporta nada.
+    if (texto.empty()) {
+        return false;
+    }
+
+    std::size_t i = 0;
+
+    while (i < texto.size()) {
+        std::uint32_t codepoint = 0;
+        std::size_t largo = 0;
+        if (!decodificarUtf8(texto, i, codepoint, largo)) {
+            return false;  // UTF-8 malformado: la cadena no es valida
+        }
+        i += largo;
+
+        // El codepoint DECODIFICADO se compara contra los signos admitidos.
+        // Por eso un caracter multibyte (que vale >= 0x80) nunca puede
+        // coincidir con un signo ASCII: la comparacion es exacta.
+        if (codepoint < 0x80u) {
+            const char caracter = static_cast<char>(codepoint);
+            if (signosAdmitidos.find(caracter) != std::string::npos) {
+                continue;
+            }
+        }
+
+        if (esLetra(codepoint) || esDigito(codepoint)) {
+            continue;
+        }
+        return false;  // emoji, ideograma, o un signo que no esta admitido.
+    }
+
+    return true;
+}
+
+std::size_t Utils::cantidadCaracteres(const std::string& texto) {
+    std::size_t cantidad = 0;
+    std::size_t i = 0;
+
+    while (i < texto.size()) {
+        std::uint32_t codepoint = 0;
+        std::size_t largo = 0;
+        if (!decodificarUtf8(texto, i, codepoint, largo)) {
+            // UTF-8 malformado: se cuenta el byte roto como un caracter, para
+            // que la longitud nunca sea MENOR que la cantidad de bytes.
+            ++cantidad;
+            ++i;
+            continue;
+        }
+        i += largo;
+        ++cantidad;
+    }
+
+    return cantidad;
 }
 
 std::string Utils::aMinusculas(const std::string& texto) {

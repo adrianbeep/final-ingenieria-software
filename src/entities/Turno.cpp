@@ -121,19 +121,16 @@ bool Turno::duracionMinValido(int valor) {
 
 bool Turno::aulaValida(const std::string& v) {
     const std::string t = Utils::trim(v);
-    if (t.size() < AULA_LONGITUD_MINIMA || t.size() > AULA_LONGITUD_MAXIMA) {
+    // El largo se mide en CARACTERES (codepoints), no en bytes: un aula con
+    // tilde es mas larga en bytes, pero ocupa los mismos caracteres.
+    const std::size_t largo = Utils::cantidadCaracteres(t);
+    if (largo < AULA_LONGITUD_MINIMA || largo > AULA_LONGITUD_MAXIMA) {
         return false;
     }
-    // ALFABETO CERRADO: el separador del formato canonico queda excluido
-    // por construccion.
-    for (const char c : t) {
-        const bool alfanumerico = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-            || (c >= '0' && c <= '9');
-        if (!alfanumerico && c != ' ' && c != '-' && c != '.') {
-            return false;
-        }
-    }
-    return true;
+    // ALFABETO CERRADO: el separador del formato canonico ('|') queda excluido
+    // por construccion, porque no esta entre los signos admitidos. Las
+    // tildes y la enye SI se admiten: son letras del dominio.
+    return Utils::esAlfanumericoConSignos(t, " -.");
 }
 
 std::ostream& operator<<(std::ostream& os, const Turno& turno) {

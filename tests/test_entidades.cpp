@@ -4,6 +4,7 @@
 #include "entities/Persona.h"
 #include "entities/Profesor.h"
 #include "exceptions/ExcepcionesSistema.h"
+#include "utils/Utils.h"
 
 #include <string>
 #include <type_traits>
@@ -141,6 +142,44 @@ TEST_CASE("el setter de email rechaza un dato invalido", entidades_set_email) {
     CHECK(!lanzaConCampo([&] { profesor.setEmail("ana.garcia-1_x@unlp.edu.ar"); }, "email"));
 }
 
+TEST_CASE("el email acepta letras acentuadas y las guarda intactas", entidades_email_acentuado) {
+    Profesor profesor;
+    // 'í' (U+00ED) son 0xC3 0xAD. El escape hexadecimal va en un literal
+    // propio porque se extiende hasta el proximo caracter hexadecimal.
+    const std::string emailAcentuado = "ana.garc" "\xC3\xAD" "a@unlp.edu.ar";
+    CHECK(!lanzaConCampo([&] { profesor.setEmail(emailAcentuado); }, "email"));
+    // El valor vuelve IDENTICO: la tilde no se convierte ni se pierde.
+    CHECK(profesor.getEmail() == emailAcentuado);
+    CHECK(profesor.getEmail() == "ana.garc" "\xC3\xAD" "a@unlp.edu.ar");
+    // Tambien con enye y con e acute.
+    CHECK(!lanzaConCampo([&] { profesor.setEmail("mu" "\xC3\xB1" "oz@unlp.edu.ar"); }, "email"));
+    CHECK(profesor.getEmail() == "mu" "\xC3\xB1" "oz@unlp.edu.ar");
+    CHECK(!lanzaConCampo([&] { profesor.setEmail("jose" "\xC3\xA9" "@unlp.edu.ar"); }, "email"));
+    CHECK(profesor.getEmail() == "jose" "\xC3\xA9" "@unlp.edu.ar");
+}
+
+TEST_CASE("el email sigue rechazando el separador y los valores malformados", entidades_email_malformado) {
+    Profesor profesor;
+    // El separador del formato canonico sigue excluido por construccion.
+    CHECK(lanzaConCampo([&] { profesor.setEmail("a|b@x.com"); }, "email"));
+    CHECK(lanzaConCampo([&] { profesor.setEmail("ana.garcia@unlp.edu.ar|x"); }, "email"));
+    // Un espacio interno no se admite: el correo no lo lleva.
+    CHECK(lanzaConCampo([&] { profesor.setEmail("ana garcia@unlp.edu.ar"); }, "email"));
+    // Vacio y demasiado corto.
+    CHECK(lanzaConCampo([&] { profesor.setEmail(""); }, "email"));
+    CHECK(lanzaConCampo([&] { profesor.setEmail("a@b"); }, "email"));
+    // El limite es de 60 caracteres: uno mas se rechaza.
+    const std::string correoAlLimite = std::string(54, 'a') + "@x.com";  // 60 caracteres
+    CHECK(Utils::cantidadCaracteres(correoAlLimite) == 60);
+    CHECK(!lanzaConCampo([&] { profesor.setEmail(correoAlLimite); }, "email"));
+    CHECK(lanzaConCampo([&] { profesor.setEmail(correoAlLimite + "a"); }, "email"));  // 61
+    // Demasiado largo.
+    const std::string correoLargo = std::string(61, 'a') + "@x.com";
+    CHECK(lanzaConCampo([&] { profesor.setEmail(correoLargo); }, "email"));
+    // Una arroba no alcanza: sin ella no es un correo.
+    CHECK(lanzaConCampo([&] { profesor.setEmail("sinarroba.com"); }, "email"));
+}
+
 TEST_CASE("el setter de telefono rechaza un dato invalido", entidades_set_telefono) {
     Profesor profesor;
     CHECK(lanzaConCampo([&] { profesor.setTelefono(""); }, "telefono"));
@@ -164,6 +203,40 @@ TEST_CASE("el setter de especialidad rechaza un dato invalido", entidades_set_es
     CHECK(lanzaConCampo([&] { profesor.setEspecialidad("con|pipe"); }, "especialidad"));
     CHECK(!lanzaConCampo([&] { profesor.setEspecialidad("Sistemas Operativos, primera parte"); },
                           "especialidad"));
+}
+
+TEST_CASE("la especialidad acepta letras acentuadas y las guarda intactas",
+          entidades_especialidad_acentuada) {
+    Profesor profesor;
+    // 'ó' (U+00F3) son 0xC3 0xB3. El escape hexadecimal va en un literal
+    // propio porque se extiende hasta el proximo caracter hexadecimal.
+    const std::string especialidadAcentuada = "Redes y Comunicaci" "\xC3\xB3" "n";
+    CHECK(!lanzaConCampo([&] { profesor.setEspecialidad(especialidadAcentuada); }, "especialidad"));
+    // El valor vuelve IDENTICO: la tilde no se convierte ni se pierde.
+    CHECK(profesor.getEspecialidad() == especialidadAcentuada);
+    CHECK(profesor.getEspecialidad() == "Redes y Comunicaci" "\xC3\xB3" "n");
+    // Con enye tambien.
+    CHECK(!lanzaConCampo([&] { profesor.setEspecialidad("Dise" "\xC3\xB1" "o de Software"); },
+                          "especialidad"));
+    CHECK(profesor.getEspecialidad() == "Dise" "\xC3\xB1" "o de Software");
+}
+
+TEST_CASE("la especialidad sigue rechazando el separador y los valores malformados",
+          entidades_especialidad_malformada) {
+    Profesor profesor;
+    // El separador del formato canonico sigue excluido por construccion.
+    CHECK(lanzaConCampo([&] { profesor.setEspecialidad("con|pipe"); }, "especialidad"));
+    CHECK(lanzaConCampo([&] { profesor.setEspecialidad("Redes | Comunicacion"); }, "especialidad"));
+    // Vacio.
+    CHECK(lanzaConCampo([&] { profesor.setEspecialidad(""); }, "especialidad"));
+    // El limite es de 60 caracteres: una mas se rechaza.
+    const std::string especialidadAlLimite = std::string(60, 'a');
+    CHECK(Utils::cantidadCaracteres(especialidadAlLimite) == 60);
+    CHECK(!lanzaConCampo([&] { profesor.setEspecialidad(especialidadAlLimite); }, "especialidad"));
+    CHECK(lanzaConCampo([&] { profesor.setEspecialidad(especialidadAlLimite + "a"); }, "especialidad"));
+    // Demasiado larga.
+    const std::string especialidadLarga = std::string(61, 'a');
+    CHECK(lanzaConCampo([&] { profesor.setEspecialidad(especialidadLarga); }, "especialidad"));
 }
 
 TEST_CASE("el setter de matricula rechaza un dato invalido", entidades_set_matricula) {
