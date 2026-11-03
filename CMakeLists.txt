@@ -145,6 +145,20 @@ add_library(repositorios_concretos STATIC ${REPOSITORIOS_SRCS})
 target_include_directories(repositorios_concretos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(repositorios_concretos PUBLIC core structures persistencia repositorios warnings)
 
+# --- servicios: las reglas de negocio ---
+# A diferencia de los modulos anteriores, este target es STATIC y NO
+# INTERFACE: `ServicioTurnos` no es un template, asi que hay codigo que
+# compilar y que empaquetar en una libreria.
+#
+# Enlaza con `core` (de ahi vienen `Fecha`, `Hora`, `Utils` y las
+# excepciones), con `repositorios` (las interfaces `IRepositorio<T>`, que es
+# contra lo que el servicio escribe) y con las tres entidades, porque el
+# servicio construye turnos y consulta alumnos y profesores.
+file(GLOB SERVICES_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/services/*.cpp")
+add_library(servicios STATIC ${SERVICES_SRCS})
+target_include_directories(servicios PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(servicios PUBLIC core alumnos profesores turnos repositorios warnings)
+
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -158,5 +172,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia repositorios repositorios_concretos warnings)
+target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia repositorios repositorios_concretos servicios warnings)
 add_test(NAME tests COMMAND tests)

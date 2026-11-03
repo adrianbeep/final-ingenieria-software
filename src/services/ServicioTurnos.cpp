@@ -1,0 +1,371 @@
+#include "services/ServicioTurnos.h"
+
+#include "exceptions/ExcepcionesSistema.h"
+
+#include <ctime>
+#include <string>
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// Constantes del calculo de instantes
+// ---------------------------------------------------------------------------
+
+// Horas que tiene un dia. Se usa para pasar de un numero de dia a minutos.
+constexpr int HORAS_POR_DIA = 24;
+
+// Minutos que tiene un dia: es el factor para pasar de `numeroDeDia()` a
+// minutos absolutos.
+constexpr int MINUTOS_POR_DIA = HORAS_POR_DIA * Hora::MINUTOS_POR_HORA;
+
+// El `struct tm` cuenta los anos desde 1900 y los meses desde 0.
+constexpr int ANIO_BASE_TM = 1900;
+constexpr int MES_BASE_TM = 1;
+
+// ---------------------------------------------------------------------------
+// La VENTANA de un turno: el intervalo de tiempo que ocupa.
+//
+// QUE ES UN INSTANTE ABSOLUTO
+//
+// Cada ventana se mide en MINUTOS desde la primera fecha valida del dominio
+// (2000-01-01 00:00). El numero de dia viene de `Fecha::numeroDeDia()` y la
+// hora del dia, de `Hora::minutosDesdeMedianoche()`.
+//
+// POR QUE UN SOLO NUMERO Y NO DOS (DIA Y HORA)
+//
+// Con dos numeros habria que comparar el dia, despues la hora, y acordarse
+// del caso en que un turno cruza la medianoche: el 23:30 del dia 3 y las
+// 00:15 del dia 4 son instantes CONSECUTIVOS, y con dos numeros
+// comparados por separado el segundo pareceria anterior al primero. Con un
+// unico numero absoluto ese caso no existe: la medianoche es simplemente el
+// minuto en que el numero de dia avanza.
+//
+// Un turno que termina despues de la medianoche (empieza a las 22:00 y
+// dura 240 minutos) tiene su `fin` en el dia siguiente, y asi queda
+// escrito: `fin` puede ser mayor que el numero de dia multiplicado por los
+// minutos del dia, y por eso el comparaison de ventanas es en minutos y
+// no en horas.
+// ---------------------------------------------------------------------------
+struct Ventana {
+    int inicio = 0;
+    int fin = 0;
+};
+
+// La ventana que ocupa un turno.
+Ventana ventanaDe(const Turno& turno) {
+    Ventana ventana;
+    ventana.inicio = turno.getFecha().numeroDeDia() * MINUTOS_POR_DIA
+        + turno.getHora().minutosDesdeMedianoche();
+    // El fin es el inicio mas la duracion: puede pasarse de la medianoche,
+    // y eso ya esta resuelto porque los minutos son absolutos.
+    ventana.fin = ventana.inicio + turno.getDuracionMin();
+    return ventana;
+}
+
+// ---------------------------------------------------------------------------
+// El test de SOLAPAMIENTO (decision R7 del issue #14).
+//
+// DOS INTERVALOS SE SOLAPAN SI CADA UNO EMPIEZA ANTES DE QUE TERMINE EL
+// OTRO: `(inicioA < finB) && (inicioB < finA)`.
+//
+// POR QUE NO ALCANZA CON COMPARAR LOS INICIOS
+//
+// Un turno de 10:00 a 10:45 y otro de 10:30 a 11:15 SE PISAN, aunque sus
+// horas de inicio sean distintas. Comparando solo los inicios con el
+// `operator<` de la `Hora`, el primero es menor que el segundo (10:00 <
+// 10:30) y el segundo NO es menor que el primero (10:30 < 10:00 es falso):
+// la comparacion daria "no se pisan" y dejaria pasar los dos turnos.
+//
+// Con el criterio de intervalos, en cambio: 10:00 < 11:15 y 10:30 < 10:45,
+// que son las DOS condiciones, asi que se detecta el choque.
+//
+// Y el criterio de intervalos tambien distingue el caso limite: dos turnos
+// que se tocan JUSTO (10:00-10:45 y 10:45-11:30) NO se pisan, porque el
+// segundo empieza exactamente cuando termina el primero.
+// ---------------------------------------------------------------------------
+bool seSolapan(const Ventana& a, const Ventana& b) {
+    return a.inicio < b.fin && b.inicio < a.fin;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Construccion
+// ---------------------------------------------------------------------------
+
+ServicioTurnos::ServicioTurnos(IRepositorio<Alumno>& alumnos_,
+                               IRepositorio<Profesor>& profesors_,
+                               IRepositorio<Turno>& turnos_)
+    : _alumnos(alumnos_),
+      _profesores(profesors_),
+      _turnos(turnos_) {
+}
+
+// ---------------------------------------------------------------------------
+// AGENDAR
+// ---------------------------------------------------------------------------
+
+void ServicioTurnos::agendar(const Turno& turno_) {
+    // Primero todas las reglas, despues el guardado. Si una regla falla,
+    // el repositorio queda como estaba: no queda un turno a medio agendar.
+    validarAgendamiento(turno_);
+
+    _turnos.alta(turno_);
+}
+
+// ---------------------------------------------------------------------------
+// CANCELAR
+// ---------------------------------------------------------------------------
+
+void ServicioTurnos::cancelar(int idTurno_) {
+    Turno turno = buscarTurno(idTurno_);
+
+    // Un turno que NO esta activo no se puede cancelar.
+    //
+    // POR QUE ES UN ERROR Y NO UNA OPERACION IDEMPOTENTE
+    //
+    // Cancelar dos veces el mismo turno casi siempre es una confusion del
+    // que lo pide (un doble clic, una pantalla que se recargo), y ocultarla
+    // con un "ok" silencioso esconde el problema. Ademas, `Reprogramado` es
+    // un estado DISTINTO de `Cancelado`: un turno reprogramado ya fue
+    // movido, y volverlo a cancelar seria mentir sobre su historial.
+    if (turno.getEstado() != EstadoTurno::Activo) {
+        throw DatoInvalidoException("estado", estadoATexto(turno.getEstado()),
+                                    "el turno no esta activo: no se puede cancelar");
+    }
+
+    turno.setEstado(EstadoTurno::Cancelado);
+
+    // El turno NO se borra: la baja es LOGICA (decision #10 del proyecto).
+    // `modificar` reemplaza el turno con el mismo id y lo persiste.
+    _turnos.modificar(turno);
+}
+
+// ---------------------------------------------------------------------------
+// REPROGRAMAR
+// ---------------------------------------------------------------------------
+
+void ServicioTurnos::reprogramar(int idTurno_,
+                                  const Fecha& nuevaFecha_,
+                                  const Hora& nuevaHora_) {
+    Turno original = buscarTurno(idTurno_);
+
+    // Un turno cancelado NO se reprograma: `Cancelado` y `Reprogramado` son
+    // estados finales. Un turno ya reprogramado tampoco: su reemplazo ya
+    // existe y volver a reprogramarlo perderia el historial.
+    if (original.getEstado() != EstadoTurno::Activo) {
+        throw DatoInvalidoException("estado", estadoATexto(original.getEstado()),
+                                    "solo un turno activo se puede reprogramar");
+    }
+
+    // La reprogramacion crea un turno NUEVO (decision #8 del proyecto): el
+    // viejo queda `Reprogramado` y apunta al nuevo. El turno nuevo hereda
+    // alumno, profesor, materia, duracion y aula, y toma la fecha y la
+    // hora nuevas.
+    const int idNuevo = _turnos.proximoId();
+    Turno nuevo(idNuevo,
+                 original.getIdProfesor(),
+                 original.getIdAlumno(),
+                 original.getMateria(),
+                 nuevaFecha_,
+                 nuevaHora_,
+                 original.getDuracionMin(),
+                 original.getAula());
+
+    // Las reglas de `agendar` valen TAMBIEN para el turno nuevo: no se
+    // puede esquivar el control de solapamiento reprogramando. Se aplican
+    // ANTES de tocar el repositorio, asi que si una falla NINGUN turno
+    // queda modificado (el viejo sigue `Activo`).
+    //
+    // OJO: el turno viejo todavia esta `Activo` cuando se hace esta
+    // validacion, asi que el control de solapamiento lo ve. Es lo
+    // correcto: reprogramar a un horario que el propio turno viejo ocupa
+    // es un error (seria mover un turno a un lugar donde ya esta).
+    validarAgendamiento(nuevo);
+
+    // Se guarda el turno NUEVO primero. Si el alta fallara (por ejemplo,
+    // un id duplicado), el viejo queda intacto.
+    _turnos.alta(nuevo);
+
+    // Y despues se marca el viejo, que ahora apunta al reemplazo.
+    original.setEstado(EstadoTurno::Reprogramado);
+    original.setIdTurnoReemplazante(idNuevo);
+    _turnos.modificar(original);
+}
+
+// ---------------------------------------------------------------------------
+// TURNOS VIGENTES DE UN ALUMNO
+// ---------------------------------------------------------------------------
+
+std::vector<Turno> ServicioTurnos::turnosVigentesDe(int idAlumno_) const {
+    std::vector<Turno> vigentes;
+
+    // Solo los turnos `Activo` cuentan: un turno cancelado o reprogramado
+    // sigue en el repositorio (su baja es logica) pero NO ocupa un horario
+    // ni se muestra como pendiente.
+    for (const Turno& turno : _turnos.listar()) {
+        if (turno.getIdAlumno() == idAlumno_ && turno.getEstado() == EstadoTurno::Activo) {
+            vigentes.push_back(turno);
+        }
+    }
+
+    return vigentes;
+}
+
+// ---------------------------------------------------------------------------
+// Las reglas
+// ---------------------------------------------------------------------------
+
+void ServicioTurnos::validarAgendamiento(const Turno& turno_) {
+    // --- REGLA 1: el alumno existe y esta activo ---
+    Alumno alumno;
+    if (!_alumnos.buscarPorId(turno_.getIdAlumno(), alumno)) {
+        throw EntidadNoExisteException(turno_.getIdAlumno(), "Alumno");
+    }
+    if (!alumno.esActivo()) {
+        throw DatoInvalidoException("alumno", std::to_string(alumno.getId()),
+                                    "el alumno esta dado de baja y no puede tener turnos");
+    }
+
+    // --- REGLA 2: el profesor existe y esta activo ---
+    Profesor profesor;
+    if (!_profesores.buscarPorId(turno_.getIdProfesor(), profesor)) {
+        throw EntidadNoExisteException(turno_.getIdProfesor(), "Profesor");
+    }
+    if (!profesor.esActivo()) {
+        throw DatoInvalidoException("profesor", std::to_string(profesor.getId()),
+                                    "el profesor esta dado de baja y no puede tener turnos");
+    }
+
+    // --- REGLA 3: la fecha existe y no esta en el pasado ---
+    const Fecha& fecha = turno_.getFecha();
+    if (!Fecha::esValida(fecha.anio, fecha.mes, fecha.dia)) {
+        throw DatoInvalidoException("fecha", fecha.aTexto(), "fecha inexistente");
+    }
+    if (fecha < fechaDeHoy()) {
+        throw DatoInvalidoException("fecha", fecha.aTexto(), "la fecha del turno ya paso");
+    }
+
+    // --- REGLA 4: la hora, la duracion y el resto de los datos son validos ---
+    validarDatosDelTurno(turno_);
+
+    // --- REGLA 5: el turno no se pisa con ningun turno vigente ---
+    verificarSolapamiento(turno_);
+}
+
+void ServicioTurnos::validarDatosDelTurno(const Turno& turno_) {
+    // El id lo propone el repositorio (decision R4 del issue #14), asi que
+    // un turno sin id no se puede guardar.
+    if (turno_.getId() <= 0) {
+        throw DatoInvalidoException("id", std::to_string(turno_.getId()),
+                                    "se esperaba un id de turno valido");
+    }
+
+    const Hora& hora = turno_.getHora();
+    if (!Hora::esValida(hora.hora, hora.minuto)) {
+        throw DatoInvalidoException("hora", hora.aTexto(),
+                                    "fuera del horario de atencion o con minutos que no son "
+                                    "multiplos de 30");
+    }
+
+    const int duracion = turno_.getDuracionMin();
+    if (duracion <= 0 || duracion % Turno::DURACION_MULTIPLO_MINUTOS != 0
+        || duracion > Turno::DURACION_MAXIMA_MINUTOS) {
+        throw DatoInvalidoException("duracionMin", std::to_string(duracion),
+                                    "se esperaba una duracion positiva, multiplo de 15 y de "
+                                    "240 minutos como maximo");
+    }
+
+    // EL TURNO TIENE QUE TERMINAR DENTRO DEL HORARIO DE ATENCION
+    //
+    // El tope de las 22:00 marca el fin del horario en que la institucion
+    // atiende. Un turno que EMPIEZA a las 21:30 y dura 90 minutos termina
+    // a las 23:00: la clase se esta dictando cuando ya no hay nadie que
+    // atienda. Por eso se exige que el turno TERMINE antes del tope, y no
+    // solo que empiece dentro del horario.
+    //
+    // La cuenta es en MINUTOS: el tope es un instante (1320 minutos), no una
+    // hora, asi que se compara con `minutosDesdeMedianoche()`.
+    const int fin = hora.minutosDesdeMedianoche() + duracion;
+    const int finDelHorario = Hora::HORA_FIN * Hora::MINUTOS_POR_HORA;
+    if (fin > finDelHorario) {
+        throw DatoInvalidoException("hora", hora.aTexto(),
+                                    "el turno termina despues de las "
+                                        + Hora(Hora::HORA_FIN, 0).aTexto()
+                                        + ", que es el fin del horario de atencion");
+    }
+
+    // Lo que SOBRA de las reglas anteriores (fecha, hora y duracion ya
+    // quedaron chequeadas) es el aula: por eso el mensaje la nombra.
+    if (!turno_.esValido()) {
+        throw DatoInvalidoException("aula", turno_.getAula(),
+                                    "se esperaba un aula de 1 a 20 caracteres, con letras, digitos, "
+                                    "espacios, '-' y '.'");
+    }
+}
+
+void ServicioTurnos::verificarSolapamiento(const Turno& turno_) {
+    const Ventana nueva = ventanaDe(turno_);
+
+    for (const Turno& existente : _turnos.listar()) {
+        // SOLO los turnos VIGENTES ocupan el horario: un turno cancelado o
+        // reprogramado libero su horario y ese horario se puede volver a
+        // usar.
+        if (existente.getEstado() != EstadoTurno::Activo) {
+            continue;
+        }
+
+        // EL CHOQUE SE BUSCA EN LOS DOS EJES (decision R8 del issue #14)
+        //
+        // No puede ser que el alumno Y el profesor sean la misma persona,
+        // asi que basta con que coincida UNO de los dos: si coincide el
+        // alumno, el alumno esta ocupado; si coincide el profesor, el
+        // profesor esta ocupado.
+        if (existente.getIdAlumno() != turno_.getIdAlumno()
+            && existente.getIdProfesor() != turno_.getIdProfesor()) {
+            continue;
+        }
+
+        if (!seSolapan(nueva, ventanaDe(existente))) {
+            continue;
+        }
+
+        // El detalle lleva los ids del turno que YA ESTABA: son los que
+        // estaban ocupados. Es el mismo formato que usa el mensaje de la
+        // excepcion de la Fase 1 ("idProfesor=N idAlumno=M").
+        throw TurnoOcupadoException(
+            existente.getId(),
+            "idProfesor=" + std::to_string(existente.getIdProfesor())
+                + " idAlumno=" + std::to_string(existente.getIdAlumno()));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Utilidades internas
+// ---------------------------------------------------------------------------
+
+Turno ServicioTurnos::buscarTurno(int idTurno_) const {
+    Turno turno;
+    if (!_turnos.buscarPorId(idTurno_, turno)) {
+        throw EntidadNoExisteException(idTurno_, "Turno");
+    }
+    return turno;
+}
+
+Fecha ServicioTurnos::fechaDeHoy() {
+    const std::time_t ahora = std::time(nullptr);
+
+    // `std::localtime` devuelve un puntero a un objeto estatico: es la forma
+    // portable de obtener la fecha LOCAL (la del calendario de la
+    // institucion), que es la que cuenta para el horario de atencion.
+    const std::tm* local = std::localtime(&ahora);
+    if (local == nullptr) {
+        // No deberia pasar (solo si el reloj del sistema no se puede
+        // convertir), pero si pasa NO se puede decidir la regla de la fecha
+        // en el pasado, asi que se dice en vez de dejar pasar un turno
+        // invalido.
+        throw ExcepcionSistema("No se pudo obtener la fecha actual del sistema");
+    }
+
+    return Fecha(local->tm_year + ANIO_BASE_TM, local->tm_mon + MES_BASE_TM, local->tm_mday);
+}

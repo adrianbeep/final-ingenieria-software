@@ -55,8 +55,28 @@ struct Fecha {
     // esta fuera del rango 1..12.
     static int diasDelMes(int anio, int mes);
 
+    // Dias transcurridos desde la primera fecha valida del dominio
+    // (2000-01-01), contando los anos bisiestos.
+    //
+    // PARA QUE ESTA EXISTE
+    //
+    // Medir el tiempo en MINUTOS de forma continua necesita un numero de
+    // dia comparable. El `operator<` alcanza para ORDENAR dos fechas, pero
+    // no para RESTARLAS: con dos fechas no hay forma de saber cuantas
+    // noches hay entre una y otra. Este numero es unico y monotono (a mas
+    // fecha, mas numero), asi que multiplicado por los minutos del dia da
+    // un instante absoluto, comparable con cualquier otro.
+    //
+    // Es un dato GENERICO de calendario: no sabe nada de turnos ni de
+    // horarios, asi que vive aqui y no en la capa de reglas de negocio.
+    int numeroDeDia() const;
+
     bool operator<(const Fecha& otra) const;
     bool operator==(const Fecha& otra) const;
+
+    // Dias de un ano que NO son bisiestos. Los bisiestos se cuentan
+    // aparte, asi que este es el piso del calculo de `numeroDeDia`.
+    static constexpr int DIAS_POR_ANIO = 365;
 };
 
 // Hora del dia: hora y minuto.
@@ -85,6 +105,20 @@ struct Hora {
 
     // Texto con formato "HH:MM", con ceros a la izquierda.
     std::string aTexto() const;
+
+    // Minutos transcurridos desde la medianoche del mismo dia (0 .. 1439).
+    //
+    // PARA QUE ESTA EXISTE
+    //
+    // El horario de atencion y la duracion se miden en la MISMA unidad: el
+    // tope de las 22:00 es un INSTANTE (1320 minutos), no una hora, asi que
+    // compararlo con la hora suelta daria resultados erroneos ("22:30"
+    // pareceria valido). Con esta conversion, la hora y la duracion se
+    // suman sin ambiguedad.
+    //
+    // Es un dato GENERICO de reloj: no sabe nada de turnos ni de
+    // agendamiento, asi que vive aqui y no en la capa de reglas de negocio.
+    int minutosDesdeMedianoche() const;
 
     bool operator<(const Hora& otra) const;
     bool operator==(const Hora& otra) const;

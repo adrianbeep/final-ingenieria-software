@@ -94,6 +94,30 @@ int Fecha::diasDelMes(int anio, int mes) {
     }
 }
 
+int Fecha::numeroDeDia() const {
+    // Los anos COMPLETOS van primero: son los dias de cada ano entre el
+    // arranque del dominio y el anio de esta fecha.
+    int dias = (anio - ANIO_MINIMO) * DIAS_POR_ANIO;
+
+    // Los bisiestos se suman aparte: un ano bisiesto tiene un dia mas, y
+    // ese dia es el que hace que dos fechas del mismo mes de años distintos
+    // NO se confundan.
+    for (int anioPrevio = ANIO_MINIMO; anioPrevio < anio; ++anioPrevio) {
+        if (esBisiesto(anioPrevio)) {
+            ++dias;
+        }
+    }
+
+    // Despues, los meses COMPLETOS del anio en curso.
+    for (int mesPrevio = 1; mesPrevio < mes; ++mesPrevio) {
+        dias += diasDelMes(anio, mesPrevio);
+    }
+
+    // Y por ultimo, los dias que ya pasaron del mes: el dia 1 no suma
+    // nada (el primer dia del mes es el mismo dia del mes anterior).
+    return dias + (dia - 1);
+}
+
 bool Fecha::operator<(const Fecha& otra) const {
     if (anio != otra.anio) {
         return anio < otra.anio;
@@ -155,6 +179,10 @@ Hora Hora::desdeTexto(const std::string& texto) {
 
 std::string Hora::aTexto() const {
     return dosDigitos(hora) + ":" + dosDigitos(minuto);
+}
+
+int Hora::minutosDesdeMedianoche() const {
+    return hora * MINUTOS_POR_HORA + minuto;
 }
 
 bool Hora::operator<(const Hora& otra) const {
