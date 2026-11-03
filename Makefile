@@ -38,7 +38,9 @@ VENDOR_OBJ := $(BUILD_DIR)/ftxui.o
 # Por modulo, con wildcard: agregar un .cpp dentro de un modulo NO obliga a
 # tocar este archivo.
 CORE_SRCS := $(wildcard src/domain/*.cpp) $(wildcard src/utils/*.cpp) $(wildcard src/exceptions/*.cpp)
-UI_SRCS   := $(wildcard src/ui/*.cpp)
+# Los globs son PLANOS (no recursivos), asi que `src/ui/Pantallas/` va
+# aparte: sin esta linea, las pantallas no se compilarian.
+UI_SRCS   := $(wildcard src/ui/*.cpp) $(wildcard src/ui/Pantallas/*.cpp)
 ENTITIES_SRCS := $(wildcard src/entities/*.cpp)
 REPOSITORIES_SRCS := $(wildcard src/repositories/*.cpp)
 SERVICES_SRCS := $(wildcard src/services/*.cpp)
@@ -100,8 +102,11 @@ test: $(TEST_TARGET)
 # Linkea SERVICES_SRCS porque los tests de la Fase 5 ejercitan las reglas de
 # negocio del servicio de turnos (que, a diferencia de los demas modulos, si
 # tiene .cpp).
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) -o $@ $(LDFLAGS)
+# Linkea `$(VENDOR_OBJ)` porque `UI_SRCS` ya usa simbolos de FTXUI (el motor
+# y las pantallas), y `$(DEFS)` porque los headers de FTXUI tienen dos
+# `#error` duros en Windows sin `UNICODE`/`_UNICODE`/`NOMINMAX`.
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 
 # El prefijo `-` hace que make NO falle si el archivo no existe: `del` y
 # `rmdir` devuelven error cuando el destino no esta, y un `make clean` sobre

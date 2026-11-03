@@ -92,10 +92,17 @@ target_include_directories(core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(core PUBLIC warnings)
 
 # --- ui: consola, menu, tema ---
-file(GLOB UI_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp")
+# Los globs son PLANOS (no recursivos), asi que `src/ui/Pantallas/` va
+# aparte: sin esta linea, las pantallas no se compilarian.
+file(GLOB UI_SRCS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/Pantallas/*.cpp")
 add_library(ui STATIC ${UI_SRCS})
 target_include_directories(ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(ui PUBLIC core warnings)
+# `ui` NECESITA FTXUI: el motor (`Terminal`, `Aplicacion`) y las pantallas
+# usan `ftxui::Element`. El link es PUBLIC para que los tests, que linkean
+# `ui`, reciban FTXUI (y `Threads::Threads`) transitivamente.
+target_link_libraries(ui PUBLIC core warnings ftxui Threads::Threads)
 
 # --- Entidades: profesor, alumno y turno ---
 # Son tres targets y no uno solo porque son modulos independientes: cada uno
