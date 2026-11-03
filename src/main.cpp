@@ -1,18 +1,31 @@
-#include "ui/Consola.h"
+#include "ui/Aplicacion.h"
+#include "ui/Pantallas/Demo.h"
 
 #include "exceptions/ExcepcionesSistema.h"
 
 #include <iostream>
+#include <memory>
 
-// Punto de entrada. No tiene logica de negocio (requisito 9 de la consigna):
-// solo despacha. La Fase 1 demuestra el manejo de entrada segura: si el
-// usuario escribe algo que no es un numero, NO se rompe el programa.
+// Punto de entrada. NO tiene logica de negocio (requisito 9 de la consigna):
+// solo arma la aplicacion y la corre.
+//
+// El `try/catch` global vive ACA y no en la capa `ui`: la capa de interfaz
+// no decide como se le informa un error al usuario.
+//
+// La pantalla que se muestra es la DEMO del motor (decision D32): el menu
+// principal de verdad entra en el PR7.
 int main() {
-    ui::Consola::limpiar();
-    ui::Consola::titulo("Sistema de Turnos");
     try {
-        const int edad = ui::Consola::leerEntero("Ingrese la edad: ", 0, 120);
-        std::cout << "Edad registrada: " << edad << "\n";
+        ui::Aplicacion aplicacion("Sistema de Turnos");
+
+        aplicacion.ir([](ui::Aplicacion& app) {
+            return std::make_unique<ui::Pantallas::Demo>(app);
+        });
+
+        // Sin terminal interactiva se imprime el menu en texto plano y se
+        // sale con codigo 0 (decision D31). Con terminal, arranca el ciclo
+        // de eventos de FTXUI.
+        aplicacion.ejecutar([&aplicacion]() { return aplicacion.textoPlanoActual(); });
     } catch (const ExcepcionSistema& e) {
         std::cerr << "Error: " << e.what() << "\n";
     }
