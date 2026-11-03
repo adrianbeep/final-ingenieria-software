@@ -76,7 +76,7 @@ private:
     // Busca la entidad por id y la deja en `fuera`. Devuelve false si no
     // esta.
     //
-    // POR QUE NO SE USA `ArbolBST::buscar()`
+    // POR QUE BUSCA POR CLAVE Y NO CON `ArbolBST::buscar()`
     //
     // `ArbolBST::buscar()` busca por EQUIVALENCIA, y la equivalencia la
     // induce el `operator<` del tipo `T`. En el dominio, `Persona::operator<`
@@ -87,14 +87,40 @@ private:
     // `DatoInvalidoException` si no). O sea: para preguntar "existe el
     // alumno #7" habria que inventar un alumno #7 completo.
     //
-    // La solucion es un RECORRIDO EN ORDEN que se detiene en la primera
-    // coincidencia del id. Es O(n) en el peor caso, pero el arbol esta
-    // BALANCEADO (altura ~log2(n)), asi que el recorrido en orden toca los
-    // nodos de forma ordenada y se puede cortar en cuanto pasa el id buscado.
-    // Con el volumen de este sistema el costo es irrelevante y, sobre todo,
-    // NO obliga al dominio a exponer un `setId` publico para poder construir
-    // la sonda.
+    // `ArbolBST::buscarPorClave()` evita exactamente eso: el arbol compara
+    // una CLAVE contra el valor almacenado con el comparador que le pasa
+    // quien llama. El arbol sigue sin saber que es un id (el TAD es
+    // generico) y el DOMINIO tampoco expone un `setId` publico.
+    //
+    // POR QUE EL COMPARADOR USA `getId()` Y NO `getTipo()`
+    //
+    // `getId()` es la clave que el repositorio indexa y la que devuelve
+    // `proximoId()`: es el UNICO dato del dominio que esta capa necesita.
+    // `getTipo()` NO sirve: `Turno` no es una `Persona` y no lo tiene. Con
+    // `getId()` el mismo comparador sirve para las TRES entidades.
     bool buscarPorIdEnArbol(int id, T& fuera) const;
+
+    // Reconstruye el arbol BALANCEADO a partir de su contenido actual.
+    //
+    // POR QUE EXISTE
+    //
+    // `ArbolBST::insertar()` es un BST plano: con ids secuenciales
+    // (1, 2, 3...) insertados en orden ascendente el arbol degenera en una
+    // CADENA y su altura es O(n). En ese estado la busqueda por clave, que
+    // es O(altura), tambien es O(n): el arbol balanceado es la CONDICION
+    // para que la busqueda sea O(log n).
+    //
+    // `construirDesdeOrdenados()` arma el arbol balanceado en O(n), por
+    // divide y conqueras: el elemento del medio es la raiz.
+    //
+    // POR QUE SE RECONSTRUYE EN VEZ DE INSERTAR
+    //
+    // El repositorio ya escribe el archivo con el `inOrder()` del arbol, y
+    // el `inOrder()` de un BST plano tambien sale ordenado. O sea: el
+    // vector ordenado del que se reconstruye el arbol es EXACTAMENTE el
+    // mismo vector que se persiste, asi que la reconstruccion no agrega un
+    // recorrido nuevo: se apoya en el que ya se estaba haciendo.
+    void rebalancear();
 
     ArbolBST<T> _arbol;
     ArchivoTexto<T> _archivo;
@@ -120,6 +146,11 @@ void RepositorioCRUD<T>::alta(const T& entidad) {
     }
 
     _arbol.insertar(entidad);
+
+    // Se rebalancea DESPUES de insertar: el arbol tiene que quedar
+    // balanceado en TODO momento, no solo cuando se carga desde el disco.
+    // `insertar()` en un loop degeneraria el arbol en una cadena.
+    rebalancear();
 
     // Se persiste DESPUES de cada mutacion, no solo al salir: si el
     // programa se cuelga, no se pierde la sesion.
@@ -151,6 +182,11 @@ void RepositorioCRUD<T>::modificar(const T& entidad) {
     _arbol.eliminar(anterior);
     _arbol.insertar(entidad);
 
+    // Y despues se rebalancea, por el mismo motivo que en `alta()`: el
+    // `eliminar()` de un BST plano puede dejar el arbol todavia mas
+    // desbalanceado, y la busqueda por clave es O(altura).
+    rebalancear();
+
     persistir();
 }
 
@@ -161,34 +197,43 @@ bool RepositorioCRUD<T>::buscarPorId(int id, T& fuera) const {
 
 template <class T>
 bool RepositorioCRUD<T>::buscarPorIdEnArbol(int id, T& fuera) const {
-    // El recorrido en orden VISITA los valores ordenados por clave. Como el
-    // id es la parte izquierda del orden del dominio, los ids van
-    // apareciendo en orden creciente: en cuanto se pasa del id buscado, ya
-    // no va a aparecer mas.
+    // El COMPARADOR es lo unico que sabe que es un id: el arbol solo sabe
+    // comparar. Recibe (clave, valor) y devuelve < 0, = 0 o > 0.
     //
-    // El corte se hace con un flag, porque `recorrerInOrder` NO puede
-    // interrumperse: su visitante devuelve `void`. Un recorrido completo
-    // sobre un arbol balanceado es O(n), y con el volumen de este sistema el
-    // costo es irrelevante.
-    bool encontrado = false;
-    bool terminado = false;
-    _arbol.recorrerInOrder([&](const T& valor) {
-        if (terminado) {
-            return;
+    // El comparador es UN TIPO con `operator()`, no una lambda: asi el TAD
+    // acepta cualquier cosa que se pueda llamar, y el test puede contar las
+    // comparaciones que hace la busqueda para verificar que es O(log n).
+    struct ComparadorPorId {
+        int operator()(int clave, const T& valor) const {
+            if (clave < valor.getId()) {
+                return -1;
+            }
+            if (clave > valor.getId()) {
+                return 1;
+            }
+            return 0;
         }
-        const int idActual = valor.getId();
-        if (idActual == id) {
-            fuera = valor;
-            encontrado = true;
-            terminado = true;
-            return;
-        }
-        // El recorrido ya paso el id buscado: no hay nada mas que mirar.
-        if (idActual > id) {
-            terminado = true;
-        }
-    });
-    return encontrado;
+    };
+
+    // `buscarPorClave()` es un DESCENSO por el arbol: compara la clave
+    // contra el nodo y se baja al hijo que corresponde. Son O(altura)
+    // comparaciones, que con el arbol balanceado es O(log n).
+    //
+    // `fuera` solo se escribe si la clave esta: si no esta, devuelve false
+    // y NO lo toca.
+    return _arbol.buscarPorClave(id, ComparadorPorId{}, fuera);
+}
+
+template <class T>
+void RepositorioCRUD<T>::rebalancear() {
+    // El `inOrder()` del arbol sale ordenado por clave (es la propiedad que
+    // define a un BST) y `construirDesdeOrdenados()` arma el arbol
+    // balanceado en O(n) a partir de una secuencia ordenada.
+    //
+    // OJO: `construirDesdeOrdenados()` REEMPLAZA el contenido del arbol, asi
+    // que el vector se tiene que pasar por COPIA: si se moviera, el arbol
+    // se quedaria sin sus nodos antes de reconstruirlo.
+    _arbol.construirDesdeOrdenados(_arbol.inOrder());
 }
 
 template <class T>

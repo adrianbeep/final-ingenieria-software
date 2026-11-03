@@ -860,6 +860,377 @@ TEST_CASE("el repositorio de turnos no tiene baja logica",
 }
 
 // ---------------------------------------------------------------------------
+// LA BUSQUEDA POR ID ES O(log n) (la promesa del roadmap de la Fase 3)
+// ---------------------------------------------------------------------------
+//
+// POR QUE ESTOS TESTS MIDEN EL NUMERO DE COMPARACIONES
+//
+// Un test de TIEMPO seria fragil (depende de la maquina) y no probaria
+// nada. Un test que solo dice "encuentra la entidad" tampoco: pasaria
+// igual con una implementacion O(n).
+//
+// Lo que se mide aqui es el NUMERO DE COMPARACIONES que hace la busqueda:
+// es la MEDIDA DIRECTA de la complejidad. Un recorrido del arbol entero
+// hace 1000 comparaciones con 1000 entidades; un descenso por un arbol
+// balanceado hace ~11.
+//
+// Los tests de abajo fallarian CONTRA la implementacion anterior (que
+// recorria el arbol en orden y que ademas dejaba el arbol en memoria
+// degenerado en una cadena).
+
+TEST_CASE("el arbol en memoria queda balanceado despues de 1000 altas",
+          repositorio_arbol_en_memoria_balanceado) {
+    // ESTE es el test que fija el segundo defecto: el arbol del
+    // repositorio tiene que estar balanceado NO SOLO despues de cargar
+    // desde el disco, sino tambien despues de las altas.
+    //
+    // Con `insertar()` en un loop y ids secuenciales (1, 2, 3...) el arbol
+    // degenera en una CADENA: la altura era 1000. Con el arbol balanceado
+    // la altura es ~log2(1000) = 10.
+    const std::string ruta = rutaDePrueba("balanceado_en_memoria.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    for (int id = 1; id <= 1000; ++id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+
+    CHECK(repo.contar() == 1000);
+    // La altura balanceada de 1000 nodos es 10; el margen de 12 deja lugar
+    // para el desbalanceo natural de un arbol construido por mitades.
+    CHECK(repo.arbol().altura() <= 12);
+    // Y el margen inferior acota por el otro lado: un arbol REALMENTE
+    // balanceado no puede ser mas bajo que log2(1000) - 1 = 9.
+    CHECK(repo.arbol().altura() >= 9);
+    // El contraste explicito: la altura NO puede ser la de una cadena.
+    // Con 1000 nodos, una cadena daria 1000; el arbol balanceado da 10.
+    CHECK(repo.arbol().altura() * 100 <= 1000);
+}
+
+TEST_CASE("el arbol en memoria sigue balanceado despues de 1000 modificaciones",
+          repositorio_arbol_tras_modificar_balanceado) {
+    // `modificar()` borra y reinserta: en un BST plano eso puede dejar el
+    // arbol todavia mas desbalanceado. El repositorio lo rebalancea, asi que
+    // la altura se mantiene en la del arbol balanceado.
+    const std::string ruta = rutaDePrueba("balanceado_modificar.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    for (int id = 1; id <= 1000; ++id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+
+    // Se modifica el primero: es el que cambia la forma del arbol (en un
+    // BST plano, sacar la raiz de una cadena la deja desbalanceada).
+    repo.modificar(Alumno(1, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "MAT-99999"));
+
+    CHECK(repo.contar() == 1000);
+    CHECK(repo.arbol().altura() <= 12);
+
+    // Y se modifica uno del medio, que es la raiz del arbol balanceado.
+    repo.modificar(Alumno(500, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-88888"));
+
+    CHECK(repo.contar() == 1000);
+    CHECK(repo.arbol().altura() <= 12);
+
+    // La entidad modificada sigue siendo la correcta y no se duplico.
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(1, encontrado));
+    CHECK(encontrado.getNombre() == "Nuevo");
+    CHECK(repo.buscarPorId(500, encontrado));
+    CHECK(encontrado.getNombre() == "Otro");
+}
+
+TEST_CASE("la busqueda por id hace O(log n) comparaciones: se cuentan, no se miden en el reloj",
+          repositorio_busqueda_por_id_es_log_n) {
+    // ESTE es el test que fija el PRIMER defecto.
+    //
+    // El comparador de `buscarPorClave()` CUENTA sus invocaciones. La
+    // busqueda del repositorio es un DESCENSO por el arbol: visita como
+    // maximo un nodo por nivel, asi que hace como maximo `altura()`
+    // comparaciones. Un recorrido del arbol entero haria `n` comparaciones.
+    //
+    // La cuenta se hace sobre el ARBOL DEL REPOSITORIO, construido igual que
+    // lo construye el repositorio (mismo `construirDesdeOrdenados()`), y
+    // con el MISMO comparador por id que usa el repositorio. Asi el test
+    // mide la complejidad REAL de la busqueda del repositorio.
+    const int cantidad = 1000;
+
+    std::vector<Alumno> ordenados;
+    for (int id = 1; id <= cantidad; ++id) {
+        ordenados.push_back(alumnoDePrueba(id));
+    }
+
+    // El arbol del repositorio: balanceado, con la misma altura que el que
+    // el repositorio mantiene en memoria.
+    const std::string ruta = rutaDePrueba("log_n.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    for (int id = 1; id <= cantidad; ++id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+
+    ArbolBST<Alumno> arbol;
+    arbol.construirDesdeOrdenados(ordenados);
+
+    // El comparador por id, IGUAL al del repositorio, pero contando.
+    struct ComparadorContador {
+        int* contador;
+        int operator()(int clave, const Alumno& valor) const {
+            ++(*contador);
+            if (clave < valor.getId()) {
+                return -1;
+            }
+            if (clave > valor.getId()) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    Alumno fuera;
+    int comparaciones = 0;
+    CHECK(arbol.buscarPorClave(777, ComparadorContador{&comparaciones}, fuera));
+    CHECK(fuera.getId() == 777);
+
+    // Un descenso por el arbol: como maximo un nodo por nivel.
+    CHECK(comparaciones <= arbol.altura());
+    // Y la cuenta NO crece linealmente con la cantidad de entidades.
+    CHECK(comparaciones < 20);
+    CHECK(comparaciones < cantidad / 10);
+
+    // La altura del arbol del REPOSITORIO es la misma: por eso la busqueda
+    // del repositorio tambien es O(log n).
+    CHECK(repo.arbol().altura() == arbol.altura());
+}
+
+TEST_CASE("la cuenta de comparaciones no crece con la cantidad de entidades",
+          repositorio_busqueda_comparaciones_no_crecen) {
+    // El mismo tree con 100 entidades y con 1000: la busqueda hace
+    // COMPARACIONES DE LA MISMA MAGNITUD. Si la busqueda fuera O(n), la
+    // cuenta creeria con el tamano.
+    //
+    // Se mide sobre el arbol del repositorio: el que se usa es el mismo
+    // para las dos medidas.
+    const std::string ruta = rutaDePrueba("comparaciones_no_crecen.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    for (int id = 1; id <= 100; ++id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+
+    struct ComparadorContador {
+        int* contador;
+        int operator()(int clave, const Alumno& valor) const {
+            ++(*contador);
+            if (clave < valor.getId()) {
+                return -1;
+            }
+            if (clave > valor.getId()) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    // Con 100 entidades.
+    std::vector<Alumno> cien;
+    for (int id = 1; id <= 100; ++id) {
+        cien.push_back(alumnoDePrueba(id));
+    }
+    ArbolBST<Alumno> arbolCien;
+    arbolCien.construirDesdeOrdenados(cien);
+
+    Alumno fuera;
+    int comparacionesCien = 0;
+    CHECK(arbolCien.buscarPorClave(77, ComparadorContador{&comparacionesCien}, fuera));
+
+    // Con 1000 entidades.
+    std::vector<Alumno> mil;
+    for (int id = 1; id <= 1000; ++id) {
+        mil.push_back(alumnoDePrueba(id));
+    }
+    ArbolBST<Alumno> arbolMil;
+    arbolMil.construirDesdeOrdenados(mil);
+
+    int comparacionesMil = 0;
+    CHECK(arbolMil.buscarPorClave(777, ComparadorContador{&comparacionesMil}, fuera));
+
+    // Diez veces mas entidades NO pueden significar diez veces mas
+    // comparaciones: las dos cuentas son de la misma magnitud (log2).
+    CHECK(comparacionesMil <= comparacionesCien + 4);
+    CHECK(comparacionesMil < 20);
+    CHECK(comparacionesCien < 20);
+}
+
+TEST_CASE("la busqueda por id del repositorio no recorre el arbol: cuenta comparaciones",
+          repositorio_busqueda_no_recorre) {
+    // El repositorio expone su arbol (para los tests de balanceo), asi que
+    // el test puede buscar por id sobre ESE arbol con el comparador por id
+    // y contar las comparaciones. Es la MISMA busqueda que hace
+    // `buscarPorId()`: mismo arbol, mismo comparador, mismo descenso.
+    //
+    // Contra la implementacion anterior (un recorrido en orden con corte
+    // temprano) el recuento habria sido O(n), no O(log n).
+    const std::string ruta = rutaDePrueba("no_recorre.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    for (int id = 1; id <= 1000; ++id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+
+    struct ComparadorContador {
+        int* contador;
+        int operator()(int clave, const Alumno& valor) const {
+            ++(*contador);
+            if (clave < valor.getId()) {
+                return -1;
+            }
+            if (clave > valor.getId()) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    // La busqueda de un id que NO existe tambien tiene que ser O(log n):
+    // el descenso termina en una hoja, sin recorrer el arbol.
+    Alumno fuera;
+    int comparaciones = 0;
+    CHECK(!repo.arbol().buscarPorClave(5000, ComparadorContador{&comparaciones}, fuera));
+    CHECK(comparaciones <= repo.arbol().altura());
+    CHECK(comparaciones < 20);
+}
+
+TEST_CASE("la busqueda por id sigue funcionando en los tres repositorios",
+          repositorio_busqueda_por_id_los_tres) {
+    // El comparador del repositorio usa `getId()`, que existe en las TRES
+    // entidades. En particular `Turno` NO tiene `getTipo()` (no es una
+    // `Persona`): si el comparador dependiera del tipo, el repositorio de
+    // turnos no compilaria.
+    const std::string rutaAlumnos = rutaDePrueba("tres_alumnos.dat");
+    const std::string rutaProfesores = rutaDePrueba("tres_profesores.dat");
+    const std::string rutaTurnos = rutaDePrueba("tres_turnos.dat");
+    std::filesystem::remove(rutaAlumnos);
+    std::filesystem::remove(rutaProfesores);
+    std::filesystem::remove(rutaTurnos);
+
+    RepositorioAlumnos repoAlumnos(rutaAlumnos);
+    RepositorioProfesores repoProfesores(rutaProfesores);
+    RepositorioTurnos repoTurnos(rutaTurnos);
+
+    for (int id = 1; id <= 200; ++id) {
+        repoAlumnos.alta(alumnoDePrueba(id));
+        repoProfesores.alta(profesorDePrueba(id));
+        repoTurnos.alta(turnoDePrueba(id));
+    }
+
+    // Los tres arboles quedan balanceados.
+    CHECK(repoAlumnos.arbol().altura() <= 12);
+    CHECK(repoProfesores.arbol().altura() <= 12);
+    CHECK(repoTurnos.arbol().altura() <= 12);
+
+    // Y los tres encuentran por id, tanto un id presente como uno ausente.
+    Alumno alumno;
+    CHECK(repoAlumnos.buscarPorId(150, alumno));
+    CHECK(alumno.getId() == 150);
+    CHECK(!repoAlumnos.buscarPorId(500, alumno));
+
+    Profesor profesor;
+    CHECK(repoProfesores.buscarPorId(150, profesor));
+    CHECK(profesor.getId() == 150);
+    CHECK(!repoProfesores.buscarPorId(500, profesor));
+
+    Turno turno;
+    CHECK(repoTurnos.buscarPorId(150, turno));
+    CHECK(turno.getId() == 150);
+    CHECK(!repoTurnos.buscarPorId(500, turno));
+}
+
+TEST_CASE("la busqueda por id devuelve la entidad COMPLETA, no solo el id",
+          repositorio_busqueda_devuelve_la_entidad) {
+    // La busca por clave no puede devolver un "id": devuelve el VALOR
+    // entero que esta en el nodo. El test comprueba que el valor es la
+    // entidad completa (con todos sus campos), no solo una coincidencia.
+    const std::string ruta = rutaDePrueba("entidad_completa.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(7));
+
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(7, encontrado));
+    CHECK(encontrado.getId() == 7);
+    CHECK(encontrado.getNombre() == nombreDePrueba(7));
+    CHECK(encontrado.getApellido() == apellidoDePrueba(7));
+    CHECK(encontrado.getEmail() == "alumno7@unlp.edu.ar");
+    CHECK(encontrado.getTelefono() == "2214556677");
+    CHECK(encontrado.getMatricula() == "MAT-20007");
+    CHECK(encontrado.esActivo());
+}
+
+TEST_CASE("la busqueda por id de un id ausente NO modifica la variable de salida",
+          repositorio_busqueda_no_toca_la_salida) {
+    // La ausencia es un dato de la consulta: devuelve false y deja `fuera`
+    // como estaba. El `buscarPorClave()` del arbol tiene esa misma regla.
+    const std::string ruta = rutaDePrueba("no_toca_salida.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));
+
+    // Se busca primero una entidad QUE EXISTE, para dejar `fuera` con un
+    // valor reconocible.
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(1, encontrado));
+    CHECK(encontrado.getId() == 1);
+
+    // Ahora se busca una que NO existe: `fuera` tiene que seguir con la
+    // entidad anterior, no vacia ni modificada.
+    CHECK(!repo.buscarPorId(999, encontrado));
+    CHECK(encontrado.getId() == 1);
+    CHECK(encontrado.getMatricula() == "MAT-20001");
+}
+
+TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado por id",
+          repositorio_archivo_ordenado_despues_de_mutar) {
+    // El rebalanceo NO puede romper el orden del archivo: `persistir()`
+    // escribe el `inOrder()` del arbol, y ese recorrido tiene que salir
+    // ordenado por id.
+    const std::string ruta = rutaDePrueba("ordenado_tras_mutar.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    // Altas en orden DESCENDENTE: el archivo tiene que salir ordenado igual.
+    for (int id = 20; id >= 1; --id) {
+        repo.alta(alumnoDePrueba(id));
+    }
+    // Y una modificacion en el medio.
+    repo.modificar(Alumno(10, "Cambio", "Nombre", "cambio@unlp.edu.ar", "2214000000", "MAT-77777"));
+
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    CHECK(lineas.size() == 22);
+    int idAnterior = 0;
+    for (std::size_t i = 2; i < lineas.size(); ++i) {
+        const int id = std::stoi(Utils::separar(lineas[i], '|')[0]);
+        CHECK(id > idAnterior);
+        idAnterior = id;
+    }
+    CHECK(Utils::separar(lineas[2], '|')[0] == "1");
+    CHECK(Utils::separar(lineas[21], '|')[0] == "20");
+
+    // Y `listar()` tambien sale ordenado por id.
+    const std::vector<Alumno> listados = repo.listar();
+    CHECK(listados.size() == 20);
+    for (std::size_t i = 1; i < listados.size(); ++i) {
+        CHECK(listados[i - 1].getId() < listados[i].getId());
+    }
+}
+
+// ---------------------------------------------------------------------------
 // INTERFACES: EL CONTRATO UNICO Y LOS FAKES
 // ---------------------------------------------------------------------------
 

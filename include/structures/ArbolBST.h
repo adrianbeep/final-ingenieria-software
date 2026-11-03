@@ -72,6 +72,39 @@ public:
     // Busca un valor por equivalencia. Devuelve true si esta.
     bool buscar(const T& valor_) const;
 
+    // Busca por una CLAVE, comparada contra el valor almacenado con el
+    // COMPARADOR que da el llamador.
+    //
+    // EL CONTRATO DEL COMPARADOR: recibe (clave, valor) y devuelve
+    //   < 0 si la clave es MENOR que el valor
+    //   = 0 si la clave y el valor son EQUIVALENTES
+    //   > 0 si la clave es MAYOR que el valor
+    // O sea: el mismo criterio de tres vias de `std::less`, pero entre la
+    // clave y el valor, no entre dos valores.
+    //
+    // POR QUE EXISTE
+    //
+    // El arbol indexa por el `operator<` del TIPO COMPLETO, asi que
+    // `buscar()` solo puede preguntar por un `T` entero. Un repositorio,
+    // en cambio, necesita preguntar por una PARTE del valor (el id): para
+    // preguntar "existe el #7" con `buscar()` habria que construir una
+    // entidad de prueba COMPLETA (con nombre, apellido, email, telefono y
+    // matricula validos, porque los setters lanzan `DatoInvalidoException`),
+    // solo para descartar ese dato en la comparacion.
+    //
+    // Este metodo separa la CLAVE del VALOR: el arbol sigue siendo
+    // generico (no sabe que es un id ni que existe el dominio) y el
+    // COMPARADOR es el que aporta el conocimiento de la parte.
+    //
+    // COMPLEJIDAD: O(altura). Es un DESCENSO por el arbol, igual que
+    // `buscar()`: no recorre el arbol entero, asi que sobre un arbol
+    // balanceado la busqueda es O(log n).
+    //
+    // `fuera` solo se escribe si la clave esta: si no esta, devuelve false
+    // y NO lo toca. No modifica el arbol y no lanza excepciones.
+    template <class K, class Comparador>
+    bool buscarPorClave(const K& clave, Comparador comparador, T& fuera) const;
+
     // Elimina un valor por equivalencia. Devuelve false si no estaba.
     bool eliminar(const T& valor_);
 
@@ -350,6 +383,31 @@ bool ArbolBST<T>::buscar(const T& valor_) const {
             return true;  // equivalentes
         }
     }
+    return false;
+}
+
+template <class T>
+template <class K, class Comparador>
+bool ArbolBST<T>::buscarPorClave(const K& clave, Comparador comparador, T& fuera) const {
+    // El descenso es el MISMO que el de `buscar()`, pero en vez de comparar
+    // el valor buscado contra el del nodo, se compara la CLAVE contra el
+    // del nodo con el comparador del llamador. Por eso el metodo es
+    // generico: el arbol no sabe que es la clave.
+    const Nodo* nodo = raiz;
+    while (nodo) {
+        const int comparacion = comparador(clave, nodo->valor);
+        if (comparacion < 0) {
+            nodo = nodo->izq;
+        } else if (comparacion > 0) {
+            nodo = nodo->der;
+        } else {
+            // Equivalentes: la clave esta. Se copia el valor encontrado y
+            // se devuelve true.
+            fuera = nodo->valor;
+            return true;
+        }
+    }
+    // La clave NO esta: `fuera` no se toco (queda como estaba).
     return false;
 }
 
