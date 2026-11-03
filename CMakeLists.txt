@@ -49,7 +49,8 @@ endif()
 #   turnos      STATIC    src/entities/Turno.cpp                     [Fase 2]
 #   structures  INTERFACE  templates header-only (ArbolBST, ListaEnlazada) [Fase 3]
 #   persistencia INTERFACE  ArchivoTexto<T> es template              [Fase 4]
-#   repositorios INTERFACE  RepositorioCRUD<T> es template           [Fase 5]
+#   repositorios INTERFACE  IRepositorio<T>, IRepositorioBajaLogica<T> y
+#                           RepositorioCRUD<T> son templates           [Fase 5]
 #   servicios   STATIC    src/services/ServicioTurnos.cpp            [Fase 5]
 # ---------------------------------------------------------------------------
 
@@ -113,6 +114,51 @@ add_library(persistencia INTERFACE)
 target_include_directories(persistencia INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(persistencia INTERFACE core)
 
+# --- repositorios: las interfaces y el template CRUD ---
+# `IRepositorio<T>`, `IRepositorioBajaLogica<T>` y `RepositorioCRUD<T>` son
+# TEMPLATES: sin conocer `T` no se pueden compilar, asi que viven enteros en
+# include/repositories/ y no hay .cpp que compilar. Es el mismo caso que
+# `structures` y `persistencia`, asi que el target es INTERFACE.
+#
+# Este target es SOLO la parte header-only. Los tres repositorios concretos
+# (alumnos, profesores y turnos) SI tienen .cpp, asi que van en un target
+# STATIC aparte, `repositorios_concretos`, que es el que enlazan los tests y
+# el ejecutable.
+#
+# A diferencia de `structures`, este SI propaga dependencias: el template
+# CRUD usa `ArbolBST` (structures) y `ArchivoTexto` (persistencia), y las
+# excepciones del dominio (core).
+add_library(repositorios INTERFACE)
+target_include_directories(repositorios INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(repositorios INTERFACE core structures persistencia warnings)
+
+# --- repositorios concretos: alumnos, profesores y turnos ---
+# Es un target STATIC, no INTERFACE, porque los tres repositorios tienen
+# metodos que NO son de template (`bajaLogica`, `reactivar`): hay codigo que
+# compilar y que empaquetar en una libreria.
+#
+# Los tres son modulos del mismo tipo (un repositorio por entidad), asi que
+# van juntos en UNA sola libreria: comparten la implementacion de la baja
+# logica (`BajaLogicaCompartida`), que es la misma para alumnos y profesores.
+file(GLOB REPOSITORIOS_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/repositories/*.cpp")
+add_library(repositorios_concretos STATIC ${REPOSITORIOS_SRCS})
+target_include_directories(repositorios_concretos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(repositorios_concretos PUBLIC core structures persistencia repositorios warnings)
+
+# --- servicios: las reglas de negocio ---
+# A diferencia de los modulos anteriores, este target es STATIC y NO
+# INTERFACE: `ServicioTurnos` no es un template, asi que hay codigo que
+# compilar y que empaquetar en una libreria.
+#
+# Enlaza con `core` (de ahi vienen `Fecha`, `Hora`, `Utils` y las
+# excepciones), con `repositorios` (las interfaces `IRepositorio<T>`, que es
+# contra lo que el servicio escribe) y con las tres entidades, porque el
+# servicio construye turnos y consulta alumnos y profesores.
+file(GLOB SERVICES_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/services/*.cpp")
+add_library(servicios STATIC ${SERVICES_SRCS})
+target_include_directories(servicios PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(servicios PUBLIC core alumnos profesores turnos repositorios warnings)
+
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -126,5 +172,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia warnings)
+target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia repositorios repositorios_concretos servicios warnings)
 add_test(NAME tests COMMAND tests)

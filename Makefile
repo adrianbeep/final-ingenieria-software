@@ -17,6 +17,8 @@ BUILD_DIR := bin
 CORE_SRCS := $(wildcard src/domain/*.cpp) $(wildcard src/utils/*.cpp) $(wildcard src/exceptions/*.cpp)
 UI_SRCS   := $(wildcard src/ui/*.cpp)
 ENTITIES_SRCS := $(wildcard src/entities/*.cpp)
+REPOSITORIES_SRCS := $(wildcard src/repositories/*.cpp)
+SERVICES_SRCS := $(wildcard src/services/*.cpp)
 MAIN_SRCS := $(wildcard src/*.cpp)
 TEST_SRCS := $(wildcard tests/*.cpp)
 
@@ -64,8 +66,14 @@ test: $(TEST_TARGET)
 # El binario de tests NO linkea src/main.cpp: habria dos main().
 # Linkea UI_SRCS porque los tests de la Fase 1 ejercitan ui::Consola::leerEntero.
 # Linkea ENTITIES_SRCS porque los tests de la Fase 2 ejercitan las entidades.
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) -o $@ $(LDFLAGS)
+# Linkea REPOSITORIES_SRCS porque los tests de la Fase 5 ejercitan los
+# repositorios (el template `RepositorioCRUD` es header-only, pero los tres
+# repositorios concretos tienen .cpp).
+# Linkea SERVICES_SRCS porque los tests de la Fase 5 ejercitan las reglas de
+# negocio del servicio de turnos (que, a diferencia de los demas modulos, si
+# tiene .cpp).
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) -o $@ $(LDFLAGS)
 
 # El prefijo `-` hace que make NO falle si el archivo no existe: `del` y
 # `rmdir` devuelven error cuando el destino no esta, y un `make clean` sobre

@@ -644,6 +644,242 @@ TEST_CASE("la asignacion de movimiento libera lo que habia", estructuras_arbol_m
     CHECK(ArbolBST<Entero>::nodosVivos() == 0);
 }
 
+// ---------------------------------------------------------------------------
+// Arbol: busqueda por CLAVE (la puerta que usa el repositorio)
+// ---------------------------------------------------------------------------
+//
+// POR QUE EXISTEN ESTOS TESTS
+//
+// `buscarPorClave()` es lo que convierte la busqueda del repositorio en
+// O(log n): sin el, el repositorio tiene que RECORRER el arbol entero
+// (porque `buscar()` compara el TIPO COMPLETO y para preguntar por el id
+// habria que inventar una entidad de prueba completa).
+//
+// El test del REPOSITORIO mide el numero de comparaciones de la busqueda
+// REAL del repositorio. Estos tests miden el METODO: que encuentre, que no
+// toque `fuera` cuando no esta, que sirva con distintos tipos de clave y
+// que NO MODIFIQUE el arbol.
+
+TEST_CASE("buscarPorClave encuentra una clave presente y devuelve el valor",
+          estructuras_buscar_por_clave_encuentra) {
+    ArbolBST<Entero> arbol;
+    arbol.insertar(Entero{5});
+    arbol.insertar(Entero{3});
+    arbol.insertar(Entero{8});
+
+    Entero fuera{0};
+    // El comparador es un tipo con `operator()`: recibe (clave, valor).
+    struct Comparador {
+        int operator()(int clave, const Entero& valor) const {
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    CHECK(arbol.buscarPorClave(3, Comparador{}, fuera));
+    CHECK(fuera.v == 3);
+    CHECK(arbol.buscarPorClave(5, Comparador{}, fuera));
+    CHECK(fuera.v == 5);
+    CHECK(arbol.buscarPorClave(8, Comparador{}, fuera));
+    CHECK(fuera.v == 8);
+}
+
+TEST_CASE("buscarPorClave devuelve false y NO toca `fuera` si la clave no esta",
+          estructuras_buscar_por_clave_ausente) {
+    ArbolBST<Entero> arbol;
+    arbol.insertar(Entero{5});
+    arbol.insertar(Entero{3});
+    arbol.insertar(Entero{8});
+
+    struct Comparador {
+        int operator()(int clave, const Entero& valor) const {
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    // `fuera` vale 99 antes de la busqueda: si la clave no esta, el metodo
+    // tiene que devolver false Y dejar `fuera` como estaba.
+    Entero fuera{99};
+    CHECK(!arbol.buscarPorClave(4, Comparador{}, fuera));
+    CHECK(fuera.v == 99);
+    CHECK(!arbol.buscarPorClave(0, Comparador{}, fuera));
+    CHECK(fuera.v == 99);
+    CHECK(!arbol.buscarPorClave(100, Comparador{}, fuera));
+    CHECK(fuera.v == 99);
+}
+
+TEST_CASE("buscarPorClave funciona con distintos tipos de clave",
+          estructuras_buscar_por_clave_tipos_de_clave) {
+    // El arbol guarda `Entero`, pero la clave puede ser de otro tipo: lo que
+    // importa es que el COMPARADOR sepa relacionar la clave con el valor.
+    ArbolBST<Entero> arbol;
+    for (int i = 1; i <= 100; ++i) {
+        arbol.insertar(Entero{i});
+    }
+
+    // Clave `int`.
+    struct ComparadorEntero {
+        int operator()(int clave, const Entero& valor) const {
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    // Clave `long`: el mismo valor, otro tipo.
+    struct ComparadorLong {
+        int operator()(long clave, const Entero& valor) const {
+            if (clave < static_cast<long>(valor.v)) {
+                return -1;
+            }
+            if (clave > static_cast<long>(valor.v)) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    // Clave `std::string`: el comparador la CONVIERTE y la busca.
+    struct ComparadorTexto {
+        int operator()(const std::string& clave, const Entero& valor) const {
+            const int numero = std::stoi(clave);
+            if (numero < valor.v) {
+                return -1;
+            }
+            if (numero > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    Entero fuera{0};
+    CHECK(arbol.buscarPorClave(42, ComparadorEntero{}, fuera));
+    CHECK(fuera.v == 42);
+    CHECK(arbol.buscarPorClave(42L, ComparadorLong{}, fuera));
+    CHECK(fuera.v == 42);
+    CHECK(arbol.buscarPorClave(std::string("42"), ComparadorTexto{}, fuera));
+    CHECK(fuera.v == 42);
+    // Y una clave de texto que NO esta en el arbol (el arbol tiene de 1 a 100).
+    CHECK(!arbol.buscarPorClave(std::string("101"), ComparadorTexto{}, fuera));
+}
+
+TEST_CASE("buscarPorClave no modifica el arbol", estructuras_buscar_por_clave_no_modifica) {
+    ArbolBST<Entero> arbol;
+    for (int i = 1; i <= 50; ++i) {
+        arbol.insertar(Entero{i});
+    }
+
+    const std::size_t tam = arbol.size();
+    const int altura = arbol.altura();
+    const std::vector<Entero> antes = arbol.inOrder();
+
+    struct Comparador {
+        int operator()(int clave, const Entero& valor) const {
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    Entero fuera{0};
+    // Una clave presente, una ausente y una por debajo de todo.
+    CHECK(arbol.buscarPorClave(25, Comparador{}, fuera));
+    CHECK(!arbol.buscarPorClave(500, Comparador{}, fuera));
+    CHECK(!arbol.buscarPorClave(-1, Comparador{}, fuera));
+
+    // El arbol quedo EXACTAMENTE como estaba.
+    CHECK(arbol.size() == tam);
+    CHECK(arbol.altura() == altura);
+    CHECK(arbol.inOrder() == antes);
+}
+
+TEST_CASE("buscarPorClave en un arbol vacio devuelve false",
+          estructuras_buscar_por_clave_vacio) {
+    ArbolBST<Entero> arbol;
+
+    struct Comparador {
+        int operator()(int clave, const Entero& valor) const {
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    Entero fuera{7};
+    CHECK(!arbol.buscarPorClave(1, Comparador{}, fuera));
+    CHECK(fuera.v == 7);
+    CHECK(arbol.vacio());
+}
+
+TEST_CASE("buscarPorClave hace O(altura) comparaciones: cuenta las llamadas",
+          estructuras_buscar_por_clave_complejidad) {
+    // El comparador CUENTA cuantas veces lo llaman. Es la forma de MEDIR la
+    // complejidad sin depender del reloj: un test de tiempo es fragil
+    // (la maquina lo hace lento o rapido) y no prueba nada.
+    //
+    // ESTE es el test que distingue la busqueda por CLAVE de un RECORRIDO
+    // del arbol: si la implementacion recorriera el arbol entero, haria
+    // 1000 comparaciones en vez de ~11.
+    const int cantidad = 1000;
+    std::vector<Entero> ordenados;
+    for (int i = 1; i <= cantidad; ++i) {
+        ordenados.push_back(Entero{i});
+    }
+
+    ArbolBST<Entero> arbol;
+    arbol.construirDesdeOrdenados(ordenados);
+
+    // Un comparador que cuenta.
+    struct ComparadorContador {
+        int* contador;
+        int operator()(int clave, const Entero& valor) const {
+            ++(*contador);
+            if (clave < valor.v) {
+                return -1;
+            }
+            if (clave > valor.v) {
+                return 1;
+            }
+            return 0;
+        }
+    };
+
+    Entero fuera{0};
+    int comparaciones = 0;
+    CHECK(arbol.buscarPorClave(777, ComparadorContador{&comparaciones}, fuera));
+    CHECK(fuera.v == 777);
+
+    // La busqueda es un DESCENSO: como maximo visita un nodo por nivel.
+    CHECK(comparaciones <= arbol.altura());
+    // Y no es un recorrido: 1000 nodos NO son 1000 comparaciones.
+    CHECK(comparaciones < 20);
+    CHECK(comparaciones < cantidad / 10);
+}
+
 TEST_CASE("cada instanciacion del TAD tiene su propio contador de nodos",
           estructuras_arbol_contadores_independientes) {
     CHECK(ArbolBST<Entero>::nodosVivos() == 0);
