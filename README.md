@@ -52,7 +52,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 251 caso(s), 0 fallo(s)
+# 266 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -72,6 +72,22 @@ docs/       trazabilidad y decisiones de diseno
 
 Los TADs genericos (`ArbolBST`, `ListaEnlazada`, `ArchivoTexto`, `RepositorioCRUD`)
 son **templates header-only**: viven en `include/` y no tienen `.cpp`.
+
+### Por que el arbol, y por que la busqueda es O(log n)
+
+`ArbolBST<T>` es el backing de las tres colecciones, y la razon es una sola: las
+busquedas son por clave y el conjunto crece. La busqueda por id es **O(log n)**, y
+eso esta garantizado por construccion:
+
+- El repositorio busca con `ArbolBST<T>::buscarPorClave()`, un **descenso** por
+  el arbol que compara la clave contra el valor almacenado. No recorre el arbol.
+- El arbol del repositorio esta **balanceado siempre**: se reconstruye con
+  `construirDesdeOrdenados()` despues de cada mutacion, no solo al cargar.
+  (`insertar()` NO balancea: es una decision de diseno del TAD.)
+
+Medido con 1000 entidades: **altura 10 y 9 comparaciones** para encontrar un id
+y 9 para un id inexistente. Los tests fijan la complejidad **contando
+comparaciones**, no midiendo el reloj.
 
 ### Los archivos de datos de ejemplo
 
