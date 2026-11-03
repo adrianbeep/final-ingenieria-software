@@ -5,6 +5,7 @@
 #include "repositories/RepositorioCRUD.h"
 
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // RepositorioProfesores: el repositorio de PROFESORES.
@@ -55,6 +56,22 @@ public:
     // repetido es un dato de la consulta, no un error (es el mismo criterio
     // que usa `buscarPorId()` cuando no encuentra el id).
     bool existeLegajo(const std::string& legajo, int& idExistente) const;
+
+    // Los profesores ACTIVOS, en orden ascendente de id.
+    //
+    // Es la consulta de las pantallas que eligen a QUIEN agendar: un profesor
+    // dado de baja no puede tener turnos (es una regla del servicio), asi
+    // que no tiene sentido ofrecerlo.
+    //
+    // NO lanza y NO modifica nada: es una CONSULTA.
+    std::vector<Profesor> listarActivos() const;
+
+    // Los profesores DADOS DE BAJA, en orden ascendente de id.
+    //
+    // Es la consulta de la pantalla de reactivation: un profesor dado de baja
+    // sigue en el repositorio (la baja es logica), asi que hay que poder
+    // listarlos para volver a activarlos.
+    std::vector<Profesor> listarInactivos() const;
 
     // Las dos ESCRITURAS pasan por la unicidad del legajo.
     void alta(const Profesor& profesor) override;

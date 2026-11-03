@@ -39,6 +39,42 @@ bool RepositorioAlumnos::existeMatricula(const std::string& matricula, int& idEx
     return buscarMatricula(matricula, -1, idExistente);
 }
 
+std::vector<Alumno> RepositorioAlumnos::listarActivos() const {
+    std::vector<Alumno> activos;
+
+    // `listar()` sale ordenado por id, asi que el resultado tambien.
+    //
+    // POR QUE NO UN INDICE SECUNDARIO POR EL FLAG `activo`
+    //
+    // El repositorio esta indexado por ID. Un indice por "activo" seria un
+    // estado mas que hay que mantener en cada alta, modificacion, baja y
+    // recarga, con el riesgo de que se desincronice del arbol. El volumen del
+    // sistema lo hace irrelevante: un recorrido lineal sobre cientos de
+    // alumnos es despreciable al lado de escribir el archivo. Es el mismo
+    // criterio que usa la busqueda por matricula.
+    for (const Alumno& alumno : listar()) {
+        if (alumno.esActivo()) {
+            activos.push_back(alumno);
+        }
+    }
+
+    return activos;
+}
+
+std::vector<Alumno> RepositorioAlumnos::listarInactivos() const {
+    std::vector<Alumno> inactivos;
+
+    // Los INACTIVOS tambien se listan: la baja es LOGICA, asi que el alumno
+    // sigue en el repositorio y hay que poder mostrarlo (y reactivarlo).
+    for (const Alumno& alumno : listar()) {
+        if (!alumno.esActivo()) {
+            inactivos.push_back(alumno);
+        }
+    }
+
+    return inactivos;
+}
+
 bool RepositorioAlumnos::buscarMatricula(const std::string& matricula,
                                           int idExcluido,
                                           int& idExistente) const {
