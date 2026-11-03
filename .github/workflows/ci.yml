@@ -14,8 +14,14 @@ name: CI
 on:
   push:
     branches: [main]
+  # SIN FILTRO DE RAMAS A PROPOSITO.
+  #
+  # La Fase 6 se entrega en una CADENA de pull requests y NINGUNO de ellos
+  # apunta a `main`: cada porcion vive en su propia rama y el PR tracker es el
+  # unico que conecta con `main` (ver issue #16, seccion 7.2). Con un filtro
+  # `branches: [main]` el CI no se dispararia en ninguno de los PRs de la
+  # cadena.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
