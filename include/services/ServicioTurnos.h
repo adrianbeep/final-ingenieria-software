@@ -105,6 +105,70 @@ public:
     // muestra como pendiente, aunque siga en el repositorio.
     std::vector<Turno> turnosVigentesDe(int idAlumno_) const;
 
+    // ------------------------------------------------------------------------
+    // LAS CONSULTAS DE LA INTERFAZ
+    //
+    // Son las que arman las pantallas de Consultas, el Historial de alumnos y
+    // el Calendario. Las cinco tienen el MISMO criterio, y es el de
+    // `turnosVigentesDe`:
+    //
+    //   - NO lanzan excepciones y NO validan los ids: si el id no existe,
+    //     devuelven un vector VACIO. La ausencia es un DATO de la consulta,
+    //     no un error (la UI valida el id antes de preguntar).
+    //   - Devuelven los turnos de CUALQUIER estado (`Activo`, `Cancelado`,
+    //     `Reprogramado`): un reporte tiene que poder mostrar tambien los
+    //     cancelados. Esto es lo que las diferencia de `turnosVigentesDe`,
+    //     que devuelve solo los `Activo`.
+    //   - Devuelven los resultados ORDENADOS por id: el repositorio ya los
+    //     entrega ordenados, asi que el filtrado conserva el orden.
+    // ------------------------------------------------------------------------
+
+    // Todos los turnos de un alumno, en cualquier estado.
+    std::vector<Turno> turnosDeAlumno(int idAlumno_) const;
+
+    // Todos los turnos de un profesor, en cualquier estado.
+    std::vector<Turno> turnosDeProfesor(int idProfesor_) const;
+
+    // Todos los turnos de una materia, en cualquier estado.
+    std::vector<Turno> turnosDeMateria(Materia materia_) const;
+
+    // Todos los turnos de una fecha, en cualquier estado.
+    std::vector<Turno> turnosDeFecha(const Fecha& fecha_) const;
+
+    // Todos los turnos ENTRE dos fechas, INCLUSIVE en los dos extremos
+    // (desde <= turno <= hasta).
+    //
+    // Lanza `DatoInvalidoException` si la fecha inicial es POSTERIOR a la
+    // final: un rango al reves no es un rango vacio, es un error de quien
+    // lo pidio.
+    std::vector<Turno> turnosDeRango(const Fecha& desde_, const Fecha& hasta_) const;
+
+    // Modifica un turno ya agendado: cambia su AULA, su DURACION y su
+    // MATERIA.
+    //
+    // QUE SE PUEDE CAMBIAR Y QUE NO
+    //
+    // La FECHA y la HORA NO se tocan: moverlas es REPROGRAMAR, y reprogramar
+    // tiene sus propias reglas (crea un turno nuevo y deja el viejo como
+    // `Reprogramado`). El alumno, el profesor y el estado tampoco cambian.
+    //
+    // LAS REGLAS
+    //
+    //   1. el turno tiene que existir;
+    //   2. el turno tiene que estar `Activo` (un cancelado o un
+    //      reprogramado no se modifica: son estados finales);
+    //   3. los datos nuevos tienen que ser validos (la duracion y el aula los
+    //      validan sus propios setters);
+    //   4. el turno tiene que seguir TERMINANDO dentro del horario de
+    //      atencion, con la duracion nueva;
+    //   5. el turno no puede pisar a NINGUN otro turno.
+    //
+    // Si alguna regla falla, el turno queda EXACTAMENTE como estaba.
+    void modificarTurno(int idTurno_,
+                        const std::string& nuevaAula_,
+                        int nuevaDuracionMin_,
+                        Materia nuevaMateria_);
+
 private:
     // Aplica TODAS las reglas de `agendar` a un turno candidato. Es el
     // unico lugar donde estan: `agendar` y `reprogramar` las comparten, asi
@@ -125,7 +189,21 @@ private:
 
     // Lanza `TurnoOcupadoException` si el turno se pisa con algun turno
     // vigente, sea por el alumno o por el profesor.
-    void verificarSolapamiento(const Turno& turno_);
+    //
+    // `idTurnoExcluido` es el turno que NO se mira (o -1, que es "no
+    // excluir a nadie").
+    //
+    // POR QUE HACE FALTA LA EXCLUSION
+    //
+    // `modificarTurno` cambia la duracion de un turno que YA esta guardado: el
+    // turno se pisa CONSIGO MISMO (su ventana nueva se superpone con su
+    // ventana vieja) y ese choque no es un error: es el mismo turno. Sin la
+    // exclusion, ningun turno se podria alargar. La exclusion es por id, que
+    // es la clave con la que el repositorio indexa los turnos.
+    //
+    // `agendar` y `reprogramar` no excluyen a nadie (usan el valor por
+    // defecto): los turnos que miran son SIEMPRE otros turnos.
+    void verificarSolapamiento(const Turno& turno_, int idTurnoExcluido_ = -1);
 
     // Busca un turno por id. Lanza `EntidadNoExisteException` si no esta.
     Turno buscarTurno(int idTurno_) const;
