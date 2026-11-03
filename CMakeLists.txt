@@ -37,6 +37,31 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 # ---------------------------------------------------------------------------
+# FTXUI: la libreria de TUI, vendorizada en third_party/ftxui.
+#
+# El codigo de terceros se compila como un target PROPIO, con `-w`:
+#   -w         -> los warnings del codigo de terceros NO son nuestros. El
+#                 requisito "compila limpio sin warnings" es del codigo del
+#                 proyecto, y sigue intacto para el nuestro.
+#   SYSTEM     -> el include del vendor se pasa como `-isystem`, asi que los
+#                 headers de terceros no ensucian el build de nuestros .cpp
+#                 con los flags estrictos del proyecto.
+#
+# UNICODE/_UNICODE/NOMINMAX son obligatorias en Windows: ftxui.hpp tiene dos
+# `#error` duros sin ellas. En Linux son inofensivas (FTXUI solo las exige bajo
+# _WIN32), asi que aca se limitan a WIN32.
+# ---------------------------------------------------------------------------
+find_package(Threads REQUIRED)
+
+add_library(ftxui STATIC third_party/ftxui/ftxui.cpp)
+target_include_directories(ftxui SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ftxui")
+target_compile_options(ftxui PRIVATE -w)
+if(WIN32)
+  target_compile_definitions(ftxui PUBLIC UNICODE _UNICODE NOMINMAX)
+endif()
+target_link_libraries(ftxui PUBLIC Threads::Threads)
+
+# ---------------------------------------------------------------------------
 # Modulos.
 # file(GLOB ... CONFIGURE_DEPENDS) para que agregar una clase NUEVA dentro de
 # un modulo NO obligue a tocar este archivo.
@@ -162,7 +187,7 @@ target_link_libraries(servicios PUBLIC core alumnos profesores turnos repositori
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(sistema_turnos PRIVATE ui warnings)
+target_link_libraries(sistema_turnos PRIVATE ui warnings ftxui Threads::Threads)
 
 # ---------------------------------------------------------------------------
 # Tests. El objetivo existe desde la Fase 0 para que la Fase 1 solo AGREGUE
