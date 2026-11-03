@@ -178,3 +178,99 @@ TEST_CASE("operator< y operator== de Hora comparan hora y minuto", hora_operador
     CHECK(Hora(9, 30) == Hora(9, 30));
     CHECK(!(Hora(9, 30) == Hora(9, 0)));
 }
+
+// ---------------------------------------------------------------------------
+// EL DIA DE LA SEMANA
+//
+// La convencion del dominio es LUNES = 0 ... DOMINGO = 6: es la que usan
+// los calendarios (la primera columna de una grilla semanal es el lunes).
+//
+// Las fechas de referencia son ABSOLUTAS: no se derivan del reloj, asi que el
+// test sigue significando exactamente lo mismo dentro de cien años. Y como
+// `diaSemana()` es aritmetica pura (no consulta el reloj), el resultado es
+// el mismo en cualquier maquina.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("diaSemana devuelve el dia de la semana con la convencion lunes = 0",
+          fecha_dia_semana) {
+    // El 2000-01-01 (la primera fecha valida del dominio) fue un SABADO:
+    // con la convencion lunes = 0, el sabado es el indice 5.
+    CHECK(Fecha(2000, 1, 1).diaSemana() == 5);
+    // Y al dia siguiente, un DOMINGO: el indice 6.
+    CHECK(Fecha(2000, 1, 2).diaSemana() == 6);
+    // El 2024-01-01 fue un LUNES: el indice 0.
+    CHECK(Fecha(2024, 1, 1).diaSemana() == 0);
+    // El 2024-02-29 fue un JUEVES: el indice 3.
+    //
+    // OJO: el dia de la semana de un 29 de febrero no se deduce "a ojo" del
+    // 1 de enero: hay que sumarle los dias del mes. Por eso este caso esta
+    // verificado con la comprobacion CRUZADA de abajo, que no depende de
+    // ningun dia de referencia.
+    CHECK(Fecha(2024, 2, 29).diaSemana() == 3);
+    // El 2025-12-31 fue un MIERCOLES: el indice 2.
+    CHECK(Fecha(2025, 12, 31).diaSemana() == 2);
+    // El 2026-11-03 fue un MARTES: el indice 1.
+    CHECK(Fecha(2026, 11, 3).diaSemana() == 1);
+}
+
+TEST_CASE("diaSemana es consistente con numeroDeDia en un conjunto de fechas",
+          fecha_dia_semana_verificacion_cruzada) {
+    // LA VERIFICACION CRUZADA
+    //
+    // `numeroDeDia()` dice cuantos dias pasaron desde el 2000-01-01, y el
+    // 2000-01-01 fue un SABADO (el indice 5 con la convencion lunes = 0).
+    // Asi que el dia de la semana de CUALQUIER fecha tiene que ser
+    // `(5 + numeroDeDia()) % 7`.
+    //
+    // POR QUE ESTA COMPROBACION ES FUERTE
+    //
+    // Las dos cuentas son INDEPENDIENTES: `numeroDeDia()` cuenta los dias del
+    // calendario (con los anos bisiestos) y `diaSemana()` hace la cuenta de
+    // Sakamoto. Si una de las dos estuviera mal (un bisiesto mal contado, un
+    // desplazamiento mal puesto), el modulo no cerraria.
+    //
+    // El conjunto incluye los dos extremos del rango valido (2000 y 2100) y
+    // tres 29 de febrero, que son los dias que mas veces rompen un calendario.
+    const Fecha fechas[] = {
+        Fecha(2000, 1, 1),    // el primer dia del dominio
+        Fecha(2000, 2, 29),   // bisiesto del primer ano
+        Fecha(2000, 12, 31),
+        Fecha(2001, 1, 1),
+        Fecha(2024, 2, 29),   // bisiesto
+        Fecha(2025, 12, 31),
+        Fecha(2026, 11, 3),
+        Fecha(2096, 2, 29),   // bisiesto
+        Fecha(2100, 2, 28),   // 2100 NO es bisiesto: el 29 no existe
+        Fecha(2100, 12, 31)   // el ultimo dia del dominio
+    };
+
+    for (const Fecha& fecha : fechas) {
+        CHECK(fecha.diaSemana() == (5 + fecha.numeroDeDia()) % 7);
+    }
+}
+
+TEST_CASE("nombreDiaSemana devuelve el nombre del dia con la convencion lunes = 0",
+          fecha_nombre_dia_semana) {
+    // Los nombres van CON TILDE: son los que se muestran en pantalla.
+    CHECK(Fecha::nombreDiaSemana(0) == "lunes");
+    CHECK(Fecha::nombreDiaSemana(1) == "martes");
+    CHECK(Fecha::nombreDiaSemana(2) == "miércoles");
+    CHECK(Fecha::nombreDiaSemana(3) == "jueves");
+    CHECK(Fecha::nombreDiaSemana(4) == "viernes");
+    CHECK(Fecha::nombreDiaSemana(5) == "sábado");
+    CHECK(Fecha::nombreDiaSemana(6) == "domingo");
+}
+
+TEST_CASE("nombreDiaSemana con un indice invalido lanza DatoInvalidoException",
+          fecha_nombre_dia_semana_invalido) {
+    const int indicesInvalidos[] = {-1, 7, 100, -100};
+
+    for (int indice : indicesInvalidos) {
+        const ErrorCapturado error = capturarError(
+            [&] { (void)Fecha::nombreDiaSemana(indice); });
+        CHECK(error.lanzo);
+        CHECK(!error.lanzoOtraExcepcion);
+        CHECK(error.campo == "diaSemana");
+        CHECK(error.valor == std::to_string(indice));
+    }
+}

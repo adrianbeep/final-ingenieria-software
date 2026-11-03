@@ -213,6 +213,160 @@ std::vector<Turno> ServicioTurnos::turnosVigentesDe(int idAlumno_) const {
 }
 
 // ---------------------------------------------------------------------------
+// LAS CONSULTAS DE LA INTERFAZ
+//
+// Las cinco son consultas y las cinco se comportan igual:
+//
+//   - NO lanzan y NO validan los ids: un id que no existe devuelve un
+//     vector VACIO. La ausencia es un dato de la consulta, no un error.
+//
+//   - Devuelven los turnos de CUALQUIER estado: un reporte tiene que poder
+//     mostrar tambien los cancelados y los reprogramados. Por eso NO filtran
+//     por estado (a diferencia de `turnosVigentesDe`).
+//
+//   - Devuelven los resultados ORDENADOS por id: `listar()` ya entrega los
+//     turnos ordenados, asi que el filtrado conserva el orden y no hace
+//     falta reordenar despues.
+//
+// QUE HAY DE UNO Y OTRO
+//
+// La diferencia entre las cinco consultas es SOLO el filtro: por alumno, por
+// profesor, por materia, por fecha o por rango de fechas. El resto del
+// comportamiento es identico, asi que todas comparten la misma forma.
+// ---------------------------------------------------------------------------
+
+std::vector<Turno> ServicioTurnos::turnosDeAlumno(int idAlumno_) const {
+    std::vector<Turno> turnos;
+
+    for (const Turno& turno : _turnos.listar()) {
+        if (turno.getIdAlumno() == idAlumno_) {
+            turnos.push_back(turno);
+        }
+    }
+
+    return turnos;
+}
+
+std::vector<Turno> ServicioTurnos::turnosDeProfesor(int idProfesor_) const {
+    std::vector<Turno> turnos;
+
+    for (const Turno& turno : _turnos.listar()) {
+        if (turno.getIdProfesor() == idProfesor_) {
+            turnos.push_back(turno);
+        }
+    }
+
+    return turnos;
+}
+
+std::vector<Turno> ServicioTurnos::turnosDeMateria(Materia materia_) const {
+    std::vector<Turno> turnos;
+
+    for (const Turno& turno : _turnos.listar()) {
+        if (turno.getMateria() == materia_) {
+            turnos.push_back(turno);
+        }
+    }
+
+    return turnos;
+}
+
+std::vector<Turno> ServicioTurnos::turnosDeFecha(const Fecha& fecha_) const {
+    std::vector<Turno> turnos;
+
+    for (const Turno& turno : _turnos.listar()) {
+        if (turno.getFecha() == fecha_) {
+            turnos.push_back(turno);
+        }
+    }
+
+    return turnos;
+}
+
+std::vector<Turno> ServicioTurnos::turnosDeRango(const Fecha& desde_, const Fecha& hasta_) const {
+    // UN RANGO AL REVES NO ES UN RANGO VACIO: ES UN ERROR
+    //
+    // Si `desde` es posterior a `hasta`, el rango no esta "vacio": esta mal
+    // pedido. Devolver un vector vacio en ese caso taparia el error de quien
+    // pidio el rango (un formulario con las fechas cruzadas), asi que se dice
+    // con un `DatoInvalidoException`, que es el formato de error de dato
+    // invalido de toda la aplicacion.
+    //
+    // `Fecha` no tiene `operator>`: se usa la negacion de `operator<`, que es
+    // la unica comparacion que el valor de calendario ofrece.
+    if (hasta_ < desde_) {
+        throw DatoInvalidoException("rango", desde_.aTexto() + " - " + hasta_.aTexto(),
+                                    "la fecha inicial no puede ser posterior a la final");
+    }
+
+    std::vector<Turno> turnos;
+
+    for (const Turno& turno : _turnos.listar()) {
+        // INCLUSIVO EN LOS DOS EXTREMOS: un turno del dia `desde` y un turno
+        // del dia `hasta` entran. Por eso la comparacion es la NEGACION de
+        // `<` (que es `<=`) y no un `<` pelado.
+        if (!(turno.getFecha() < desde_) && !(hasta_ < turno.getFecha())) {
+            turnos.push_back(turno);
+        }
+    }
+
+    return turnos;
+}
+
+// ---------------------------------------------------------------------------
+// MODIFICAR UN TURNO
+// ---------------------------------------------------------------------------
+
+void ServicioTurnos::modificarTurno(int idTurno_,
+                                    const std::string& nuevaAula_,
+                                    int nuevaDuracionMin_,
+                                    Materia nuevaMateria_) {
+    Turno turno = buscarTurno(idTurno_);
+
+    // Un turno que NO esta activo no se modifica: `Cancelado` y
+    // `Reprogramado` son estados finales. Es el mismo criterio (y el mismo
+    // texto) que usa `reprogramar`.
+    if (turno.getEstado() != EstadoTurno::Activo) {
+        throw DatoInvalidoException("estado", estadoATexto(turno.getEstado()),
+                                    "solo un turno activo se puede modificar");
+    }
+
+    // Se modifican SOLO los tres datos que se pueden cambiar. La fecha y la
+    // hora NO se tocan: moverlas es reprogramar, y reprogramar crea un turno
+    // nuevo con su propio historial. El alumno, el profesor y el estado
+    // tampoco cambian.
+    //
+    // Los setters validan: la duracion tiene que ser un multiplo de 15 (y
+    // de 240 minutos como maximo) y el aula tiene que tener entre 1 y 20
+    // caracteres. Si alguno esta mal, la excepcion sale de aca.
+    turno.setAula(nuevaAula_);
+    turno.setDuracionMin(nuevaDuracionMin_);
+    turno.setMateria(nuevaMateria_);
+
+    // Se revalidan los DATOS del turno con los valores nuevos: en
+    // particular, que con la duracion nueva el turno siga TERMINANDO dentro
+    // del horario de atencion (una duracion mas larga puede empujar el fin
+    // del turno mas alla de las 22:00).
+    //
+    // Se usa el MISMO helper que usa `agendar`: la regla del fin del
+    // horario vive ahi y no se reimplementa. Lo que NO se usa es
+    // `validarAgendamiento`: ese helper tambien exige que el alumno y el
+    // profesor existan y esten activos y que la fecha no haya pasado, y
+    // esas comprobaciones no aplican a una modificacion (el turno ya existe,
+    // y puede estar en el pasado).
+    validarDatosDelTurno(turno);
+
+    // Y el solapamiento se recalcula con la duracion nueva, EXCLUYENDO al
+    // propio turno: el turno se pisa consigo mismo (su ventana nueva se
+    // superpone con su ventana vieja) y ese choque no es un error.
+    verificarSolapamiento(turno, idTurno_);
+
+    // Solo se persiste si TODAS las reglas pasaron: si alguna falla, el
+    // repositorio queda como estaba.
+    _turnos.modificar(turno);
+}
+
+// ---------------------------------------------------------------------------
 // Las reglas
 // ---------------------------------------------------------------------------
 
@@ -304,10 +458,21 @@ void ServicioTurnos::validarDatosDelTurno(const Turno& turno_) {
     }
 }
 
-void ServicioTurnos::verificarSolapamiento(const Turno& turno_) {
+void ServicioTurnos::verificarSolapamiento(const Turno& turno_, int idTurnoExcluido_) {
     const Ventana nueva = ventanaDe(turno_);
 
     for (const Turno& existente : _turnos.listar()) {
+        // EL TURNO QUE SE ESTA MODIFICANDO NO SE MIRA CONTRA SI MISMO
+        //
+        // `modificarTurno` alarga (o acorta) un turno que YA esta guardado:
+        // la ventana nueva se superpone con la ventana vieja del MISMO turno,
+        // y ese choque no es un error: es el turno cambiando de largo. La
+        // exclusion es por id, que es la clave con la que el repositorio
+        // indexa los turnos.
+        if (existente.getId() == idTurnoExcluido_) {
+            continue;
+        }
+
         // SOLO los turnos VIGENTES ocupan el horario: un turno cancelado o
         // reprogramado libero su horario y ese horario se puede volver a
         // usar.

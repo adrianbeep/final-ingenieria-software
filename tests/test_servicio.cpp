@@ -259,6 +259,17 @@ Turno turnoDePrueba(int id, int idProfesor, int idAlumno, int hora, int minuto) 
                  Hora(hora, minuto), 45, "A-1");
 }
 
+// Un turno valido con TODOS los datos elegibles por el test: fecha, hora,
+// materia, duracion y aula.
+//
+// El constructor de `Turno` valida todo a traves de los setters, asi que un
+// turno armado asi ya es un turno que el servicio acepta. Sirve para las
+// consultas, que necesitan turnos en fechas y materias concretas.
+Turno turnoCompleto(int id, int idProfesor, int idAlumno, const Fecha& fecha, int hora,
+                    int minuto, Materia materia, int duracionMin, const std::string& aula) {
+    return Turno(id, idProfesor, idAlumno, materia, fecha, Hora(hora, minuto), duracionMin, aula);
+}
+
 // El mundo de pruebas: tres fakes y el servicio que los maneja.
 struct Escenario {
     RepositorioEnMemoria<Alumno> alumnos;
@@ -909,6 +920,435 @@ TEST_CASE("un turno reprogramado no cuenta como vigente", servicio_reprogramado_
     const std::vector<Turno> vigentes = escenario.servicio.turnosVigentesDe(1);
     CHECK(vigentes.size() == 1);
     CHECK(vigentes.front().getId() == 2);
+}
+
+// ---------------------------------------------------------------------------
+// LAS CONSULTAS DE LA INTERFAZ
+//
+// Las cinco consultas que arman las pantallas de Consultas, el Historial de
+// alumnos y el Calendario.
+//
+// LO QUE TIENEN EN COMUN (y es lo que las distingue de `turnosVigentesDe`)
+//   - devuelven los turnos de CUALQUIER estado: un reporte tiene que poder
+//     mostrar tambien los cancelados;
+//   - NO lanzan y NO validan los ids: un id que no existe devuelve un vector
+//     vacio;
+//   - devuelven los resultados ordenados por id.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("turnosDeAlumno devuelve los turnos del alumno en cualquier estado",
+          servicio_turnos_de_alumno) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+    escenario.conPersonas(2, 2);
+
+    const Fecha fecha = fechaDesplazada(30);
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, fecha, 10, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(2, 2, 1, fecha, 11, 0, Materia::BDD, 45, "A-2"));
+    escenario.turnos.alta(turnoCompleto(3, 1, 2, fecha, 12, 0, Materia::ALG1, 45, "A-1"));
+
+    // Uno de los turnos del alumno 1 se cancela.
+    escenario.servicio.cancelar(2);
+
+    const std::vector<Turno> delAlumno = escenario.servicio.turnosDeAlumno(1);
+    CHECK(delAlumno.size() == 2);
+    CHECK(delAlumno[0].getId() == 1);
+    CHECK(delAlumno[1].getId() == 2);
+
+    // EL CANCELADO ESTA: a diferencia de `turnosVigentesDe`, una consulta
+    // tiene que poder mostrar tambien los turnos cancelados.
+    CHECK(delAlumno[1].getEstado() == EstadoTurno::Cancelado);
+
+    // El alumno 2 tiene el suyo.
+    CHECK(escenario.servicio.turnosDeAlumno(2).size() == 1);
+
+    // Y un alumno que no tiene turnos: vector vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(escenario.servicio.turnosDeAlumno(99).empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+}
+
+TEST_CASE("turnosDeProfesor devuelve los turnos del profesor en cualquier estado",
+          servicio_turnos_de_profesor) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+    escenario.conPersonas(2, 2);
+
+    const Fecha fecha = fechaDesplazada(30);
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, fecha, 10, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(2, 2, 1, fecha, 11, 0, Materia::BDD, 45, "A-2"));
+    escenario.turnos.alta(turnoCompleto(3, 1, 2, fecha, 12, 0, Materia::ALG1, 45, "A-1"));
+
+    // Se cancela el turno del profesor 1.
+    escenario.servicio.cancelar(1);
+
+    const std::vector<Turno> delProfesor = escenario.servicio.turnosDeProfesor(1);
+    CHECK(delProfesor.size() == 2);
+    CHECK(delProfesor[0].getId() == 1);
+    CHECK(delProfesor[1].getId() == 3);
+    CHECK(delProfesor[0].getEstado() == EstadoTurno::Cancelado);
+
+    // El profesor 2 tiene el suyo.
+    CHECK(escenario.servicio.turnosDeProfesor(2).size() == 1);
+
+    // Y un profesor que no tiene turnos: vector vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(escenario.servicio.turnosDeProfesor(99).empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+}
+
+TEST_CASE("turnosDeMateria devuelve los turnos de la materia en cualquier estado",
+          servicio_turnos_de_materia) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Fecha fecha = fechaDesplazada(30);
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, fecha, 10, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(2, 1, 1, fecha, 11, 0, Materia::BDD, 45, "A-2"));
+    escenario.turnos.alta(turnoCompleto(3, 1, 1, fecha, 12, 0, Materia::ALG1, 45, "A-1"));
+
+    // Se cancela uno de los de ALG1.
+    escenario.servicio.cancelar(3);
+
+    const std::vector<Turno> deLaMateria = escenario.servicio.turnosDeMateria(Materia::ALG1);
+    CHECK(deLaMateria.size() == 2);
+    CHECK(deLaMateria[0].getId() == 1);
+    CHECK(deLaMateria[1].getId() == 3);
+    CHECK(deLaMateria[1].getEstado() == EstadoTurno::Cancelado);
+
+    // Y la otra materia tiene el suyo.
+    CHECK(escenario.servicio.turnosDeMateria(Materia::BDD).size() == 1);
+
+    // Y una materia sin turnos: vector vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(escenario.servicio.turnosDeMateria(Materia::REDES).empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+}
+
+TEST_CASE("turnosDeFecha devuelve los turnos de la fecha en cualquier estado",
+          servicio_turnos_de_fecha) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Fecha fecha = fechaDesplazada(30);
+    const Fecha otraFecha = fechaDesplazada(31);
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, fecha, 10, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(2, 1, 1, fecha, 11, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(3, 1, 1, otraFecha, 12, 0, Materia::ALG1, 45, "A-1"));
+
+    // Se cancela uno de los de la primera fecha.
+    escenario.servicio.cancelar(1);
+
+    const std::vector<Turno> deLaFecha = escenario.servicio.turnosDeFecha(fecha);
+    CHECK(deLaFecha.size() == 2);
+    CHECK(deLaFecha[0].getId() == 1);
+    CHECK(deLaFecha[1].getId() == 2);
+    CHECK(deLaFecha[0].getEstado() == EstadoTurno::Cancelado);
+
+    // Y la otra fecha tiene el suyo.
+    CHECK(escenario.servicio.turnosDeFecha(otraFecha).size() == 1);
+
+    // Y una fecha sin turnos: vector vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(escenario.servicio.turnosDeFecha(fechaDesplazada(40)).empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+}
+
+TEST_CASE("turnosDeRango incluye los dos extremos del rango",
+          servicio_turnos_de_rango_inclusivo) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Fecha desde = fechaDesplazada(30);
+    const Fecha medio = fechaDesplazada(31);
+    const Fecha hasta = fechaDesplazada(32);
+
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, desde, 10, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(2, 1, 1, medio, 11, 0, Materia::ALG1, 45, "A-1"));
+    escenario.turnos.alta(turnoCompleto(3, 1, 1, hasta, 12, 0, Materia::ALG1, 45, "A-1"));
+
+    // El rango incluye los TRES: los dos extremos entran (es INCLUSIVO).
+    const std::vector<Turno> delRango = escenario.servicio.turnosDeRango(desde, hasta);
+    CHECK(delRango.size() == 3);
+    CHECK(delRango[0].getId() == 1);
+    CHECK(delRango[1].getId() == 2);
+    CHECK(delRango[2].getId() == 3);
+
+    // Un rango de un SOLO dia incluye ese dia.
+    const std::vector<Turno> deUnDia = escenario.servicio.turnosDeRango(medio, medio);
+    CHECK(deUnDia.size() == 1);
+    CHECK(deUnDia[0].getId() == 2);
+
+    // Y un rango que no agarra a nadie: vector vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(escenario.servicio.turnosDeRango(fechaDesplazada(40),
+                                                     fechaDesplazada(50)).empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+}
+
+TEST_CASE("turnosDeRango con la fecha inicial posterior a la final lanza DatoInvalidoException",
+          servicio_turnos_de_rango_invertido) {
+    Escenario escenario;
+
+    const Fecha desde = fechaDesplazada(30);
+    const Fecha hasta = fechaDesplazada(20);
+
+    const ErrorCapturado error = capturarError(
+        [&] { (void)escenario.servicio.turnosDeRango(desde, hasta); });
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "rango");
+}
+
+// ---------------------------------------------------------------------------
+// MODIFICAR UN TURNO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("modificarTurno cambia el aula, la duracion y la materia, y NADA mas",
+          servicio_modificar_turno_camino_feliz) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Fecha fecha = fechaDesplazada(30);
+    escenario.turnos.alta(turnoCompleto(1, 1, 1, fecha, 10, 0, Materia::ALG1, 45, "A-1"));
+
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { escenario.servicio.modificarTurno(1, "B-2", 90, Materia::BDD); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    Turno modificado;
+    CHECK(escenario.turnos.buscarPorId(1, modificado));
+
+    // LO QUE CAMBIO
+    CHECK(modificado.getAula() == "B-2");
+    CHECK(modificado.getDuracionMin() == 90);
+    CHECK(modificado.getMateria() == Materia::BDD);
+
+    // LO QUE NO CAMBIO: la fecha y la hora NO se tocan (moverlas es
+    // reprogramar), ni el alumno, ni el profesor, ni el estado.
+    CHECK(modificado.getFecha() == fecha);
+    CHECK(modificado.getHora() == Hora(10, 0));
+    CHECK(modificado.getIdAlumno() == 1);
+    CHECK(modificado.getIdProfesor() == 1);
+    CHECK(modificado.getEstado() == EstadoTurno::Activo);
+}
+
+TEST_CASE("modificarTurno de un turno que no existe lanza EntidadNoExisteException",
+          servicio_modificar_turno_inexistente) {
+    Escenario escenario;
+
+    const Fallo fallo = capturarTipo<EntidadNoExisteException>(
+        [&] { escenario.servicio.modificarTurno(99, "A-1", 45, Materia::ALG1); });
+    CHECK(fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+    CHECK(fallo.mensaje.find("99") != std::string::npos);
+    CHECK(fallo.mensaje.find("Turno") != std::string::npos);
+}
+
+TEST_CASE("modificarTurno de un turno CANCELADO o REPROGRAMADO lanza DatoInvalidoException",
+          servicio_modificar_turno_no_activo) {
+    // Un turno CANCELADO.
+    {
+        Escenario escenario;
+        escenario.conPersonas(1, 1);
+        escenario.turnos.alta(
+            turnoCompleto(1, 1, 1, fechaDesplazada(30), 10, 0, Materia::ALG1, 45, "A-1"));
+        escenario.servicio.cancelar(1);
+
+        const ErrorCapturado error = capturarError(
+            [&] { escenario.servicio.modificarTurno(1, "B-2", 90, Materia::BDD); });
+        CHECK(error.lanzo);
+        CHECK(!error.lanzoOtraExcepcion);
+        CHECK(error.campo == "estado");
+        CHECK(error.valor == "Cancelado");
+
+        // Y el turno quedo EXACTAMENTE como estaba.
+        Turno encontrado;
+        CHECK(escenario.turnos.buscarPorId(1, encontrado));
+        CHECK(encontrado.getAula() == "A-1");
+        CHECK(encontrado.getDuracionMin() == 45);
+        CHECK(encontrado.getMateria() == Materia::ALG1);
+    }
+
+    // Y un turno REPROGRAMADO (que tambien es un estado final).
+    {
+        Escenario escenario;
+        escenario.conPersonas(1, 1);
+        const Turno original = turnoDePrueba(1, 1, 1, 10, 0);
+        escenario.servicio.agendar(original);
+        escenario.servicio.reprogramar(1, fechaDesplazada(45), Hora(11, 0));
+
+        const ErrorCapturado error = capturarError(
+            [&] { escenario.servicio.modificarTurno(1, "B-2", 90, Materia::BDD); });
+        CHECK(error.lanzo);
+        CHECK(!error.lanzoOtraExcepcion);
+        CHECK(error.campo == "estado");
+        CHECK(error.valor == "Reprogramado");
+    }
+}
+
+TEST_CASE("modificarTurno con una duracion invalida lanza DatoInvalidoException",
+          servicio_modificar_turno_duracion_invalida) {
+    // 20 no es multiplo de 15, 0 no es positiva y 300 supera el maximo.
+    const int duracionesInvalidas[] = {20, 0, 300};
+
+    for (int duracion : duracionesInvalidas) {
+        Escenario escenario;
+        escenario.conPersonas(1, 1);
+        escenario.turnos.alta(
+            turnoCompleto(1, 1, 1, fechaDesplazada(30), 10, 0, Materia::ALG1, 45, "A-1"));
+
+        const ErrorCapturado error = capturarError(
+            [&] { escenario.servicio.modificarTurno(1, "B-2", duracion, Materia::BDD); });
+        CHECK(error.lanzo);
+        CHECK(!error.lanzoOtraExcepcion);
+        CHECK(error.campo == "duracionMin");
+
+        // Y el turno quedo como estaba.
+        Turno encontrado;
+        CHECK(escenario.turnos.buscarPorId(1, encontrado));
+        CHECK(encontrado.getDuracionMin() == 45);
+        CHECK(encontrado.getAula() == "A-1");
+    }
+}
+
+TEST_CASE("modificarTurno con un aula invalida lanza DatoInvalidoException",
+          servicio_modificar_turno_aula_invalida) {
+    // El aula vacia, el aula con un signo no admitido y el aula de 21
+    // caracteres (el maximo es 20).
+    const std::string aulasInvalidas[] = {"", "A#1", "A-1 A-2 A-3 A-4 A-5 A-6 A-7"};
+
+    for (const std::string& aula : aulasInvalidas) {
+        Escenario escenario;
+        escenario.conPersonas(1, 1);
+        escenario.turnos.alta(
+            turnoCompleto(1, 1, 1, fechaDesplazada(30), 10, 0, Materia::ALG1, 45, "A-1"));
+
+        const ErrorCapturado error = capturarError(
+            [&] { escenario.servicio.modificarTurno(1, aula, 90, Materia::BDD); });
+        CHECK(error.lanzo);
+        CHECK(!error.lanzoOtraExcepcion);
+        CHECK(error.campo == "aula");
+
+        // Y el turno quedo como estaba.
+        Turno encontrado;
+        CHECK(escenario.turnos.buscarPorId(1, encontrado));
+        CHECK(encontrado.getAula() == "A-1");
+        CHECK(encontrado.getDuracionMin() == 45);
+    }
+}
+
+TEST_CASE("modificarTurno con una duracion que empuja el fin de horario lanza "
+          "DatoInvalidoException",
+          servicio_modificar_turno_fuera_del_horario) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    // Un turno de 21:30 que dura 30 minutos termina a las 22:00: es valido
+    // (el tope del horario de atencion es las 22:00).
+    escenario.turnos.alta(
+        turnoCompleto(1, 1, 1, fechaDesplazada(30), 21, 30, Materia::ALG1, 30, "A-1"));
+
+    // Alargarlo a 90 minutos lo lleva a las 23:00: la clase se estaria
+    // dictando cuando la institucion ya no atiende.
+    const ErrorCapturado error = capturarError(
+        [&] { escenario.servicio.modificarTurno(1, "A-1", 90, Materia::ALG1); });
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "hora");
+
+    // Y el turno quedo como estaba.
+    Turno encontrado;
+    CHECK(escenario.turnos.buscarPorId(1, encontrado));
+    CHECK(encontrado.getDuracionMin() == 30);
+}
+
+TEST_CASE("modificarTurno que pisa a otro turno lanza TurnoOcupadoException",
+          servicio_modificar_turno_solapado) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+    escenario.conPersonas(2, 2);
+
+    // El turno #1 es del alumno 1 con el profesor 1, de 10:00 a 10:45.
+    escenario.turnos.alta(
+        turnoCompleto(1, 1, 1, fechaDesplazada(30), 10, 0, Materia::ALG1, 45, "A-1"));
+
+    // Y el turno #2 es del MISMO alumno (con otro profesor), de 11:00 a
+    // 11:45.
+    escenario.turnos.alta(
+        turnoCompleto(2, 2, 1, fechaDesplazada(30), 11, 0, Materia::ALG1, 45, "A-1"));
+
+    // Alargar el #1 a 120 minutos lo hace ocupar de 10:00 a 12:00: pisa al #2.
+    const Fallo fallo = capturarTipo<TurnoOcupadoException>(
+        [&] { escenario.servicio.modificarTurno(1, "A-1", 120, Materia::ALG1); });
+    CHECK(fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    // Y NINGUN turno se modifico.
+    Turno primero;
+    CHECK(escenario.turnos.buscarPorId(1, primero));
+    CHECK(primero.getDuracionMin() == 45);
+
+    Turno segundo;
+    CHECK(escenario.turnos.buscarPorId(2, segundo));
+    CHECK(segundo.getDuracionMin() == 45);
+}
+
+TEST_CASE("modificarTurno NO se pisa consigo mismo", servicio_modificar_turno_no_se_pisa_consigo) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    // El turno #1 ocupa de 10:00 a 10:45.
+    escenario.turnos.alta(
+        turnoCompleto(1, 1, 1, fechaDesplazada(30), 10, 0, Materia::ALG1, 45, "A-1"));
+
+    // Alargarlo a 60 minutos lo hace ocupar de 10:00 a 11:00: la ventana
+    // NUEVA se superpone con la ventana VIEJA del PROPIO turno, pero no con
+    // ningun otro turno (no hay ninguno mas).
+    //
+    // Si la exclusion del propio id no existiera, este seria un
+    // `TurnoOcupadoException`: el turno se pisaria consigo mismo y no se
+    // podria alargar NUNCA.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { escenario.servicio.modificarTurno(1, "A-1", 60, Materia::ALG1); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    // Y el turno quedo alargado.
+    Turno modificado;
+    CHECK(escenario.turnos.buscarPorId(1, modificado));
+    CHECK(modificado.getDuracionMin() == 60);
+    CHECK(modificado.getHora() == Hora(10, 0));
+}
+
+TEST_CASE("modificarTurno de un turno en el pasado no lo rechaza por la fecha",
+          servicio_modificar_turno_en_el_pasado) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    // Un turno de hace diez dias: `agendar` lo habria rechazado (la fecha ya
+    // paso), pero un turno que YA EXISTE se puede modificar igual: la regla
+    // de la fecha vencida es para agendar, no para corregir un turno viejo.
+    const Fecha fechaPasada = fechaDesplazada(-10);
+    escenario.turnos.alta(
+        turnoCompleto(1, 1, 1, fechaPasada, 10, 0, Materia::ALG1, 45, "A-1"));
+
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { escenario.servicio.modificarTurno(1, "C-3", 60, Materia::BDD); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    Turno modificado;
+    CHECK(escenario.turnos.buscarPorId(1, modificado));
+    CHECK(modificado.getAula() == "C-3");
+    CHECK(modificado.getDuracionMin() == 60);
+    CHECK(modificado.getFecha() == fechaPasada);
 }
 
 // ---------------------------------------------------------------------------
