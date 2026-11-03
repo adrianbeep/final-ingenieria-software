@@ -34,6 +34,7 @@
 //   - `contar()` exacto y `proximoId()` (vacio y con ids {1, 7, 12})
 //   - el round trip comparado CAMPO POR CAMPO
 //   - la baja logica: sobrevive al round trip y NO borra la entidad
+//   - la UNICIDAD de la matricula y del legajo (comparacion case-insensitive)
 //   - el arbol cargado queda BALANCEADO (la decision R6 del issue #14)
 //   - el formato del archivo que deja `persistir()`
 //   - que el repositorio crea el archivo cuando no existe, en vez de fallar
@@ -316,6 +317,378 @@ TEST_CASE("modificar REEMPLAZA la entidad y no agrega una segunda",
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
     CHECK(Utils::separar(lineas[2], '|')[0] == "1");
+}
+
+// ---------------------------------------------------------------------------
+// LA UNICIDAD DE LA MATRICULA Y DEL LEGAJO
+// ---------------------------------------------------------------------------
+//
+// ESTE es el defecto que cierra este bloque: `entities/Alumno.h` y
+// `entities/Profesor.h` dicen que la matricula (y el legajo) son UNICOS y
+// que la unicidad la verifica el repositorio, pero esa verificacion nunca
+// se implemento. Con esto, el repositorio la verifica.
+//
+// La comparacion es CASE-INSENSITIVE: "MAT-20001" y "mat-20001" son la
+// misma matricula.
+//
+// Y el error es `DatoInvalidoException`: el UNICO formato de error de dato
+// invalido de toda la aplicacion (asi lo exige la capa de UI, que ya sabe
+// mostrar el `campo()` y el `valor()` del error).
+
+TEST_CASE("el alta de un alumno con una matricula ya usada lanza DatoInvalidoException",
+          repositorio_alta_matricula_duplicada) {
+    const std::string ruta = rutaDePrueba("matricula_duplicada.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));  // este tiene "MAT-20001"
+
+    // El segundo alumno quiere la matricula del primero.
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    // El `campo()` es el que la UI usa para ubicar el dato que fallo.
+    CHECK(error.campo == "matricula");
+    CHECK(error.valor == "MAT-20001");
+    // Y el mensaje tiene el formato UNICO de la aplicacion.
+    CHECK(error.mensaje == "Dato invalido en campo 'matricula': 'MAT-20001' "
+                           "(ya la tiene el alumno #1)");
+}
+
+TEST_CASE("el alta con la MISMA matricula en otra capitalizacion tambien lanza",
+          repositorio_alta_matricula_duplicada_otro_caso) {
+    const std::string ruta = rutaDePrueba("matricula_duplicada_otro_caso.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));  // este tiene "MAT-20001"
+
+    // La misma matricula, en minusculas: si la comparacion no fuera
+    // case-insensitive, las dos coexistirian y la unicidad seria un espejismo.
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "mat-20001"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "matricula");
+    CHECK(error.valor == "mat-20001");
+}
+
+TEST_CASE("el alta con una matricula LIBRE no lanza y deja al alumno en el repositorio",
+          repositorio_alta_matricula_libre) {
+    const std::string ruta = rutaDePrueba("matricula_libre.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-99999"));
+    });
+
+    CHECK(!error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(repo.contar() == 2);
+
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(2, encontrado));
+    CHECK(encontrado.getMatricula() == "MAT-99999");
+}
+
+TEST_CASE("tras el rechazo por matricula repetida el repositorio queda INTACTO",
+          repositorio_alta_matricula_rechazada_no_rompe) {
+    const std::string ruta = rutaDePrueba("matricula_rechazo_intacto.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));
+    const std::size_t antes = repo.contar();
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+    });
+    CHECK(error.lanzo);
+
+    // La entidad rechazada NO quedo insertada: la validacion es ANTES de
+    // tocar el arbol.
+    CHECK(repo.contar() == antes);
+    CHECK(repo.contar() == 1);
+
+    // Y no aparece en la lista.
+    bool aparece = false;
+    for (const Alumno& alumno : repo.listar()) {
+        if (alumno.getId() == 2) {
+            aparece = true;
+        }
+    }
+    CHECK(!aparece);
+
+    // El archivo tampoco tiene el registro rechazado (header, esquema y UN
+    // registro).
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    CHECK(lineas.size() == 3);
+
+    // Y el alumno que ya estaba sigue intacto.
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(1, encontrado));
+    CHECK(encontrado.getMatricula() == "MAT-20001");
+}
+
+TEST_CASE("modificar con la matricula de OTRO alumno lanza DatoInvalidoException",
+          repositorio_modificar_matricula_de_otro) {
+    const std::string ruta = rutaDePrueba("matricula_modificar_de_otro.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));  // "MAT-20001"
+    repo.alta(alumnoDePrueba(2));  // "MAT-20002"
+
+    // El alumno #2 quiere la matricula del #1.
+    const ErrorCapturado error = capturarError([&] {
+        repo.modificar(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "matricula");
+    CHECK(error.mensaje == "Dato invalido en campo 'matricula': 'MAT-20001' "
+                           "(ya la tiene el alumno #1)");
+
+    // Y el repositorio quedo como estaba: el #2 conserva SU matricula.
+    CHECK(repo.contar() == 2);
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(2, encontrado));
+    CHECK(encontrado.getMatricula() == "MAT-20002");
+}
+
+TEST_CASE("modificar conservando la matricula PROPIA no lanza",
+          repositorio_modificar_matricula_propia) {
+    const std::string ruta = rutaDePrueba("matricula_modificar_propia.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(7));  // "MAT-20007"
+
+    // El alumno #7 cambia sus datos pero conserva su matricula: no puede
+    // chocar consigo mismo (la exclusion es por `getId()`).
+    const ErrorCapturado error = capturarError([&] {
+        repo.modificar(Alumno(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "MAT-20007"));
+    });
+
+    CHECK(!error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(repo.contar() == 1);
+
+    Alumno encontrado;
+    CHECK(repo.buscarPorId(7, encontrado));
+    CHECK(encontrado.getMatricula() == "MAT-20007");
+    CHECK(encontrado.getNombre() == "Nuevo");
+}
+
+TEST_CASE("existeMatricula devuelve true con el id que la tiene, y false con -1",
+          repositorio_existe_matricula) {
+    const std::string ruta = rutaDePrueba("existe_matricula.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));
+    repo.alta(alumnoDePrueba(7));
+
+    // La matricula existe: devuelve true y el id del alumno que la tiene.
+    int idExistente = -1;
+    CHECK(repo.existeMatricula("MAT-20007", idExistente));
+    CHECK(idExistente == 7);
+
+    // Y la encuentra tambien sin distinguir mayusculas.
+    idExistente = -1;
+    CHECK(repo.existeMatricula("mat-20007", idExistente));
+    CHECK(idExistente == 7);
+
+    // Una matricula que no existe: false, y la salida queda en -1 (no en un
+    // id de una consulta anterior).
+    idExistente = 999;
+    CHECK(!repo.existeMatricula("MAT-99999", idExistente));
+    CHECK(idExistente == -1);
+
+    // Y la consulta NO modifica nada: es una consulta.
+    CHECK(repo.contar() == 2);
+}
+
+TEST_CASE("el alta de un profesor con un legajo ya usado lanza DatoInvalidoException",
+          repositorio_alta_legajo_duplicado) {
+    const std::string ruta = rutaDePrueba("legajo_duplicado.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));  // este tiene "LEG-1001"
+
+    // El segundo profesor quiere el legajo del primero.
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                            "Algoritmos I"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "legajo");
+    CHECK(error.valor == "LEG-1001");
+    CHECK(error.mensaje == "Dato invalido en campo 'legajo': 'LEG-1001' "
+                           "(ya lo tiene el profesor #1)");
+}
+
+TEST_CASE("el alta con el MISMO legajo en otra capitalizacion tambien lanza",
+          repositorio_alta_legajo_duplicado_otro_caso) {
+    const std::string ruta = rutaDePrueba("legajo_duplicado_otro_caso.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));  // este tiene "LEG-1001"
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "leg-1001",
+                            "Algoritmos I"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "legajo");
+    CHECK(error.valor == "leg-1001");
+}
+
+TEST_CASE("el alta con un legajo LIBRE no lanza y deja al profesor en el repositorio",
+          repositorio_alta_legajo_libre) {
+    const std::string ruta = rutaDePrueba("legajo_libre.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-9999",
+                            "Algoritmos I"));
+    });
+
+    CHECK(!error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(repo.contar() == 2);
+
+    Profesor encontrado;
+    CHECK(repo.buscarPorId(2, encontrado));
+    CHECK(encontrado.getLegajo() == "LEG-9999");
+}
+
+TEST_CASE("tras el rechazo por legajo repetido el repositorio queda INTACTO",
+          repositorio_alta_legajo_rechazado_no_rompe) {
+    const std::string ruta = rutaDePrueba("legajo_rechazo_intacto.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));
+    const std::size_t antes = repo.contar();
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                            "Algoritmos I"));
+    });
+    CHECK(error.lanzo);
+
+    CHECK(repo.contar() == antes);
+    CHECK(repo.contar() == 1);
+
+    bool aparece = false;
+    for (const Profesor& profesor : repo.listar()) {
+        if (profesor.getId() == 2) {
+            aparece = true;
+        }
+    }
+    CHECK(!aparece);
+
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    CHECK(lineas.size() == 3);
+
+    Profesor encontrado;
+    CHECK(repo.buscarPorId(1, encontrado));
+    CHECK(encontrado.getLegajo() == "LEG-1001");
+}
+
+TEST_CASE("modificar con el legajo de OTRO profesor lanza DatoInvalidoException",
+          repositorio_modificar_legajo_de_otro) {
+    const std::string ruta = rutaDePrueba("legajo_modificar_de_otro.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));  // "LEG-1001"
+    repo.alta(profesorDePrueba(2));  // "LEG-1002"
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.modificar(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                                "Algoritmos I"));
+    });
+
+    CHECK(error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(error.campo == "legajo");
+    CHECK(error.mensaje == "Dato invalido en campo 'legajo': 'LEG-1001' "
+                           "(ya lo tiene el profesor #1)");
+
+    CHECK(repo.contar() == 2);
+    Profesor encontrado;
+    CHECK(repo.buscarPorId(2, encontrado));
+    CHECK(encontrado.getLegajo() == "LEG-1002");
+}
+
+TEST_CASE("modificar conservando el legajo PROPIO no lanza",
+          repositorio_modificar_legajo_propio) {
+    const std::string ruta = rutaDePrueba("legajo_modificar_propio.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(7));  // "LEG-1007"
+
+    const ErrorCapturado error = capturarError([&] {
+        repo.modificar(Profesor(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "LEG-1007",
+                                "Base de Datos"));
+    });
+
+    CHECK(!error.lanzo);
+    CHECK(!error.lanzoOtraExcepcion);
+    CHECK(repo.contar() == 1);
+
+    Profesor encontrado;
+    CHECK(repo.buscarPorId(7, encontrado));
+    CHECK(encontrado.getLegajo() == "LEG-1007");
+    CHECK(encontrado.getNombre() == "Nuevo");
+}
+
+TEST_CASE("existeLegajo devuelve true con el id que lo tiene, y false con -1",
+          repositorio_existe_legajo) {
+    const std::string ruta = rutaDePrueba("existe_legajo.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));
+    repo.alta(profesorDePrueba(7));
+
+    int idExistente = -1;
+    CHECK(repo.existeLegajo("LEG-1007", idExistente));
+    CHECK(idExistente == 7);
+
+    // Y la encuentra tambien sin distinguir mayusculas.
+    idExistente = -1;
+    CHECK(repo.existeLegajo("leg-1007", idExistente));
+    CHECK(idExistente == 7);
+
+    // Un legajo que no existe: false, y la salida queda en -1.
+    idExistente = 999;
+    CHECK(!repo.existeLegajo("LEG-9999", idExistente));
+    CHECK(idExistente == -1);
+
+    // Y la consulta NO modifica nada.
+    CHECK(repo.contar() == 2);
 }
 
 // ---------------------------------------------------------------------------

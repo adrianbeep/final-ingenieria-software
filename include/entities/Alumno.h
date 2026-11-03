@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 // Alumno: una Persona que cursa materias.
 //
-// `matricula` es UNICA en el sistema (la unicidad la verifica el
-// repositorio, en la Fase 5).
+// `matricula` es UNICA en el sistema: la unicidad la verifica
+// `RepositorioAlumnos`, que es quien tiene el conjunto de las entidades
+// cargadas.
 //
 // FORMATO CANONICO (el que usa el archivo de datos de la Fase 4):
 //   id|nombre|apellido|email|telefono|activo|matricula
