@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 // Profesor: una Persona que dicta clases.
 //
-// `legajo` es UNICO en el sistema (la unicidad la verifica el repositorio,
-// en la Fase 5, porque necesita ver todas las entidades cargadas).
+// `legajo` es UNICO en el sistema: la unicidad la verifica
+// `RepositorioProfesores`, que es quien tiene el conjunto de las entidades
+// cargadas.
 //
 // FORMATO CANONICO (el que usa el archivo de datos de la Fase 4):
 //   id|nombre|apellido|email|telefono|activo|legajo|especialidad
