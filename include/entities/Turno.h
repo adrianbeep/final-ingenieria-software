@@ -76,7 +76,6 @@ public:
     int getIdTurnoReemplazante() const { return idTurnoReemplazante; }
 
     // --- Setters con validacion ---
-    void setId(int id_) { id = id_; }
     void setIdProfesor(int idProfesor_) { idProfesor = idProfesor_; }
     void setIdAlumno(int idAlumno_) { idAlumno = idAlumno_; }
     void setMateria(Materia materia_) { materia = materia_; }
@@ -114,6 +113,13 @@ public:
     static constexpr int DURACION_MAXIMA_MINUTOS = 240;
     static constexpr std::size_t AULA_LONGITUD_MINIMA = 1;
     static constexpr std::size_t AULA_LONGITUD_MAXIMA = 20;
+
+protected:
+    // El id lo asigna el repositorio, no el usuario: por eso es `protected`
+    // y no hay un `setId` publico. Es el mismo invariante que el de
+    // `Persona` (ver include/entities/Persona.h), para que las TRES
+    // entidades se comporten igual.
+    void setId(int id_) { id = id_; }
 
 private:
     static constexpr std::size_t CANTIDAD_CAMPOS = 10;
