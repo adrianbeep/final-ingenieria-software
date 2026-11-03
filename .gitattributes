@@ -14,3 +14,12 @@ data/*.dat -text
 
 # Los scripts de shell (si los hay) necesitan LF o fallan en Linux.
 *.sh text eol=lf
+
+# El codigo de terceros se guarda tal cual viene del release, sin conversion
+# de fin de linea: asi los archivos del repo son byte a byte los del release.
+#
+# Esta regla tiene que ir DESPUES de `* text=auto eol=lf`: en .gitattributes,
+# la ultima regla que coincide gana. Sin esto, con core.autocrlf=true el
+# checkout en Windows convertiria el codigo del vendor a CRLF y dejaria de
+# coincidir con el hash de PROVENANCE.md.
+third_party/ftxui/* -text

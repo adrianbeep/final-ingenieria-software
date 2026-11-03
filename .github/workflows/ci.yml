@@ -50,6 +50,19 @@ jobs:
             exit 1
           fi
 
+      # La UI es la UNICA capa que puede depender de FTXUI: el motor de
+      # terminal es un detalle de la presentacion y el dominio no tiene que
+      # saber que existe. Se verifica con un grep, igual que la regla de
+      # arriba.
+      - name: "El dominio no depende de FTXUI"
+        run: |
+          if grep -rni 'ftxui' include/domain include/entities include/utils \
+             include/repositories include/services include/persistence \
+             include/structures include/exceptions; then
+            echo "::error::La capa de dominio no puede depender de FTXUI."
+            exit 1
+          fi
+
       - name: Compilar con CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
