@@ -5,6 +5,7 @@
 #include "repositories/RepositorioCRUD.h"
 
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // RepositorioAlumnos: el repositorio de ALUMNOS.
@@ -56,6 +57,22 @@ public:
     // matricula repetida es un dato de la consulta, no un error (es el
     // mismo criterio que usa `buscarPorId()` cuando no encuentra el id).
     bool existeMatricula(const std::string& matricula, int& idExistente) const;
+
+    // Los alumnos ACTIVOS, en orden ascendente de id.
+    //
+    // Es la consulta de las pantallas que eligen a QUIEN agendar: un alumno
+    // dado de baja no puede tener turnos (es una regla del servicio), asi
+    // que no tiene sentido ofrecerlo.
+    //
+    // NO lanza y NO modifica nada: es una CONSULTA.
+    std::vector<Alumno> listarActivos() const;
+
+    // Los alumnos DADOS DE BAJA, en orden ascendente de id.
+    //
+    // Es la consulta de la pantalla de reactivation: un alumno dado de baja
+    // sigue en el repositorio (la baja es logica), asi que hay que poder
+    // listarlos para volver a activarlos.
+    std::vector<Alumno> listarInactivos() const;
 
     // Las dos ESCRITURAS pasan por la unicidad de la matricula.
     void alta(const Alumno& alumno) override;

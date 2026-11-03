@@ -1604,6 +1604,179 @@ TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado p
 }
 
 // ---------------------------------------------------------------------------
+// LA BUSQUEDA POR NOMBRE
+//
+// La consulta que usan las pantallas de Consultas para encontrar a una
+// persona por su nombre o por su apellido.
+//
+// LAS TRES REGLAS
+//   - la coincidencia es PARCIAL: el texto buscado aparece DENTRO del nombre
+//     o del apellido;
+//   - es INSENSIBLE A MAYUSCULAS;
+//   - un texto VACIO no encuentra nada.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("buscarPorNombre encuentra por coincidencia parcial, sin distinguir mayusculas",
+          repositorio_buscar_por_nombre) {
+    const std::string ruta = rutaDePrueba("buscar_por_nombre.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(Alumno(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "MAT-20001"));
+    repo.alta(Alumno(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "MAT-20002"));
+    repo.alta(Alumno(3, "Caro", "Sosa", "caro3@unlp.edu.ar", "2214556677", "MAT-20003"));
+    repo.alta(Alumno(4, "Daniela", "Vega", "daniela4@unlp.edu.ar", "2214556677", "MAT-20004"));
+
+    // POR EL NOMBRE, de forma PARCIAL: "an" esta DENTRO de "Ana" y de
+    // "Daniela", y en ningun otro nombre ni apellido.
+    const std::vector<Alumno> porNombre = repo.buscarPorNombre("an");
+    CHECK(porNombre.size() == 2);
+    CHECK(porNombre[0].getId() == 1);
+    CHECK(porNombre[1].getId() == 4);
+
+    // POR EL APELLIDO: "per" esta dentro de "Perez" y de nada mas.
+    const std::vector<Alumno> porApellido = repo.buscarPorNombre("per");
+    CHECK(porApellido.size() == 1);
+    CHECK(porApellido[0].getId() == 2);
+
+    // Y un texto que aparece en VARIOS apellidos: "ez" esta dentro de
+    // "Gomez" y de "Perez".
+    const std::vector<Alumno> porVarios = repo.buscarPorNombre("ez");
+    CHECK(porVarios.size() == 2);
+    CHECK(porVarios[0].getId() == 1);
+    CHECK(porVarios[1].getId() == 2);
+
+    // SIN DISTINGUIR MAYUSCULAS: el texto en mayusculas encuentra lo mismo.
+    CHECK(repo.buscarPorNombre("PER").size() == 1);
+    CHECK(repo.buscarPorNombre("per").size() == 1);
+    CHECK(repo.buscarPorNombre("Gom").size() == 1);
+    CHECK(repo.buscarPorNombre("gom").front().getId() == 1);
+    CHECK(repo.buscarPorNombre("PEREZ").size() == 1);
+
+    // UNA BUSQUEDA SIN TEXTO NO ENCUENTRA NADA: devolver la lista entera
+    // seria inventar resultados.
+    CHECK(repo.buscarPorNombre("").empty());
+    CHECK(repo.buscarPorNombre("   ").empty());
+
+    // Y una busqueda que no coincide con nadie: vacio, sin lanzar.
+    const Fallo fallo = capturarTipo<ExcepcionSistema>(
+        [&] { CHECK(repo.buscarPorNombre("zzz").empty()); });
+    CHECK(!fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    // La consulta NO modifica nada: es una consulta.
+    CHECK(repo.contar() == 4);
+}
+
+TEST_CASE("buscarPorNombre devuelve los resultados ordenados por id",
+          repositorio_buscar_por_nombre_ordenado) {
+    const std::string ruta = rutaDePrueba("buscar_por_nombre_ordenado.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    // Se dan de alta en ORDEN DESCENDENTE: el resultado tiene que salir
+    // ordenado por id igual, porque lo que se filtra es el `listar()` del
+    // arbol, que ya viene ordenado.
+    repo.alta(Alumno(30, "Ana", "Gomez", "ana30@unlp.edu.ar", "2214556677", "MAT-20030"));
+    repo.alta(Alumno(20, "Ana", "Perez", "ana20@unlp.edu.ar", "2214556677", "MAT-20020"));
+    repo.alta(Alumno(10, "Ana", "Sosa", "ana10@unlp.edu.ar", "2214556677", "MAT-20010"));
+
+    const std::vector<Alumno> encontrados = repo.buscarPorNombre("ana");
+    CHECK(encontrados.size() == 3);
+    CHECK(encontrados[0].getId() == 10);
+    CHECK(encontrados[1].getId() == 20);
+    CHECK(encontrados[2].getId() == 30);
+}
+
+TEST_CASE("buscarPorNombre funciona tambien en el repositorio de profesores",
+          repositorio_buscar_por_nombre_profesores) {
+    const std::string ruta = rutaDePrueba("buscar_por_nombre_profesores.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(Profesor(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "LEG-1001",
+                       "Algoritmos I"));
+    repo.alta(Profesor(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "LEG-1002",
+                       "Base de Datos"));
+
+    CHECK(repo.buscarPorNombre("beto").size() == 1);
+    CHECK(repo.buscarPorNombre("BET").size() == 1);
+    CHECK(repo.buscarPorNombre("legajo").empty());
+    CHECK(repo.buscarPorNombre("").empty());
+}
+
+// ---------------------------------------------------------------------------
+// LOS ACTIVOS Y LOS INACTIVOS
+//
+// La baja es LOGICA: un alumno o un profesor dado de baja sigue en el
+// repositorio. Estas dos consultas son las que permiten separar los dos
+// grupos: la de los que se pueden agendar y la de los que hay que reactivar.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("listarActivos y listarInactivos separan los alumnos por su estado",
+          repositorio_alumnos_activos_e_inactivos) {
+    const std::string ruta = rutaDePrueba("alumnos_activos.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioAlumnos repo(ruta);
+    repo.alta(alumnoDePrueba(1));
+    repo.alta(alumnoDePrueba(2));
+    repo.alta(alumnoDePrueba(3));
+
+    repo.bajaLogica(2);
+
+    const std::vector<Alumno> activos = repo.listarActivos();
+    CHECK(activos.size() == 2);
+    CHECK(activos[0].getId() == 1);
+    CHECK(activos[1].getId() == 3);
+
+    const std::vector<Alumno> inactivos = repo.listarInactivos();
+    CHECK(inactivos.size() == 1);
+    CHECK(inactivos[0].getId() == 2);
+
+    // NINGUN ALUMNO ESTA EN LAS DOS LISTAS.
+    for (const Alumno& activo : activos) {
+        for (const Alumno& inactivo : inactivos) {
+            CHECK(activo.getId() != inactivo.getId());
+        }
+    }
+
+    // Y el repositorio sigue teniendo a LOS TRES: la baja es logica.
+    CHECK(repo.contar() == 3);
+}
+
+TEST_CASE("listarActivos y listarInactivos separan los profesores por su estado",
+          repositorio_profesores_activos_e_inactivos) {
+    const std::string ruta = rutaDePrueba("profesores_activos.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioProfesores repo(ruta);
+    repo.alta(profesorDePrueba(1));
+    repo.alta(profesorDePrueba(2));
+    repo.alta(profesorDePrueba(3));
+
+    repo.bajaLogica(3);
+
+    const std::vector<Profesor> activos = repo.listarActivos();
+    CHECK(activos.size() == 2);
+    CHECK(activos[0].getId() == 1);
+    CHECK(activos[1].getId() == 2);
+
+    const std::vector<Profesor> inactivos = repo.listarInactivos();
+    CHECK(inactivos.size() == 1);
+    CHECK(inactivos[0].getId() == 3);
+
+    // NINGUN PROFESOR ESTA EN LAS DOS LISTAS.
+    for (const Profesor& activo : activos) {
+        for (const Profesor& inactivo : inactivos) {
+            CHECK(activo.getId() != inactivo.getId());
+        }
+    }
+
+    CHECK(repo.contar() == 3);
+}
+
+// ---------------------------------------------------------------------------
 // INTERFACES: EL CONTRATO UNICO Y LOS FAKES
 // ---------------------------------------------------------------------------
 

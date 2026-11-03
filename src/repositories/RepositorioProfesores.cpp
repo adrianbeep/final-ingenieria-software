@@ -39,6 +39,42 @@ bool RepositorioProfesores::existeLegajo(const std::string& legajo, int& idExist
     return buscarLegajo(legajo, -1, idExistente);
 }
 
+std::vector<Profesor> RepositorioProfesores::listarActivos() const {
+    std::vector<Profesor> activos;
+
+    // `listar()` sale ordenado por id, asi que el resultado tambien.
+    //
+    // POR QUE NO UN INDICE SECUNDARIO POR EL FLAG `activo`
+    //
+    // El repositorio esta indexado por ID. Un indice por "activo" seria un
+    // estado mas que hay que mantener en cada alta, modificacion, baja y
+    // recarga, con el riesgo de que se desincronice del arbol. El volumen del
+    // sistema lo hace irrelevante: un recorrido lineal sobre cientos de
+    // profesores es despreciable al lado de escribir el archivo. Es el mismo
+    // criterio que usa la busqueda por legajo.
+    for (const Profesor& profesor : listar()) {
+        if (profesor.esActivo()) {
+            activos.push_back(profesor);
+        }
+    }
+
+    return activos;
+}
+
+std::vector<Profesor> RepositorioProfesores::listarInactivos() const {
+    std::vector<Profesor> inactivos;
+
+    // Los INACTIVOS tambien se listan: la baja es LOGICA, asi que el profesor
+    // sigue en el repositorio y hay que poder mostrarlo (y reactivarlo).
+    for (const Profesor& profesor : listar()) {
+        if (!profesor.esActivo()) {
+            inactivos.push_back(profesor);
+        }
+    }
+
+    return inactivos;
+}
+
 bool RepositorioProfesores::buscarLegajo(const std::string& legajo,
                                           int idExcluido,
                                           int& idExistente) const {
