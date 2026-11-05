@@ -1,0 +1,8 @@
+#MEDICOS|2|6
+id|nombre|apellido|email|telefono|activo|legajo|especialidad
+1|Gómez|Laura|laura.gomez@unlp.edu.ar|2214556677|1|LEG-1001|CARD
+2|Fernández|Diego|diego.fernandez@unlp.edu.ar|2214556688|1|LEG-1002|PEDI
+3|Sosa|Camila|camila.sosa@unlp.edu.ar|2214556699|1|LEG-1003|TRAU
+4|Vega|Nicolás|nicolas.vega@unlp.edu.ar|2214556700|1|LEG-1004|GAST
+5|Pérez|Julieta|julieta.perez@unlp.edu.ar|2214556711|1|LEG-1005|OFTA
+6|Álvarez|Tomás|tomas.alvarez@unlp.edu.ar|2214556722|1|LEG-1006|ENDO

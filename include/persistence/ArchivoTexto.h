@@ -33,13 +33,20 @@
 //
 // Un archivo = 1 header + 1 linea de esquema + N lineas de registro:
 //
-//     #PACIENTES|1|2
+//     #PACIENTES|2|2
 //     id|nombre|apellido|email|telefono|activo|dni
-//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|MAT-20391
-//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|MAT-20398
+//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391
+//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|2020398
 //
 // El header es POSICIONAL (la primera linea SIEMPRE es el header): es mas
 // simple y no depende de que ningun dato pueda parecerse a un header.
+//
+// El `2` del header es la VERSION DEL FORMATO (no la del programa). La
+// version 2 es la del esquema medico: el `dni` del paciente es NUMERICO
+// (en la version 1 era una matricula alfanumerica) y la especialidad se
+// guarda POR CODIGO ("CARD"), no por descripcion. Un archivo de version 1
+// se RECHAZA: el loader no adivina como migrarlo, dice que version es y
+// deja la decision al usuario.
 //
 // ---------------------------------------------------------------------------
 // POR QUE TEXTO DELIMITADO POR '|' Y NO BINARIO
@@ -230,7 +237,15 @@ public:
     // Version del FORMATO DE ARCHIVO (no la del programa). Vive en el
     // header: por eso el loader puede decir con precision que paso cuando
     // el archivo no se puede leer.
-    static constexpr int VERSION_FORMATO = 1;
+    //
+    // La version 2 es la del ESQUEMA MEDICO: el `dni` del `Paciente` es
+    // NUMERICO (en la version 1 era una matricula alfanumerica) y la
+    // especialidad se guarda POR CODIGO ("CARD"), no por descripcion.
+    //
+    // Un archivo de version 1 se RECHAZA con un error claro: el loader dice
+    // las DOS versiones (la del archivo y la que lee) en vez de adivinar
+    // como migrarlo.
+    static constexpr int VERSION_FORMATO = 2;
 
     explicit ArchivoTexto(std::string ruta_, std::string nombreEntidad_);
 
