@@ -47,7 +47,7 @@ SERVICES_SRCS := $(wildcard src/services/*.cpp)
 MAIN_SRCS := $(wildcard src/*.cpp)
 TEST_SRCS := $(wildcard tests/*.cpp)
 
-ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(MAIN_SRCS)
+ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(MAIN_SRCS)
 
 ifeq ($(OS),Windows_NT)
   EXE := .exe
@@ -84,6 +84,9 @@ $(BUILD_DIR):
 $(VENDOR_OBJ): third_party/ftxui/ftxui.cpp | $(BUILD_DIR)
 	$(CXX) $(VENDOR_CXXFLAGS) $(VENDOR_INCLUDES) -c $< -o $@
 
+# El ejecutable linkea REPOSITORIES_SRCS y SERVICES_SRCS porque el `main` arma
+# el CONTEXTO: los tres repositorios (los objetos que implementan el CRUD y la
+# baja logica) y el servicio de turnos.
 $(TARGET): $(ALL_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(ALL_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 

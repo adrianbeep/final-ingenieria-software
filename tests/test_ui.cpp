@@ -1,13 +1,25 @@
 #include "test_framework.h"
 
+#include "domain/Materia.h"
+#include "entities/Alumno.h"
+#include "entities/Profesor.h"
+#include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
+#include "repositories/RepositorioAlumnos.h"
+#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioTurnos.h"
+#include "services/ServicioTurnos.h"
+#include "ui/Aplicacion.h"
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
 #include "ui/Consola.h"
+#include "ui/Contexto.h"
+#include "ui/CrudPersonas.h"
 #include "ui/Evento.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
+#include "ui/Pantallas/Alumnos.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
@@ -15,8 +27,14 @@
 
 #include <ftxui.hpp>
 
+#include <cstddef>
 #include <cstdlib>
+#include <filesystem>
+#include <memory>
 #include <string>
+#include <system_error>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -871,3 +889,636 @@ TEST_CASE("el render de la tabla tiene las cabeceras y los datos",
     ui::Theme::recargarEntorno();
 }
 
+// ---------------------------------------------------------------------------
+// El motor CRUD de personas
+//
+// QUE SE PRUEBA ACa
+//
+//   - la maquina de vistas del motor: que vista esta, que se ve y que
+//     transicion se dispara;
+//   - los siete pasos del flujo CRUD, con EVENTOS INYECTADOS (sin terminal);
+//   - las reglas que son de la especificacion: el '0' es "volver", la baja
+//     pide confirmacion de dos pasos, el error va debajo del campo y el
+//     texto no se pierde, y el estado vacio dice como volver.
+//
+// LOS DATOS VAN A UN ARCHIVO REAL
+//
+// El repositorio de alumnos es el de verdad (escribiendo en un directorio
+// temporal): asi se prueba tambien la persistencia y la unicidad de la
+// matricula, que son reglas del dominio y no de la interfaz.
+// ---------------------------------------------------------------------------
+namespace {
+
+// Directorio temporal donde los tests escriben sus archivos.
+std::filesystem::path directorioDePruebas() {
+    static const std::filesystem::path directorio = [] {
+        const std::filesystem::path base =
+            std::filesystem::temp_directory_path() / "sistema_turnos_fase6";
+        std::error_code error;
+        std::filesystem::remove_all(base, error);
+        std::filesystem::create_directories(base, error);
+        return base;
+    }();
+    return directorio;
+}
+
+// La ruta de un archivo de prueba NUEVO: borra el anterior, asi cada test
+// arranca con el repositorio vacio.
+std::string rutaNuevaDePrueba(const std::string& nombre) {
+    const std::filesystem::path ruta = directorioDePruebas() / nombre;
+    std::error_code error;
+    std::filesystem::remove(ruta, error);
+    return ruta.string();
+}
+
+// LA PANTALLA QUE ESTA DEBAJO DEL MOTOR
+//
+// Es el "menu anterior": sirve para comprobar que el '0' del motor vuelve a
+// la pantalla de abajo de la pila.
+class PantallaDePrueba : public ui::Pantalla {
+public:
+    std::string titulo() const override { return "Pantalla de prueba"; }
+    ftxui::Element renderizar() override { return ftxui::text("pantalla de prueba"); }
+    bool manejar(const ui::Evento&) override { return false; }
+    std::string textoPlano() const override { return "pantalla de prueba"; }
+};
+
+// EL ESCENARIO DE LAS PRUEBAS DEL MOTOR
+//
+// El motor va en la PILA de la aplicacion (como en la app real), con una
+// pantalla de prueba DEBAJO.
+//
+// LOS TRES REPOSITORIOS SON LOS DE VERDAD
+//
+// El contexto expone los repositorios CONCRETOS (para que las pantallas
+// tengan las reglas de busqueda del repositorio), asi que el escenario usa
+// los mismos tres que usa la aplicacion. Los del motor CRUD siguen siendo
+// los de verdad: asi se prueban tambien la persistencia y la unicidad de la
+// matricula, que son reglas del dominio y no de la interfaz.
+struct Escenario {
+    explicit Escenario(const std::string& nombre)
+        : alumnos(rutaNuevaDePrueba(nombre)),
+          profesores(rutaNuevaDePrueba(nombre + "-profesores")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(alumnos, profesores, turnos),
+          contexto(alumnos, profesores, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        alumnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto motor = std::make_unique<ui::CrudPersonas<Alumno>>(
+            aplicacion, alumnos, alumnos, ui::Pantallas::configDeAlumnos(alumnos, servicio));
+        puntero = motor.get();
+        aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
+    }
+
+    RepositorioAlumnos alumnos;
+    RepositorioProfesores profesores;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+
+    // El motor. OJO: si el motor sale de la pila (por ejemplo, con el '0'),
+    // este puntero queda colgando y no se puede volver a usar.
+    ui::CrudPersonas<Alumno>* puntero = nullptr;
+};
+
+// Escribe un texto en la pantalla (un evento por caracter).
+//
+// Es un TEMPLATE porque el motor es generico: sirve para el de alumnos y
+// para el de profesores.
+template <class T>
+void escribir(ui::CrudPersonas<T>& pantalla, const std::string& texto) {
+    for (const char caracter : texto) {
+        pantalla.manejar(eventoCaracter(caracter));
+    }
+}
+
+// Un alumno valido, para las pruebas que necesitan uno ya cargado.
+Alumno alumnoDePrueba(int id, const std::string& nombre, const std::string& apellido,
+                      const std::string& matricula) {
+    return Alumno(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
+                  matricula);
+}
+
+} // namespace
+
+TEST_CASE("el menu del motor muestra las seis opciones y el cero de volver",
+           crud_menu_inicial) {
+    Escenario escenario("crud_menu_inicial");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    CHECK(motor.vista() == "Menu");
+    // El titulo es el nombre de la entidad en plural.
+    CHECK(motor.titulo() == "ALUMNOS");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("1. Registrar") != std::string::npos);
+    CHECK(texto.find("2. Modificar") != std::string::npos);
+    CHECK(texto.find("3. Baja / Reactivar") != std::string::npos);
+    CHECK(texto.find("4. Listar todos") != std::string::npos);
+    CHECK(texto.find("5. Buscar") != std::string::npos);
+    CHECK(texto.find("6. Ver ficha + historial") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+}
+
+TEST_CASE("el cero del menu del motor vuelve a la pantalla anterior",
+           crud_menu_cero_vuelve) {
+    Escenario escenario("crud_menu_cero_vuelve");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    // Todavia esta el motor arriba de la pila.
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    motor.manejar(eventoCaracter('0'));
+
+    // El motor salio de la pila: la pantalla anterior quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+TEST_CASE("registrar un alumno lo deja en el repositorio", crud_registrar) {
+    Escenario escenario("crud_registrar");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "Formulario");
+
+    escribir(motor, "Ana");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "ana.gomez@unlp.edu.ar");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "2214556677");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "MAT-20391");
+
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // Vuelve al menu y el alumno esta en el repositorio.
+    CHECK(motor.vista() == "Menu");
+    const std::vector<Alumno> alumnos = escenario.alumnos.listar();
+    CHECK(alumnos.size() == 1);
+    if (!alumnos.empty()) {
+        CHECK(alumnos[0].getId() == 1);
+        CHECK(alumnos[0].getNombre() == "Ana");
+        CHECK(alumnos[0].getApellido() == "Gomez");
+        CHECK(alumnos[0].getEmail() == "ana.gomez@unlp.edu.ar");
+        CHECK(alumnos[0].getTelefono() == "2214556677");
+        CHECK(alumnos[0].getMatricula() == "MAT-20391");
+    }
+
+    // El mensaje de exito tiene el formato de la aplicacion.
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 registrado.");
+}
+
+TEST_CASE("un email invalido muestra el error y a la tercera vez lanza",
+           crud_email_invalido) {
+    Escenario escenario("crud_email_invalido");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('1'));
+    escribir(motor, "Ana");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "no-es-un-email");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "2214556677");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "MAT-20391");
+
+    // El primer intento: el error aparece DEBAJO del campo.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Formulario");
+    const std::string conError = motor.vistaTextoPlano();
+    CHECK(conError.find("email") != std::string::npos);
+    // El texto NO se pierde: el usuario corrige lo que escribio.
+    CHECK(conError.find("no-es-un-email|") != std::string::npos);
+
+    // El segundo intento: el campo cuenta los intentos y todavia no lanza.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Formulario");
+
+    // El tercero: se agotaron los intentos y se lanza la excepcion del
+    // dominio (la que el `catch` global de la aplicacion atrapa).
+    bool lanzo = false;
+    try {
+        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    } catch (const DatoInvalidoException&) {
+        lanzo = true;
+    }
+    CHECK(lanzo == true);
+
+    // Y NO se registro nada.
+    CHECK(escenario.alumnos.listar().empty() == true);
+}
+
+TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar) {
+    Escenario escenario("crud_modificar");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Id");
+
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // El formulario arranca con los datos de la entidad que se edita.
+    CHECK(motor.vista() == "Formulario");
+    const std::string formulario = motor.vistaTextoPlano();
+    CHECK(formulario.find("nombre: Ana|") != std::string::npos);
+    CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
+    CHECK(formulario.find("matricula: MAT-20391|") != std::string::npos);
+
+    // Se cambia el nombre: tres retrocesos y "Sol".
+    motor.manejar(eventoTecla(ui::TipoTecla::Retroceso));
+    motor.manejar(eventoTecla(ui::TipoTecla::Retroceso));
+    motor.manejar(eventoTecla(ui::TipoTecla::Retroceso));
+    escribir(motor, "Sol");
+
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Menu");
+    Alumno alumno;
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.getNombre() == "Sol");
+    // Los datos que NO se tocaron siguen como estaban.
+    CHECK(alumno.getApellido() == "Gomez");
+    CHECK(alumno.getMatricula() == "MAT-20391");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 modificado.");
+}
+
+TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
+           crud_baja_sin_confirmar) {
+    Escenario escenario("crud_baja_sin_confirmar");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('3'));
+    CHECK(motor.vista() == "Id");
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // La vista de confirmacion pregunta QUE va a pasar.
+    CHECK(motor.vista() == "Confirmar");
+    CHECK(motor.vistaTextoPlano().find("Dar de baja al alumno #1?") != std::string::npos);
+
+    // "No": vuelve a la vista anterior (la del id) y NO toca nada.
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Id");
+
+    Alumno alumno;
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.esActivo() == true);
+}
+
+TEST_CASE("la baja confirmada deja al alumno inactivo y la reactivation lo activa",
+           crud_baja_y_reactivacion) {
+    Escenario escenario("crud_baja_y_reactivacion");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    Alumno alumno;
+
+    // LA BAJA
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    motor.manejar(eventoCaracter('1'));  // "Si"
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.esActivo() == false);
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 dado de baja.");
+
+    // LA REACTIVACION
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    // Ahora la accion es la contraria: la pregunta lo dice.
+    CHECK(motor.vistaTextoPlano().find("Reactivar al alumno #1?") != std::string::npos);
+    motor.manejar(eventoCaracter('1'));  // "Si"
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.esActivo() == true);
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 reactivado.");
+}
+
+TEST_CASE("listar muestra una fila por alumno", crud_listar) {
+    Escenario escenario("crud_listar");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    CHECK(motor.vista() == "Listado");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Ana") != std::string::npos);
+    CHECK(texto.find("Gomez") != std::string::npos);
+    CHECK(texto.find("Beto") != std::string::npos);
+    CHECK(texto.find("activo") != std::string::npos);
+}
+
+TEST_CASE("un listado vacio dice que no hay y como volver", crud_listado_vacio) {
+    Escenario escenario("crud_listado_vacio");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    CHECK(motor.vista() == "Listado");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("No hay alumnos") != std::string::npos);
+    CHECK(texto.find("0: volver al menu") != std::string::npos);
+}
+
+TEST_CASE("buscar por nombre devuelve las filas de las coincidencias", crud_buscar) {
+    Escenario escenario("crud_buscar");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('5'));
+    CHECK(motor.vista() == "Criterio");
+    // El segundo criterio es el de nombre o apellido.
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Valor");
+
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Resultados");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Gomez") != std::string::npos);
+    // La otra fila NO aparece: solo las coincidencias.
+    CHECK(texto.find("Diaz") == std::string::npos);
+}
+
+TEST_CASE("una busqueda sin coincidencias dice que no hay", crud_sin_coincidencias) {
+    Escenario escenario("crud_sin_coincidencias");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "Zzz");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Resultados");
+    CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
+}
+
+TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
+    Escenario escenario("crud_ficha");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    // Un turno vigente y uno cancelado: la ficha muestra los dos, pero en
+    // tablas distintas.
+    escenario.turnos.alta(
+        Turno(1, 1, 1, Materia::ALG1, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(2, 1, 1, Materia::BDD, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2",
+              EstadoTurno::Cancelado));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('6'));
+    CHECK(motor.vista() == "Id");
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Ficha");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Ana") != std::string::npos);
+    CHECK(texto.find("Gomez") != std::string::npos);
+    CHECK(texto.find("Turnos vigentes") != std::string::npos);
+    CHECK(texto.find("Historial completo") != std::string::npos);
+    CHECK(texto.find("2027-03-10") != std::string::npos);
+    CHECK(texto.find("2027-03-11") != std::string::npos);
+}
+
+TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexistente) {
+    Escenario escenario("crud_id_inexistente");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "9");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // La vista NO cambia: el usuario corrige el id.
+    CHECK(motor.vista() == "Id");
+    CHECK(motor.vistaTextoPlano().find("no existe alumno #9") != std::string::npos);
+}
+
+TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
+           crud_cero_es_dato) {
+    Escenario escenario("crud_cero_es_dato");
+    escenario.alumnos.alta(alumnoDePrueba(10, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "1");
+    escribir(motor, "0");
+
+    // El cero NO fue "volver": es parte del id.
+    CHECK(motor.vista() == "Id");
+    CHECK(motor.vistaTextoPlano().find("Id: 10|") != std::string::npos);
+}
+
+TEST_CASE("el cero de un campo vacio vuelve al menu del motor", crud_cero_vuelve) {
+    Escenario escenario("crud_cero_vuelve");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Id");
+
+    motor.manejar(eventoCaracter('0'));
+    CHECK(motor.vista() == "Menu");
+}
+
+TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
+           crud_confirmacion_raton) {
+    Escenario escenario("crud_confirmacion_raton");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Confirmar");
+
+    // Un clic en el ENCABEZADO (la fila 0): cae fuera de las opciones y no
+    // confirma nada. (La `ui::Confirmacion` no sabe en que fila se dibujan
+    // sus opciones: el motor traduce el clic.)
+    ui::Evento encabezado;
+    encabezado.boton = ui::BotonMouse::Izquierdo;
+    encabezado.x = 4;
+    encabezado.y = 0;
+    motor.manejar(encabezado);
+
+    CHECK(motor.vista() == "Confirmar");
+    Alumno alumno;
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.esActivo() == true);
+
+    // Un clic en la fila del "Si" (la fila 3) SI confirma.
+    ui::Evento si;
+    si.boton = ui::BotonMouse::Izquierdo;
+    si.x = 4;
+    si.y = 3;
+    motor.manejar(si);
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
+    CHECK(alumno.esActivo() == false);
+}
+
+TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
+           crud_render) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    Escenario escenario("crud_render");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    const std::vector<std::string> lineas = renderizarLineas(motor.renderizar(), 60, 12);
+    CHECK(lineas.size() == 12);
+    if (lineas.size() == 12) {
+        CHECK(lineas[0].find("ALUMNOS") != std::string::npos);
+        CHECK(lineas[2].find("1. Registrar") != std::string::npos);
+        CHECK(lineas[8].find("0. Volver") != std::string::npos);
+    }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// EL `Escape` DENTRO DEL MOTOR
+//
+// El motor consume el `Escape` en sus vistas internas (sube UN nivel) y no lo
+// consume en su menu (ahi lo maneja la aplicacion, que saca la pantalla
+// entera de la pila).
+// ---------------------------------------------------------------------------
+TEST_CASE("el escape del motor sube un nivel y no sale de la pantalla",
+           crud_escape_sube_un_nivel) {
+    Escenario escenario("crud_escape_sube_un_nivel");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    // La vista del id: el `Escape` vuelve al menu del motor.
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Id");
+    CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(motor.vista() == "Menu");
+
+    // El motor sigue en la pila: la pantalla de prueba NO quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+}
+
+TEST_CASE("el escape del menu del motor no lo consume (lo maneja la aplicacion)",
+           crud_escape_del_menu) {
+    Escenario escenario("crud_escape_del_menu");
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    CHECK(motor.vista() == "Menu");
+    // El motor NO consume el `Escape`: lo deja pasar para que la aplicacion
+    // saque la pantalla de la pila.
+    CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == false);
+    CHECK(motor.vista() == "Menu");
+}
+
+TEST_CASE("el escape de la confirmacion vuelve a la vista del id",
+           crud_escape_de_la_confirmacion) {
+    Escenario escenario("crud_escape_de_la_confirmacion");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Confirmar");
+
+    CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(motor.vista() == "Id");
+}
+
+TEST_CASE("el escape de los resultados vuelve al menu del motor",
+           crud_escape_de_los_resultados) {
+    Escenario escenario("crud_escape_de_los_resultados");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Resultados");
+
+    CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(motor.vista() == "Menu");
+}
+
+// ---------------------------------------------------------------------------
+// LAS REGLAS DE BUSQUEDA SON LAS DEL REPOSITORIO
+//
+// La pantalla no reescribe la regla: la pide al repositorio. Estos tests
+// fijan las reglas que la pantalla TIENE que respetar.
+// ---------------------------------------------------------------------------
+TEST_CASE("la busqueda por nombre es parcial e insensible a mayusculas",
+           crud_buscar_nombre_regla) {
+    Escenario escenario("crud_buscar_nombre_regla");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    // Un fragmento del apellido, en minusculas.
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "go");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Resultados");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Gomez") != std::string::npos);
+    CHECK(texto.find("Diaz") == std::string::npos);
+}
+
+TEST_CASE("la busqueda por matricula es exacta e insensible a mayusculas",
+           crud_buscar_matricula_regla) {
+    Escenario escenario("crud_buscar_matricula_regla");
+    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+
+    // El criterio de matricula es el TERCERO.
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('3'));
+
+    // En minusculas: la misma matricula (la regla es insensible a
+    // mayusculas).
+    escribir(motor, "mat-20391");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Resultados");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("MAT-20391") != std::string::npos);
+    CHECK(texto.find("Ana") != std::string::npos);
+
+    // Un fragmento NO alcanza: la coincidencia es EXACTA.
+    motor.manejar(eventoCaracter('0'));
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "MAT-2039");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Resultados");
+    CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
+  }
