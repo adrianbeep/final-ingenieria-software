@@ -157,6 +157,35 @@ std::string rutaDeEjemplo(const std::string& nombre) {
     return std::string();
 }
 
+// Busca un archivo de la SEMILLA (`data/ejemplo/...`) probando los mismos
+// directorios candidatos que `rutaDeEjemplo`: el test corre desde la raiz del
+// repo (Makefile) o desde `build/` (CTest).
+std::string rutaDeSemilla(const std::string& nombre) {
+    static const char* DIRECTORIOS[] = {"data/ejemplo", "../data/ejemplo", "../../data/ejemplo",
+                                         "../../../data/ejemplo"};
+    for (const char* directorio : DIRECTORIOS) {
+        const std::filesystem::path candidata = std::filesystem::path(directorio) / nombre;
+        if (existeArchivo(candidata.string())) {
+            return candidata.string();
+        }
+    }
+    return std::string();
+}
+
+// Devuelve el campo de la VERSION del header de un archivo ("#ENTIDAD|VERSION|
+// CANTIDAD"), o una cadena vacia si el header no esta.
+std::string versionDelHeader(const std::string& ruta) {
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    if (lineas.empty()) {
+        return std::string();
+    }
+    const std::vector<std::string> campos = Utils::separar(lineas[0], '|');
+    if (campos.size() < 2) {
+        return std::string();
+    }
+    return campos[1];
+}
+
 // ---------------------------------------------------------------------------
 // Datos de prueba: 100 entidades validas de cada tipo.
 //
@@ -1528,30 +1557,23 @@ TEST_CASE("el turno sigue siendo valido aunque se reordene el enum de especialid
     CHECK(codigoDe(cargados[0].getEspecialidad()) == "NEUM");
 }
 
-TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad de su medico",
-          persistencia_ejemplos) {
-    const std::string rutaTurnos = rutaDeEjemplo("turnos.dat");
-    CHECK(!rutaTurnos.empty());
-    if (rutaTurnos.empty()) {
-        return;
-    }
-
+// Verifica que un juego de archivos (turnos, medicos y pacientes) sea
+// COHERENTE con la regla del dominio: cada turno es de la especialidad de SU
+// medico, y el paciente del turno existe.
+//
+// Un turno es de la especialidad de SU medico: si no lo fuera, el turno no se
+// podria agendar (la regla del servicio lo rechaza). Los archivos de
+// ejemplo tienen que cumplir la misma regla que la aplicacion.
+//
+// Se usa para los archivos VIVOS de `data/` y para la SEMILLA de
+// `data/ejemplo/`: los dos tienen que cumplir la MISMA regla, asi que la
+// verificacion es una sola.
+void verificarCoherenciaDeTurnos(const std::string& rutaTurnos,
+                                  const std::string& rutaMedicos,
+                                  const std::string& rutaPacientes) {
     ArchivoTexto<Turno> archivoTurnos(rutaTurnos, "TURNOS");
     const std::vector<Turno> turnos = archivoTurnos.cargar();
     CHECK(!turnos.empty());
-
-    // LA SEMILLA ES COHERENTE CON LA REGLA 2b
-    //
-    // Un turno es de la especialidad de SU medico: si no lo fuera, el turno
-    // no se podria agendar (la regla del servicio lo rechaza). Los archivos
-    // de ejemplo tienen que cumplir la misma regla que la aplicacion.
-    const std::string rutaMedicos = rutaDeEjemplo("medicos.dat");
-    const std::string rutaPacientes = rutaDeEjemplo("pacientes.dat");
-    CHECK(!rutaMedicos.empty());
-    CHECK(!rutaPacientes.empty());
-    if (rutaMedicos.empty() || rutaPacientes.empty()) {
-        return;
-    }
 
     ArchivoTexto<Medico> archivoMedicos(rutaMedicos, "MEDICOS");
     ArchivoTexto<Paciente> archivoPacientes(rutaPacientes, "PACIENTES");
@@ -1571,6 +1593,8 @@ TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad 
         CHECK(medico != nullptr);
         if (medico != nullptr) {
             CHECK(turno.getEspecialidad() == medico->getEspecialidad());
+            // Y por CODIGO: es lo que viaja al archivo.
+            CHECK(codigoDe(turno.getEspecialidad()) == codigoDe(medico->getEspecialidad()));
         }
 
         // Y el paciente del turno existe.
@@ -1583,6 +1607,48 @@ TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad 
         }
         CHECK(existe);
     }
+}
+
+TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad de su medico",
+          persistencia_ejemplos) {
+    const std::string rutaTurnos = rutaDeEjemplo("turnos.dat");
+    const std::string rutaMedicos = rutaDeEjemplo("medicos.dat");
+    const std::string rutaPacientes = rutaDeEjemplo("pacientes.dat");
+    CHECK(!rutaTurnos.empty());
+    CHECK(!rutaMedicos.empty());
+    CHECK(!rutaPacientes.empty());
+    if (rutaTurnos.empty() || rutaMedicos.empty() || rutaPacientes.empty()) {
+        return;
+    }
+
+    verificarCoherenciaDeTurnos(rutaTurnos, rutaMedicos, rutaPacientes);
+}
+
+TEST_CASE("la semilla de data/ejemplo esta en la version 2 y es coherente",
+          persistencia_semilla) {
+    // La SEMILLA es el juego de archivos que se copia sobre `data/` para
+    // empezar de cero (la pantalla de "cargar datos de ejemplo" todavia no
+    // existe: es la Fase 6 / PR15). Esta SEPARADA de los archivos vivos: los
+    // vivos los modifica la aplicacion, la semilla no.
+    const std::string rutaTurnos = rutaDeSemilla("turnos.dat");
+    const std::string rutaMedicos = rutaDeSemilla("medicos.dat");
+    const std::string rutaPacientes = rutaDeSemilla("pacientes.dat");
+    CHECK(!rutaTurnos.empty());
+    CHECK(!rutaMedicos.empty());
+    CHECK(!rutaPacientes.empty());
+    if (rutaTurnos.empty() || rutaMedicos.empty() || rutaPacientes.empty()) {
+        return;
+    }
+
+    // Los tres archivos de la semilla estan en la version 2 del formato: el
+    // segundo campo del header es la version.
+    CHECK(versionDelHeader(rutaTurnos) == "2");
+    CHECK(versionDelHeader(rutaMedicos) == "2");
+    CHECK(versionDelHeader(rutaPacientes) == "2");
+
+    // Y la semilla cumple la MISMA regla que los archivos vivos: cada turno
+    // es de la especialidad de SU medico.
+    verificarCoherenciaDeTurnos(rutaTurnos, rutaMedicos, rutaPacientes);
 }
 
 TEST_CASE("el archivo de ejemplo de pacientes tiene el header esperado",

@@ -86,7 +86,8 @@ include/    headers: domain, entities, structures, persistence,
                        repositories, exceptions, services, utils, ui
 src/        implementaciones .cpp, espejo de include/
 tests/      arnes de tests propio (sin framework externo)
-data/       archivos de datos de ejemplo
+data/       datos de trabajo: los archivos que usa la aplicacion
+data/ejemplo/  la semilla: los datos de ejemplo, para empezar de cero
 third_party/  FTXUI, vendorizada (ver la decision 18)
 docs/       trazabilidad y decisiones de diseno
 ```
@@ -132,6 +133,18 @@ vendorizada en `third_party/ftxui/`:
 operativo**: el archivo generado en Windows es byte a byte el mismo que el
 generado en Linux. Por eso `.gitattributes` los marca `-text` y se guardan tal
 cual, sin conversion de fin de linea.
+
+En `data/` estan los archivos de **trabajo**: los que la aplicacion abre y
+modifica. En `data/ejemplo/` esta la **semilla**: el mismo juego de datos, en
+la version 2 del formato y sin tocar. La idea es que la pantalla de "cargar
+datos de ejemplo" copie la semilla sobre `data/` para empezar de cero (esa
+pantalla todavia no existe: es la Fase 6 / PR15).
+
+La semilla tiene las MISMAS garantias de bytes: **LF**, **UTF-8 sin BOM** y
+`-text` en `.gitattributes`. Por eso la regla es explicita para los dos
+directorios (`data/*.dat` y `data/ejemplo/*.dat`): en `.gitattributes` un
+patron con barra esta anclado al directorio del archivo y el `*` no cruza la
+barra, asi que `data/*.dat` NO alcanza a `data/ejemplo/*.dat`.
 
 ## Convenciones
 
