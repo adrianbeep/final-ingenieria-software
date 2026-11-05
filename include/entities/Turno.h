@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/Materia.h"
+#include "domain/Especialidad.h"
 #include "utils/Fecha.h"
 
 #include <cstddef>
@@ -23,17 +23,17 @@ std::string estadoATexto(EstadoTurno estado);
 EstadoTurno estadoDesdeTexto(const std::string& texto);
 
 // ---------------------------------------------------------------------------
-// Turno: la RELACION entre un profesor, un alumno, una materia, una fecha y
+// Turno: la RELACION entre un medico, un paciente, una especialidad, una fecha y
 // una hora.
 //
 // POR QUE NO HEREDA DE `Persona`: un turno NO es una persona: no tiene
 // nombre, ni email, ni telefono. Heredar seria un "es-un" falso. Un turno
-// TIENE-UN profesor y un alumno, pero solo guarda sus ids.
+// TIENE-UN medico y un paciente, pero solo guarda sus ids.
 //
 // FORMATO CANONICO (el que usa el archivo de datos de la Fase 4):
-//   id|idProfesor|idAlumno|codigoMateria|fecha|hora|duracionMin|aula|estado|idTurnoReemplazante
+//   id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante
 //
-// `materia` viaja con su CODIGO ("ALG1"), nunca con el indice del enum:
+// `especialidad` viaja con su CODIGO ("CARD"), nunca con el indice del enum:
 // reordenar el enum no tiene que invalidar los archivos de datos.
 //
 // POR QUE EL `friend`: igual que en las demas entidades, el `operator<<` es
@@ -53,32 +53,32 @@ public:
     // Construye un turno validando TODOS los datos a traves de los setters
     // (que lanzan `DatoInvalidoException`).
     Turno(int id_,
-          int idProfesor_,
-          int idAlumno_,
-          Materia materia_,
+          int idMedico_,
+          int idPaciente_,
+          Especialidad especialidad_,
           const Fecha& fecha_,
           const Hora& hora_,
           int duracionMin_,
-          const std::string& aula_,
+          const std::string& consultorio_,
           EstadoTurno estado_ = EstadoTurno::Activo,
           int idTurnoReemplazante_ = -1);
 
     // --- Getters ---
     int getId() const { return id; }
-    int getIdProfesor() const { return idProfesor; }
-    int getIdAlumno() const { return idAlumno; }
-    Materia getMateria() const { return materia; }
+    int getIdMedico() const { return idMedico; }
+    int getIdPaciente() const { return idPaciente; }
+    Especialidad getEspecialidad() const { return especialidad; }
     const Fecha& getFecha() const { return fecha; }
     const Hora& getHora() const { return hora; }
     int getDuracionMin() const { return duracionMin; }
-    const std::string& getAula() const { return aula; }
+    const std::string& getConsultorio() const { return consultorio; }
     EstadoTurno getEstado() const { return estado; }
     int getIdTurnoReemplazante() const { return idTurnoReemplazante; }
 
     // --- Setters con validacion ---
-    void setIdProfesor(int idProfesor_) { idProfesor = idProfesor_; }
-    void setIdAlumno(int idAlumno_) { idAlumno = idAlumno_; }
-    void setMateria(Materia materia_) { materia = materia_; }
+    void setIdMedico(int idMedico_) { idMedico = idMedico_; }
+    void setIdPaciente(int idPaciente_) { idPaciente = idPaciente_; }
+    void setEspecialidad(Especialidad especialidad_) { especialidad = especialidad_; }
 
     // La `Fecha` y la `Hora` de la Fase 1 se pueden construir con valores
     // invalidos (la validacion vive en `Fecha::esValida` / `Hora::esValida`),
@@ -87,7 +87,7 @@ public:
     void setHora(const Hora& hora_);
 
     void setDuracionMin(int duracionMin_);
-    void setAula(const std::string& v);
+    void setConsultorio(const std::string& v);
     void setEstado(EstadoTurno estado_) { estado = estado_; }
     void setIdTurnoReemplazante(int idTurnoReemplazante_);
 
@@ -111,8 +111,8 @@ public:
     // --- Limites de los campos, con nombre ---
     static constexpr int DURACION_MULTIPLO_MINUTOS = 15;
     static constexpr int DURACION_MAXIMA_MINUTOS = 240;
-    static constexpr std::size_t AULA_LONGITUD_MINIMA = 1;
-    static constexpr std::size_t AULA_LONGITUD_MAXIMA = 20;
+    static constexpr std::size_t CONSULTORIO_LONGITUD_MINIMA = 1;
+    static constexpr std::size_t CONSULTORIO_LONGITUD_MAXIMA = 20;
 
 protected:
     // El id lo asigna el repositorio, no el usuario: por eso es `protected`
@@ -125,16 +125,16 @@ private:
     static constexpr std::size_t CANTIDAD_CAMPOS = 10;
 
     static bool duracionMinValido(int valor);
-    static bool aulaValida(const std::string& v);
+    static bool consultorioValido(const std::string& v);
 
     int id = -1;  // -1 = sin asignar
-    int idProfesor = -1;
-    int idAlumno = -1;
-    Materia materia = Materia::ALG1;
+    int idMedico = -1;
+    int idPaciente = -1;
+    Especialidad especialidad = Especialidad::CARD;
     Fecha fecha;
     Hora hora;
     int duracionMin = 0;
-    std::string aula;
+    std::string consultorio;
     EstadoTurno estado = EstadoTurno::Activo;
     int idTurnoReemplazante = -1;  // -1 = este turno no reemplaza a otro
 };

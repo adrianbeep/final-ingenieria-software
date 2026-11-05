@@ -2,23 +2,23 @@
 
 namespace ui {
 
-Contexto::Contexto(RepositorioAlumnos& alumnos,
-                   RepositorioProfesores& profesores,
+Contexto::Contexto(RepositorioPacientes& pacientes,
+                   RepositorioMedicos& medicos,
                    RepositorioTurnos& turnos,
                    ServicioTurnos& servicioTurnos)
-    : _alumnos(alumnos),
-      _profesores(profesores),
+    : _pacientes(pacientes),
+      _medicos(medicos),
       _turnos(turnos),
       _servicioTurnos(servicioTurnos),
       _mensaje(Mensaje::vacio()) {
 }
 
-RepositorioAlumnos& Contexto::alumnos() const {
-    return _alumnos;
+RepositorioPacientes& Contexto::pacientes() const {
+    return _pacientes;
 }
 
-RepositorioProfesores& Contexto::profesores() const {
-    return _profesores;
+RepositorioMedicos& Contexto::medicos() const {
+    return _medicos;
 }
 
 RepositorioTurnos& Contexto::turnos() const {

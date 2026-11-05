@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "entities/Alumno.h"
+#include "entities/Paciente.h"
 #include "entities/Persona.h"
 #include "structures/ArbolBST.h"
 
@@ -14,8 +14,8 @@
 // Tests de `ArbolBST<T>`: el arbol binario de busqueda.
 //
 // Los tests del ARBOL corren con tipos que NO son entidades del dominio
-// (`Entero`, `PersonaDePrueba`): si el TAD solo anduviera con `Profesor`,
-// `Alumno` y `Turno`, no seria un template.
+// (`Entero`, `PersonaDePrueba`): si el TAD solo anduviera con `Medico`,
+// `Paciente` y `Turno`, no seria un template.
 //
 // El TAD NO usa `operator==` en ningun punto: la busqueda y la deteccion de
 // duplicados usan la EQUIVALENCIA que induce `operator<` (ni `a < b` ni
@@ -38,8 +38,8 @@ struct SinOrden {
     int v;
 };
 
-// Doble de `Persona`: permite meter en UN MISMO arbol un "profesor" y un
-// "alumno" con el mismo id, para comprobar que el TIPO desempata el orden
+// Doble de `Persona`: permite meter en UN MISMO arbol un "medico" y un
+// "paciente" con el mismo id, para comprobar que el TIPO desempata el orden
 // (el `operator<` de la Fase 2 ordena por `(id, tipo)`).
 class PersonaDePrueba : public Persona {
 public:
@@ -97,12 +97,12 @@ std::vector<int> permutacionDeterminista(int cantidad) {
     return valores;
 }
 
-Alumno alumnoDePrueba(int id, const std::string& nombre, const std::string& matricula) {
-    return Alumno(id, nombre, "Gomez", "alumno@example.com", "1122334455", matricula);
+Paciente pacienteDePrueba(int id, const std::string& nombre, const std::string& dni) {
+    return Paciente(id, nombre, "Gomez", "paciente@example.com", "1122334455", dni);
 }
 
 static_assert(TieneOperadorMenor<Entero>::value, "Entero tiene que traer operator<");
-static_assert(TieneOperadorMenor<Alumno>::value, "Alumno tiene que traer operator<");
+static_assert(TieneOperadorMenor<Paciente>::value, "Paciente tiene que traer operator<");
 static_assert(!TieneOperadorMenor<SinOrden>::value,
               "un tipo sin operator< no se puede usar en el arbol: es lo correcto");
 
@@ -115,23 +115,23 @@ TEST_CASE("el arbol es generico y solo exige operator<", estructuras_contrato_op
     CHECK(arbol.size() == 2);
 }
 
-TEST_CASE("el arbol funciona con Alumno, que trae el operator< de la Fase 2",
-          estructuras_arbol_con_alumno) {
-    ArbolBST<Alumno> arbol;
-    CHECK(arbol.insertar(alumnoDePrueba(3, "Ana", "A-0003")));
-    CHECK(arbol.insertar(alumnoDePrueba(1, "Beto", "A-0001")));
-    CHECK(arbol.insertar(alumnoDePrueba(2, "Caro", "A-0002")));
+TEST_CASE("el arbol funciona con Paciente, que trae el operator< de la Fase 2",
+          estructuras_arbol_con_paciente) {
+    ArbolBST<Paciente> arbol;
+    CHECK(arbol.insertar(pacienteDePrueba(3, "Ana", "2000003")));
+    CHECK(arbol.insertar(pacienteDePrueba(1, "Beto", "2000001")));
+    CHECK(arbol.insertar(pacienteDePrueba(2, "Caro", "2000002")));
     CHECK(arbol.size() == 3);
-    CHECK(arbol.buscar(alumnoDePrueba(2, "Caro", "A-0002")));
+    CHECK(arbol.buscar(pacienteDePrueba(2, "Caro", "2000002")));
 
-    const std::vector<Alumno> ordenados = arbol.inOrder();
+    const std::vector<Paciente> ordenados = arbol.inOrder();
     CHECK(ordenados.size() == 3);
     CHECK(ordenados[0].getId() == 1);
     CHECK(ordenados[1].getId() == 2);
     CHECK(ordenados[2].getId() == 3);
 
-    // El id es la clave: dos alumnos con el mismo id son duplicados.
-    CHECK(!arbol.insertar(alumnoDePrueba(2, "Caro", "A-0002")));
+    // El id es la clave: dos pacientes con el mismo id son duplicados.
+    CHECK(!arbol.insertar(pacienteDePrueba(2, "Caro", "2000002")));
     CHECK(arbol.size() == 3);
 }
 
@@ -290,23 +290,23 @@ TEST_CASE("operator< es transitivo", estructuras_orden_transitivo) {
 TEST_CASE("insertar un valor equivalente a uno ya insertado devuelve false",
           estructuras_duplicado_equivalente) {
     ArbolBST<PersonaDePrueba> arbol;
-    CHECK(arbol.insertar(PersonaDePrueba(7, "Alumno")));
-    CHECK(!arbol.insertar(PersonaDePrueba(7, "Alumno")));
+    CHECK(arbol.insertar(PersonaDePrueba(7, "Paciente")));
+    CHECK(!arbol.insertar(PersonaDePrueba(7, "Paciente")));
     CHECK(arbol.size() == 1);
 }
 
 TEST_CASE("el tipo desempata el orden: mismo id y distinto tipo NO es duplicado",
           estructuras_mismo_id_distinto_tipo) {
     ArbolBST<PersonaDePrueba> arbol;
-    CHECK(arbol.insertar(PersonaDePrueba(7, "Alumno")));
-    CHECK(arbol.insertar(PersonaDePrueba(7, "Profesor")));
+    CHECK(arbol.insertar(PersonaDePrueba(7, "Paciente")));
+    CHECK(arbol.insertar(PersonaDePrueba(7, "Medico")));
     CHECK(arbol.size() == 2);
-    CHECK(arbol.buscar(PersonaDePrueba(7, "Alumno")));
-    CHECK(arbol.buscar(PersonaDePrueba(7, "Profesor")));
+    CHECK(arbol.buscar(PersonaDePrueba(7, "Paciente")));
+    CHECK(arbol.buscar(PersonaDePrueba(7, "Medico")));
 
     // Y volver a insertar cualquiera de los dos SIGUE siendo duplicado.
-    CHECK(!arbol.insertar(PersonaDePrueba(7, "Alumno")));
-    CHECK(!arbol.insertar(PersonaDePrueba(7, "Profesor")));
+    CHECK(!arbol.insertar(PersonaDePrueba(7, "Paciente")));
+    CHECK(!arbol.insertar(PersonaDePrueba(7, "Medico")));
     CHECK(arbol.size() == 2);
 }
 
@@ -883,18 +883,18 @@ TEST_CASE("buscarPorClave hace O(altura) comparaciones: cuenta las llamadas",
 TEST_CASE("cada instanciacion del TAD tiene su propio contador de nodos",
           estructuras_arbol_contadores_independientes) {
     CHECK(ArbolBST<Entero>::nodosVivos() == 0);
-    CHECK(ArbolBST<Alumno>::nodosVivos() == 0);
+    CHECK(ArbolBST<Paciente>::nodosVivos() == 0);
 
     {
         ArbolBST<Entero> arbolEntero;
-        ArbolBST<Alumno> arbolAlumno;
+        ArbolBST<Paciente> arbolPaciente;
         arbolEntero.insertar(Entero{1});
-        arbolAlumno.insertar(alumnoDePrueba(1, "Ana", "A-0001"));
+        arbolPaciente.insertar(pacienteDePrueba(1, "Ana", "2000001"));
 
         CHECK(ArbolBST<Entero>::nodosVivos() == 1);
-        CHECK(ArbolBST<Alumno>::nodosVivos() == 1);
+        CHECK(ArbolBST<Paciente>::nodosVivos() == 1);
     }
 
     CHECK(ArbolBST<Entero>::nodosVivos() == 0);
-    CHECK(ArbolBST<Alumno>::nodosVivos() == 0);
+    CHECK(ArbolBST<Paciente>::nodosVivos() == 0);
 }

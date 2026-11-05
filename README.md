@@ -2,7 +2,7 @@
 
 Trabajo Practico Final de Ingenieria de Software, Segundo anio de la carrera Analisis de Sistemas.
 
-Sistema de gestion de turnos en C++17.
+**Sistema de turnos medicos** en C++17, con interfaz de consola TUI.
 
 ## Estado del proyecto
 
@@ -12,10 +12,30 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 |---|---|---|---|
 | 0 | Scaffold y build | [#5](https://github.com/adrianbeep/final-ingenieria-software/issues/5) | Completada |
 | 1 | Cimientos: excepciones, validacion y fecha | [#2](https://github.com/adrianbeep/final-ingenieria-software/issues/2) | Completada |
-| 2 | Entidades, operadores y catalogo de materias | [#3](https://github.com/adrianbeep/final-ingenieria-software/issues/3) | Completada |
+| 2 | Entidades, operadores y catalogo de especialidades | [#3](https://github.com/adrianbeep/final-ingenieria-software/issues/3) | Completada |
 | 3 | Estructuras de datos propias | [#6](https://github.com/adrianbeep/final-ingenieria-software/issues/6) | Completada |
 | 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Completada |
 | 5 | Repositorios y reglas de negocio | [#14](https://github.com/adrianbeep/final-ingenieria-software/issues/14) | Completada |
+| 6 | Interfaz de consola TUI: 38 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | En curso |
+| 7 | Extras y cierre tecnico | — | Pendiente |
+| 8 | Documentacion y defensa | — | Pendiente |
+
+### El dominio
+
+`Medico`, `Paciente` y `Turno`, con `Especialidad` como `enum class` de doce
+valores.
+
+El modelo es el de un consultorio: un medico tiene **una** especialidad, da
+turnos a pacientes, y **no puede atender a dos pacientes a la vez**. El turno
+tiene que ser **de la especialidad del medico que lo atiende**: esa regla es
+la que hace que la especialidad deje de ser un dato decorativo.
+
+La duracion de un turno es un multiplo de 15 minutos (hasta 240), el horario de
+atencion va de 08:00 a 22:00 con granularidad de 30 minutos, y el consultorio
+se identifica con un codigo de hasta 20 caracteres.
+
+> Las decisiones de diseno, con su justificacion, estan en
+> [docs/decisiones.md](docs/decisiones.md).
 
 ## Requisitos
 
@@ -52,7 +72,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 266 caso(s), 0 fallo(s)
+# 381 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -67,6 +87,7 @@ include/    headers: domain, entities, structures, persistence,
 src/        implementaciones .cpp, espejo de include/
 tests/      arnes de tests propio (sin framework externo)
 data/       archivos de datos de ejemplo
+third_party/  FTXUI, vendorizada (ver la decision 18)
 docs/       trazabilidad y decisiones de diseno
 ```
 
@@ -89,9 +110,23 @@ Medido con 1000 entidades: **altura 10 y 9 comparaciones** para encontrar un id
 y 9 para un id inexistente. Los tests fijan la complejidad **contando
 comparaciones**, no midiendo el reloj.
 
+### La interfaz: una TUI de consola
+
+La interfaz es una **TUI de consola** sobre [FTXUI](https://github.com/ArthurSonzonni/FTXUI),
+vendorizada en `third_party/ftxui/`:
+
+- **Teclado primero.** Las flechas mueven, `Enter` elige, `Esc` y `0` vuelven.
+  El mouse es un plus: funciona en los terminales que lo soportan (Windows
+  Terminal, VS Code, Linux) y su ausencia no rompe nada.
+- **Sin terminal, no hay TUI.** El binario detecta que no hay terminal
+  interactiva, imprime el menu en texto plano y sale con codigo 0. Es lo que
+  permite que el CI lo ejecute sin colgarse.
+- **`NO_COLOR` respetado:** sin ese variable, la salida no tiene codigos de
+  color.
+
 ### Los archivos de datos de ejemplo
 
-`data/alumnos.dat`, `data/profesores.dat` y `data/turnos.dat` estan escritos con
+`data/pacientes.dat`, `data/medicos.dat` y `data/turnos.dat` estan escritos con
 **LF** (no CRLF) y **UTF-8 sin BOM**. La capa de persistencia escribe en modo
 **binario**, asi que los bytes que produce son **identicos en cualquier sistema
 operativo**: el archivo generado en Windows es byte a byte el mismo que el
@@ -104,3 +139,4 @@ cual, sin conversion de fin de linea.
 - Compilacion limpia con `-Wall -Wextra -Wpedantic` (mas `-Wshadow`,
   `-Wnon-virtual-dtor` y `-Woverloaded-virtual`).
 - `main.cpp` sin logica de negocio: solo despacho.
+- La capa de dominio **no** depende de la interfaz: lo verifica el CI.

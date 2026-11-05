@@ -6,8 +6,8 @@
 // ---------------------------------------------------------------------------
 // IRepositorio<T>: el CONTRATO de un repositorio.
 //
-// POR QUE ES UN TEMPLATE Y NO TRES INTERFACES (`IAlumnoRepositorio`,
-// `IProfesorRepositorio`, `ITurnoRepositorio`)
+// POR QUE ES UN TEMPLATE Y NO TRES INTERFACES (`IPacienteRepositorio`,
+// `IMedicoRepositorio`, `ITurnoRepositorio`)
 //
 // El CRUD de las tres entidades es IDENTICO: los mismos metodos, con las
 // mismas reglas, cambiando solo el tipo de la entidad. Con tres interfaces
@@ -15,7 +15,7 @@
 // el "CRUD triplicado" que la consigna quiere evitar, movido de las clases
 // concretas a las interfaces. Con una sola interfaz generica el contrato
 // esta escrito UNA vez, y quien lo usa trabaja con la INTERFAZ:
-// `ServicioTurnos` recibe `IRepositorio<Alumno>&`, `IRepositorio<Profesor>&`
+// `ServicioTurnos` recibe `IRepositorio<Paciente>&`, `IRepositorio<Medico>&`
 // y `IRepositorio<Turno>&`, que son tres tipos DISTINTOS.
 //
 // QUE HACE ESTA INTERFAZ Y QUE NO

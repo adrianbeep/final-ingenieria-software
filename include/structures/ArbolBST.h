@@ -6,14 +6,14 @@
 // ---------------------------------------------------------------------------
 // ArbolBST<T>: arbol binario de busqueda, escrito a mano.
 //
-// ES EL BACKING DE LAS TRES COLECCIONES DEL SISTEMA (profesores, alumnos y
+// ES EL BACKING DE LAS TRES COLECCIONES DEL SISTEMA (medicos, pacientes y
 // turnos): el acceso es POR CLAVE (el id), que es unico y comparable.
 //
 // ---------------------------------------------------------------------------
 // POR QUE PUNTEROS CRUDOS Y NO `std::unique_ptr` (decision S1)
 //
 // El requisito 7 de la consigna pide una estructura IMPLEMENTADA POR EL
-// ALUMNO. Con `unique_ptr` el `operator=` de copia queda eliminado (el TAD no
+// PACIENTE. Con `unique_ptr` el `operator=` de copia queda eliminado (el TAD no
 // se podria copiar) y el contador de nodos vivos (el detector de fugas
 // portable, decision S4) no se podria escribir sin instrumentar el `deleter`.
 // Con punteros crudos hay que escribir a mano las CINCO operaciones de la
@@ -89,7 +89,7 @@ public:
     // en cambio, necesita preguntar por una PARTE del valor (el id): para
     // preguntar "existe el #7" con `buscar()` habria que construir una
     // entidad de prueba COMPLETA (con nombre, apellido, email, telefono y
-    // matricula validos, porque los setters lanzan `DatoInvalidoException`),
+    // dni validos, porque los setters lanzan `DatoInvalidoException`),
     // solo para descartar ese dato en la comparacion.
     //
     // Este metodo separa la CLAVE del VALOR: el arbol sigue siendo
@@ -130,8 +130,8 @@ public:
 
     // Nodos vivos de esta instanciacion: el detector de fugas portable
     // (decision S4). Es `static` DENTRO de una plantilla, asi que hay un
-    // contador por `T`: el de `ArbolBST<Profesor>` es independiente del de
-    // `ArbolBST<Alumno>`.
+    // contador por `T`: el de `ArbolBST<Medico>` es independiente del de
+    // `ArbolBST<Paciente>`.
     static int nodosVivos() { return contador(); }
 
 private:

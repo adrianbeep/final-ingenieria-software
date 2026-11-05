@@ -17,8 +17,8 @@
 //
 // POR QUE EXISTE
 //
-// `RepositorioCRUD<T>` es un template GENERICO: `T` puede ser un alumno, un
-// profesor... o un TURNO, que no es una persona y no tiene ni nombre ni
+// `RepositorioCRUD<T>` es un template GENERICO: `T` puede ser un paciente, un
+// medico... o un TURNO, que no es una persona y no tiene ni nombre ni
 // apellido. La busqueda por nombre solo tiene sentido para las entidades que
 // los tienen, asi que el cuerpo de la busqueda tiene que poder COMPILAR (o
 // no compilar) segun el tipo.
@@ -62,7 +62,7 @@ struct TieneNombreYApellido<T, std::void_t<
 // ESTA CAPA NO TIENE REGLAS DE NEGOCIO
 //
 // El repositorio guarda y devuelve entidades. No sabe si dos turnos se
-// solapan, no valida que una matricula sea unica, no decide si un alumno
+// solapan, no valida que un dni sea unico, no decide si un paciente
 // inactivo puede ser agendado. Eso es del servicio. Lo unico que esta capa
 // dice es "este id ya estaba" o "este id no existe", porque son las dos
 // reglas del CRUD en si.
@@ -89,7 +89,7 @@ template <class T>
 class RepositorioCRUD : public IRepositorio<T> {
 public:
     // `ruta` es el archivo de datos y `nombreEntidad` el "magic" del header
-    // ("ALUMNOS", "PROFESORES", "TURNOS").
+    // ("PACIENTES", "MEDICOS", "TURNOS").
     RepositorioCRUD(std::string ruta, std::string nombreEntidad);
 
     void alta(const T& entidad) override;
@@ -105,7 +105,7 @@ public:
     // decision R6 se demuestra sobre la altura del arbol que queda cargado).
     const ArbolBST<T>& arbol() const { return _arbol; }
 
-    // El nombre de la entidad ("ALUMNOS", "PROFESORES", "TURNOS"): es lo
+    // El nombre de la entidad ("PACIENTES", "MEDICOS", "TURNOS"): es lo
     // que va en los mensajes de las excepciones del CRUD.
     const std::string& nombreEntidad() const { return _archivo.nombreEntidad(); }
 
@@ -134,12 +134,12 @@ private:
     //
     // `ArbolBST::buscar()` busca por EQUIVALENCIA, y la equivalencia la
     // induce el `operator<` del tipo `T`. En el dominio, `Persona::operator<`
-    // ordena por `(id, tipo)`: para encontrar un alumno HABRIA que construir
-    // un alumno de prueba con el mismo id y el mismo tipo, y ese alumno de
+    // ordena por `(id, tipo)`: para encontrar un paciente HABRIA que construir
+    // un paciente de prueba con el mismo id y el mismo tipo, y ese paciente de
     // prueba tendria que tener un nombre, un apellido, un email, un
-    // telefono y una matricula VALIDOS (los setters lanzan
+    // telefono y un dni VALIDOS (los setters lanzan
     // `DatoInvalidoException` si no). O sea: para preguntar "existe el
-    // alumno #7" habria que inventar un alumno #7 completo.
+    // paciente #7" habria que inventar un paciente #7 completo.
     //
     // `ArbolBST::buscarPorClave()` evita exactamente eso: el arbol compara
     // una CLAVE contra el valor almacenado con el comparador que le pasa
@@ -226,7 +226,7 @@ void RepositorioCRUD<T>::modificar(const T& entidad) {
     // OJO: la clave del arbol es el `operator<` del tipo `T`, no el id. En el
     // dominio `Persona::operator<` ordena por `(id, tipo)`. Dentro de un
     // repositorio el tipo es SIEMPRE el mismo (`getTipo()` devuelve un valor
-    // fijo por clase: "Alumno", "Profesor", "Turno"), asi que buscar por id y
+    // fijo por clase: "Paciente", "Medico", "Turno"), asi que buscar por id y
     // buscar por clave son la misma busqueda. Aun asi, se borra con la
     // entidad ANTERIOR y no con la nueva: asi el borrado usa exactamente la
     // clave con la que el nodo fue indexado, sin depender de esa suposicion.
@@ -338,7 +338,7 @@ std::vector<T> RepositorioCRUD<T>::buscarPorNombre(const std::string& texto) con
         // sistema lo hace irrelevante) y tendria que mantenerce en cada alta,
         // modificacion, baja y recarga, con el riesgo de un estado mas que se
         // desincroniza del arbol. Es el mismo criterio que usa la busqueda
-        // por matricula y por legajo.
+        // por dni y por legajo.
         //
         // `listar()` sale ORDENADO por id, asi que el resultado tambien.
         for (const T& entidad : listar()) {

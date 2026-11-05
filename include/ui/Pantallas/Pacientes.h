@@ -1,19 +1,19 @@
 #pragma once
 
-#include "entities/Alumno.h"
-#include "repositories/RepositorioAlumnos.h"
+#include "entities/Paciente.h"
+#include "repositories/RepositorioPacientes.h"
 #include "services/ServicioTurnos.h"
 #include "ui/CrudPersonas.h"
 
 #include <memory>
 
 // ---------------------------------------------------------------------------
-// La pantalla de ALUMNOS.
+// La pantalla de PACIENTES.
 //
-// TODO lo que es ESPECIFICO de los alumnos vive en `src/ui/Pantallas/Alumnos.cpp`:
+// TODO lo que es ESPECIFICO de los pacientes vive en `src/ui/Pantallas/Pacientes.cpp`:
 // las columnas, el formulario, los validadores, el constructor de la entidad
 // y los criterios de busqueda. El motor (`ui::CrudPersonas`) es generico y no
-// sabe que existe una entidad que se llame "alumno".
+// sabe que existe una entidad que se llame "paciente".
 //
 // POR QUE LA CONFIGURACION ES UNA FUNCION Y NO UN CONSTRUCTOR
 //
@@ -25,7 +25,7 @@
 //
 // La pantalla necesita las REGLAS DE BUSQUEDA del repositorio: el nombre o
 // apellido es una coincidencia PARCIAL e insensible a mayusculas, y la
-// matricula es una coincidencia EXACTA (la misma con la que se verifica su
+// dni es una coincidencia EXACTA (la misma con la que se verifica su
 // unicidad). Si la pantalla recibiera el repositorio por su interfaz, no
 // tendria esas reglas y tendria que reescribirlas: dos reglas que se
 // pueden desincronizar.
@@ -40,13 +40,13 @@ class Pantalla;
 
 namespace Pantallas {
 
-// La configuracion del CRUD de alumnos.
-CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
+// La configuracion del CRUD de pacientes.
+CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositorio,
                                               ServicioTurnos& servicioTurnos);
 
-// La pantalla de alumnos, lista para apilarse en la aplicacion.
-std::unique_ptr<Pantalla> crearPantallaAlumnos(Aplicacion& aplicacion,
-                                                RepositorioAlumnos& repositorio,
+// La pantalla de pacientes, lista para apilarse en la aplicacion.
+std::unique_ptr<Pantalla> crearPantallaPacientes(Aplicacion& aplicacion,
+                                                RepositorioPacientes& repositorio,
                                                 ServicioTurnos& servicioTurnos);
 
 } // namespace Pantallas

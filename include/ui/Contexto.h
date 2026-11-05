@@ -1,7 +1,7 @@
 #pragma once
 
-#include "repositories/RepositorioAlumnos.h"
-#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioPacientes.h"
+#include "repositories/RepositorioMedicos.h"
 #include "repositories/RepositorioTurnos.h"
 #include "services/ServicioTurnos.h"
 #include "ui/Mensaje.h"
@@ -27,14 +27,14 @@
 //
 // LOS REPOSITORIOS CONCRETOS, NO LAS INTERFACES
 //
-// El contexto expone los repositorios CONCRETOS (`RepositorioAlumnos`,
-// `RepositorioProfesores` y `RepositorioTurnos`) y no sus interfaces.
+// El contexto expone los repositorios CONCRETOS (`RepositorioPacientes`,
+// `RepositorioMedicos` y `RepositorioTurnos`) y no sus interfaces.
 //
 // La razon son las REGLAS DE BUSQUEDA: esas reglas viven en el repositorio,
 // que es quien tiene el conjunto de las entidades. `buscarPorNombre` es una
 // coincidencia PARCIAL e insensible a mayusculas sobre el nombre o el
-// apellido; `existeMatricula` y `existeLegajo` son una coincidencia EXACTA
-// sobre la matricula y el legajo.
+// apellido; `existeDni` y `existeLegajo` son una coincidencia EXACTA
+// sobre el dni y el legajo.
 //
 // Si el contexto entregara el repositorio por su INTERFAZ, esas reglas no
 // estarian disponibles y la pantalla tendria que REESCRIBIRLAS: dos reglas
@@ -72,13 +72,13 @@ public:
     // El servicio de turnos va aparte porque no es un repositorio: es la
     // capa de reglas de negocio, y por eso recibe los repositorios por
     // interfaz.
-    Contexto(RepositorioAlumnos& alumnos,
-             RepositorioProfesores& profesores,
+    Contexto(RepositorioPacientes& pacientes,
+             RepositorioMedicos& medicos,
              RepositorioTurnos& turnos,
              ServicioTurnos& servicioTurnos);
 
-    RepositorioAlumnos& alumnos() const;
-    RepositorioProfesores& profesores() const;
+    RepositorioPacientes& pacientes() const;
+    RepositorioMedicos& medicos() const;
     RepositorioTurnos& turnos() const;
     ServicioTurnos& servicioTurnos() const;
 
@@ -92,8 +92,8 @@ public:
     const Mensaje& mensaje() const;
 
 private:
-    RepositorioAlumnos& _alumnos;
-    RepositorioProfesores& _profesores;
+    RepositorioPacientes& _pacientes;
+    RepositorioMedicos& _medicos;
     RepositorioTurnos& _turnos;
     ServicioTurnos& _servicioTurnos;
 

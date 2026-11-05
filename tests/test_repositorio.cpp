@@ -1,14 +1,14 @@
 #include "test_framework.h"
 
-#include "entities/Alumno.h"
-#include "entities/Profesor.h"
+#include "entities/Paciente.h"
+#include "entities/Medico.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "repositories/IRepositorio.h"
 #include "repositories/IRepositorioBajaLogica.h"
-#include "repositories/RepositorioAlumnos.h"
+#include "repositories/RepositorioPacientes.h"
 #include "repositories/RepositorioCRUD.h"
-#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioMedicos.h"
 #include "repositories/RepositorioTurnos.h"
 #include "structures/ArbolBST.h"
 #include "utils/Fecha.h"
@@ -34,7 +34,7 @@
 //   - `contar()` exacto y `proximoId()` (vacio y con ids {1, 7, 12})
 //   - el round trip comparado CAMPO POR CAMPO
 //   - la baja logica: sobrevive al round trip y NO borra la entidad
-//   - la UNICIDAD de la matricula y del legajo (comparacion case-insensitive)
+//   - la UNICIDAD de la dni y del legajo (comparacion case-insensitive)
 //   - el arbol cargado queda BALANCEADO (la decision R6 del issue #14)
 //   - el formato del archivo que deja `persistir()`
 //   - que el repositorio crea el archivo cuando no existe, en vez de fallar
@@ -135,20 +135,20 @@ std::string apellidoDePrueba(int indice) {
     return std::string(APELLIDOS[static_cast<std::size_t>(indice) % 20]);
 }
 
-Alumno alumnoDePrueba(int id) {
-    return Alumno(id, nombreDePrueba(id), apellidoDePrueba(id),
-                  "alumno" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
-                  "MAT-" + std::to_string(20000 + id));
+Paciente pacienteDePrueba(int id) {
+    return Paciente(id, nombreDePrueba(id), apellidoDePrueba(id),
+                  "paciente" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
+                  "20" + std::to_string(20000 + id));
 }
 
-Profesor profesorDePrueba(int id) {
-    return Profesor(id, nombreDePrueba(id + 3), apellidoDePrueba(id + 7),
-                    "profesor" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
-                    "LEG-" + std::to_string(1000 + id), "Algoritmos I");
+Medico medicoDePrueba(int id) {
+    return Medico(id, nombreDePrueba(id + 3), apellidoDePrueba(id + 7),
+                    "medico" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
+                    "LEG-" + std::to_string(1000 + id), Especialidad::CARD);
 }
 
 Turno turnoDePrueba(int id) {
-    return Turno(id, 1 + (id % 5), 1 + (id % 7), Materia::ALG1, Fecha(2026, 10, 8 + (id % 10)),
+    return Turno(id, 1 + (id % 5), 1 + (id % 7), Especialidad::CARD, Fecha(2026, 10, 8 + (id % 10)),
                  Hora(8 + (id % 10), (id % 2) * 30), 60, "A-" + std::to_string(1 + (id % 4)));
 }
 
@@ -181,12 +181,12 @@ template <class T>
 struct TieneBajaLogica<T, std::void_t<decltype(std::declval<T&>().bajaLogica(0))>>
     : std::true_type {};
 
-// El repositorio de alumnos y el de profesores TIENEN baja logica: los dos
+// El repositorio de pacientes y el de medicos TIENEN baja logica: los dos
 // son personas y las personas tienen el flag `activo`.
-static_assert(TieneBajaLogica<RepositorioAlumnos>::value,
-              "el repositorio de alumnos tiene que implementar la baja logica");
-static_assert(TieneBajaLogica<RepositorioProfesores>::value,
-              "el repositorio de profesores tiene que implementar la baja logica");
+static_assert(TieneBajaLogica<RepositorioPacientes>::value,
+              "el repositorio de pacientes tiene que implementar la baja logica");
+static_assert(TieneBajaLogica<RepositorioMedicos>::value,
+              "el repositorio de medicos tiene que implementar la baja logica");
 
 // Y el de turnos NO: un turno se cancela, no se da de baja. Si este
 // `static_assert` falla, se le agrego `bajaLogica` al repositorio de turnos
@@ -198,19 +198,19 @@ static_assert(!TieneBajaLogica<RepositorioTurnos>::value,
 // La misma verificacion, pero por el camino de las INTERFACES: el
 // repositorio de turnos NO implementa `IRepositorioBajaLogica<Turno>`, y los
 // otros dos SI.
-static_assert(std::is_base_of<IRepositorioBajaLogica<Alumno>, RepositorioAlumnos>::value,
-              "el repositorio de alumnos implementa IRepositorioBajaLogica<Alumno>");
-static_assert(std::is_base_of<IRepositorioBajaLogica<Profesor>, RepositorioProfesores>::value,
-              "el repositorio de profesores implementa IRepositorioBajaLogica<Profesor>");
+static_assert(std::is_base_of<IRepositorioBajaLogica<Paciente>, RepositorioPacientes>::value,
+              "el repositorio de pacientes implementa IRepositorioBajaLogica<Paciente>");
+static_assert(std::is_base_of<IRepositorioBajaLogica<Medico>, RepositorioMedicos>::value,
+              "el repositorio de medicos implementa IRepositorioBajaLogica<Medico>");
 static_assert(!std::is_base_of<IRepositorioBajaLogica<Turno>, RepositorioTurnos>::value,
               "el repositorio de turnos NO implementa IRepositorioBajaLogica<Turno>");
 
 // Los tres repositorios implementan el CRUD generico: es el contrato UNICO
 // para las tres entidades (decision R1 del issue #14).
-static_assert(std::is_base_of<IRepositorio<Alumno>, RepositorioAlumnos>::value,
-              "el repositorio de alumnos implementa IRepositorio<Alumno>");
-static_assert(std::is_base_of<IRepositorio<Profesor>, RepositorioProfesores>::value,
-              "el repositorio de profesores implementa IRepositorio<Profesor>");
+static_assert(std::is_base_of<IRepositorio<Paciente>, RepositorioPacientes>::value,
+              "el repositorio de pacientes implementa IRepositorio<Paciente>");
+static_assert(std::is_base_of<IRepositorio<Medico>, RepositorioMedicos>::value,
+              "el repositorio de medicos implementa IRepositorio<Medico>");
 static_assert(std::is_base_of<IRepositorio<Turno>, RepositorioTurnos>::value,
               "el repositorio de turnos implementa IRepositorio<Turno>");
 
@@ -225,17 +225,17 @@ TEST_CASE("el alta de un id que ya existe lanza IdDuplicadoException",
     const std::string ruta = rutaDePrueba("alta_duplicada.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     // La excepcion correcta: `IdDuplicadoException` y no una de otro tipo.
     const Fallo fallo = capturarTipo<IdDuplicadoException>(
-        [&] { repo.alta(alumnoDePrueba(1)); });
+        [&] { repo.alta(pacienteDePrueba(1)); });
     CHECK(fallo.lanzo);
     CHECK(!fallo.lanzoOtro);
     // El mensaje dice que id se duplico y de que entidad.
     CHECK(fallo.mensaje.find("1") != std::string::npos);
-    CHECK(fallo.mensaje.find("ALUMNOS") != std::string::npos);
+    CHECK(fallo.mensaje.find("PACIENTES") != std::string::npos);
 
     // Y el repositorio NO se corrupto: sigue teniendo UNA sola entidad.
     CHECK(repo.contar() == 1);
@@ -246,15 +246,15 @@ TEST_CASE("el alta de un id libre deja la entidad en el repositorio",
     const std::string ruta = rutaDePrueba("alta_ok.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(7));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(7));
 
     CHECK(repo.contar() == 1);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(7, encontrado));
     CHECK(encontrado.getId() == 7);
-    CHECK(encontrado.getMatricula() == "MAT-20007");
+    CHECK(encontrado.getDni() == "2020007");
 }
 
 TEST_CASE("el alta persiste en el archivo", repositorio_alta_persiste) {
@@ -262,8 +262,8 @@ TEST_CASE("el alta persiste en el archivo", repositorio_alta_persiste) {
     std::filesystem::remove(ruta);
 
     {
-        RepositorioAlumnos repo(ruta);
-        repo.alta(alumnoDePrueba(1));
+        RepositorioPacientes repo(ruta);
+        repo.alta(pacienteDePrueba(1));
     }
 
     // El archivo existe apenas se hizo el alta: `persistir()` se llama
@@ -271,7 +271,7 @@ TEST_CASE("el alta persiste en el archivo", repositorio_alta_persiste) {
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#ALUMNOS|1|1");
+    CHECK(lineas[0] == "#PACIENTES|1|1");
 }
 
 TEST_CASE("modificar un id que no existe lanza EntidadNoExisteException",
@@ -279,11 +279,11 @@ TEST_CASE("modificar un id que no existe lanza EntidadNoExisteException",
     const std::string ruta = rutaDePrueba("modificar_inexistente.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     const Fallo fallo = capturarTipo<EntidadNoExisteException>(
-        [&] { repo.modificar(alumnoDePrueba(99)); });
+        [&] { repo.modificar(pacienteDePrueba(99)); });
     CHECK(fallo.lanzo);
     CHECK(!fallo.lanzoOtro);
     CHECK(fallo.mensaje.find("99") != std::string::npos);
@@ -297,21 +297,21 @@ TEST_CASE("modificar REEMPLAZA la entidad y no agrega una segunda",
     const std::string ruta = rutaDePrueba("modificar_reemplaza.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     // Se modifica el MISMO id, cambiando los datos.
-    repo.modificar(Alumno(1, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "MAT-99999"));
+    repo.modificar(Paciente(1, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "2099999"));
 
     // No hay DOS entidades con el id 1: hay UNA, con los datos nuevos.
     CHECK(repo.contar() == 1);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.getNombre() == "Nuevo");
     CHECK(encontrado.getApellido() == "Nombre");
     CHECK(encontrado.getEmail() == "nuevo@unlp.edu.ar");
-    CHECK(encontrado.getMatricula() == "MAT-99999");
+    CHECK(encontrado.getDni() == "2099999");
 
     // Y el archivo tambien tiene UN solo registro (no dos).
     const std::vector<std::string> lineas = leerLineas(ruta);
@@ -320,96 +320,96 @@ TEST_CASE("modificar REEMPLAZA la entidad y no agrega una segunda",
 }
 
 // ---------------------------------------------------------------------------
-// LA UNICIDAD DE LA MATRICULA Y DEL LEGAJO
+// LA UNICIDAD DEL DNI Y DEL LEGAJO
 // ---------------------------------------------------------------------------
 //
-// ESTE es el defecto que cierra este bloque: `entities/Alumno.h` y
-// `entities/Profesor.h` dicen que la matricula (y el legajo) son UNICOS y
+// ESTE es el defecto que cierra este bloque: `entities/Paciente.h` y
+// `entities/Medico.h` dicen que el dni (y el legajo) son UNICOS y
 // que la unicidad la verifica el repositorio, pero esa verificacion nunca
 // se implemento. Con esto, el repositorio la verifica.
 //
-// La comparacion es CASE-INSENSITIVE: "MAT-20001" y "mat-20001" son la
-// misma matricula.
+// La comparacion del dni es EXACTA (el dni es un numero) y la del legajo es
+// CASE-INSENSITIVE: "LEG-1001" y "leg-1001" son el mismo legajo.
 //
 // Y el error es `DatoInvalidoException`: el UNICO formato de error de dato
 // invalido de toda la aplicacion (asi lo exige la capa de UI, que ya sabe
 // mostrar el `campo()` y el `valor()` del error).
 
-TEST_CASE("el alta de un alumno con una matricula ya usada lanza DatoInvalidoException",
-          repositorio_alta_matricula_duplicada) {
-    const std::string ruta = rutaDePrueba("matricula_duplicada.dat");
+TEST_CASE("el alta de un paciente con una dni ya usada lanza DatoInvalidoException",
+          repositorio_alta_dni_duplicada) {
+    const std::string ruta = rutaDePrueba("dni_duplicada.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));  // este tiene "MAT-20001"
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));  // este tiene "2020001"
 
-    // El segundo alumno quiere la matricula del primero.
+    // El segundo paciente quiere la dni del primero.
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+        repo.alta(Paciente(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "2020001"));
     });
 
     CHECK(error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     // El `campo()` es el que la UI usa para ubicar el dato que fallo.
-    CHECK(error.campo == "matricula");
-    CHECK(error.valor == "MAT-20001");
+    CHECK(error.campo == "dni");
+    CHECK(error.valor == "2020001");
     // Y el mensaje tiene el formato UNICO de la aplicacion.
-    CHECK(error.mensaje == "Dato invalido en campo 'matricula': 'MAT-20001' "
-                           "(ya la tiene el alumno #1)");
+    CHECK(error.mensaje == "Dato invalido en campo 'dni': '2020001' "
+                           "(ya la tiene el paciente #1)");
 }
 
-TEST_CASE("el alta con la MISMA matricula en otra capitalizacion tambien lanza",
-          repositorio_alta_matricula_duplicada_otro_caso) {
-    const std::string ruta = rutaDePrueba("matricula_duplicada_otro_caso.dat");
+TEST_CASE("el alta con el MISMO dni con espacios alrededor tambien lanza",
+          repositorio_alta_dni_duplicada_otro_caso) {
+    const std::string ruta = rutaDePrueba("dni_duplicada_otro_caso.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));  // este tiene "MAT-20001"
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));  // este tiene "2020001"
 
-    // La misma matricula, en minusculas: si la comparacion no fuera
-    // case-insensitive, las dos coexistirian y la unicidad seria un espejismo.
+    // El mismo dni, con espacios en los bordes: el setter los recorta, asi
+    // que es la MISMA dni y las dos no pueden convivir.
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "mat-20001"));
+        repo.alta(Paciente(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "  2020001  "));
     });
 
     CHECK(error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
-    CHECK(error.campo == "matricula");
-    CHECK(error.valor == "mat-20001");
+    CHECK(error.campo == "dni");
+    CHECK(error.valor == "2020001");
 }
 
-TEST_CASE("el alta con una matricula LIBRE no lanza y deja al alumno en el repositorio",
-          repositorio_alta_matricula_libre) {
-    const std::string ruta = rutaDePrueba("matricula_libre.dat");
+TEST_CASE("el alta con una dni LIBRE no lanza y deja al paciente en el repositorio",
+          repositorio_alta_dni_libre) {
+    const std::string ruta = rutaDePrueba("dni_libre.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-99999"));
+        repo.alta(Paciente(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "2099999"));
     });
 
     CHECK(!error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     CHECK(repo.contar() == 2);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(2, encontrado));
-    CHECK(encontrado.getMatricula() == "MAT-99999");
+    CHECK(encontrado.getDni() == "2099999");
 }
 
-TEST_CASE("tras el rechazo por matricula repetida el repositorio queda INTACTO",
-          repositorio_alta_matricula_rechazada_no_rompe) {
-    const std::string ruta = rutaDePrueba("matricula_rechazo_intacto.dat");
+TEST_CASE("tras el rechazo por dni repetido el repositorio queda INTACTO",
+          repositorio_alta_dni_rechazada_no_rompe) {
+    const std::string ruta = rutaDePrueba("dni_rechazo_intacto.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
     const std::size_t antes = repo.contar();
 
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+        repo.alta(Paciente(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "2020001"));
     });
     CHECK(error.lanzo);
 
@@ -420,8 +420,8 @@ TEST_CASE("tras el rechazo por matricula repetida el repositorio queda INTACTO",
 
     // Y no aparece en la lista.
     bool aparece = false;
-    for (const Alumno& alumno : repo.listar()) {
-        if (alumno.getId() == 2) {
+    for (const Paciente& paciente : repo.listar()) {
+        if (paciente.getId() == 2) {
             aparece = true;
         }
     }
@@ -432,104 +432,105 @@ TEST_CASE("tras el rechazo por matricula repetida el repositorio queda INTACTO",
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
 
-    // Y el alumno que ya estaba sigue intacto.
-    Alumno encontrado;
+    // Y el paciente que ya estaba sigue intacto.
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
-    CHECK(encontrado.getMatricula() == "MAT-20001");
+    CHECK(encontrado.getDni() == "2020001");
 }
 
-TEST_CASE("modificar con la matricula de OTRO alumno lanza DatoInvalidoException",
-          repositorio_modificar_matricula_de_otro) {
-    const std::string ruta = rutaDePrueba("matricula_modificar_de_otro.dat");
+TEST_CASE("modificar con el dni de OTRO paciente lanza DatoInvalidoException",
+          repositorio_modificar_dni_de_otro) {
+    const std::string ruta = rutaDePrueba("dni_modificar_de_otro.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));  // "MAT-20001"
-    repo.alta(alumnoDePrueba(2));  // "MAT-20002"
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));  // "2020001"
+    repo.alta(pacienteDePrueba(2));  // "2020002"
 
-    // El alumno #2 quiere la matricula del #1.
+    // El paciente #2 quiere la dni del #1.
     const ErrorCapturado error = capturarError([&] {
-        repo.modificar(Alumno(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-20001"));
+        repo.modificar(Paciente(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "2020001"));
     });
 
     CHECK(error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
-    CHECK(error.campo == "matricula");
-    CHECK(error.mensaje == "Dato invalido en campo 'matricula': 'MAT-20001' "
-                           "(ya la tiene el alumno #1)");
+    CHECK(error.campo == "dni");
+    CHECK(error.mensaje == "Dato invalido en campo 'dni': '2020001' "
+                           "(ya la tiene el paciente #1)");
 
-    // Y el repositorio quedo como estaba: el #2 conserva SU matricula.
+    // Y el repositorio quedo como estaba: el #2 conserva SU dni.
     CHECK(repo.contar() == 2);
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(2, encontrado));
-    CHECK(encontrado.getMatricula() == "MAT-20002");
+    CHECK(encontrado.getDni() == "2020002");
 }
 
-TEST_CASE("modificar conservando la matricula PROPIA no lanza",
-          repositorio_modificar_matricula_propia) {
-    const std::string ruta = rutaDePrueba("matricula_modificar_propia.dat");
+TEST_CASE("modificar conservando la dni PROPIA no lanza",
+          repositorio_modificar_dni_propia) {
+    const std::string ruta = rutaDePrueba("dni_modificar_propia.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(7));  // "MAT-20007"
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(7));  // "2020007"
 
-    // El alumno #7 cambia sus datos pero conserva su matricula: no puede
+    // El paciente #7 cambia sus datos pero conserva su dni: no puede
     // chocar consigo mismo (la exclusion es por `getId()`).
     const ErrorCapturado error = capturarError([&] {
-        repo.modificar(Alumno(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "MAT-20007"));
+        repo.modificar(Paciente(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "2020007"));
     });
 
     CHECK(!error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     CHECK(repo.contar() == 1);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(7, encontrado));
-    CHECK(encontrado.getMatricula() == "MAT-20007");
+    CHECK(encontrado.getDni() == "2020007");
     CHECK(encontrado.getNombre() == "Nuevo");
 }
 
-TEST_CASE("existeMatricula devuelve true con el id que la tiene, y false con -1",
-          repositorio_existe_matricula) {
-    const std::string ruta = rutaDePrueba("existe_matricula.dat");
+TEST_CASE("existeDni devuelve true con el id que la tiene, y false con -1",
+          repositorio_existe_dni) {
+    const std::string ruta = rutaDePrueba("existe_dni.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
-    repo.alta(alumnoDePrueba(7));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
+    repo.alta(pacienteDePrueba(7));
 
-    // La matricula existe: devuelve true y el id del alumno que la tiene.
+    // La dni existe: devuelve true y el id del paciente que la tiene.
     int idExistente = -1;
-    CHECK(repo.existeMatricula("MAT-20007", idExistente));
+    CHECK(repo.existeDni("2020007", idExistente));
     CHECK(idExistente == 7);
 
-    // Y la encuentra tambien sin distinguir mayusculas.
+    // Y la encuentra tambien con los espacios de los bordes: el setter
+    // los recorta, asi que es la MISMA dni.
     idExistente = -1;
-    CHECK(repo.existeMatricula("mat-20007", idExistente));
+    CHECK(repo.existeDni("  2020007  ", idExistente));
     CHECK(idExistente == 7);
 
-    // Una matricula que no existe: false, y la salida queda en -1 (no en un
+    // Una dni que no existe: false, y la salida queda en -1 (no en un
     // id de una consulta anterior).
     idExistente = 999;
-    CHECK(!repo.existeMatricula("MAT-99999", idExistente));
+    CHECK(!repo.existeDni("2099999", idExistente));
     CHECK(idExistente == -1);
 
     // Y la consulta NO modifica nada: es una consulta.
     CHECK(repo.contar() == 2);
 }
 
-TEST_CASE("el alta de un profesor con un legajo ya usado lanza DatoInvalidoException",
+TEST_CASE("el alta de un medico con un legajo ya usado lanza DatoInvalidoException",
           repositorio_alta_legajo_duplicado) {
     const std::string ruta = rutaDePrueba("legajo_duplicado.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));  // este tiene "LEG-1001"
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));  // este tiene "LEG-1001"
 
-    // El segundo profesor quiere el legajo del primero.
+    // El segundo medico quiere el legajo del primero.
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
-                            "Algoritmos I"));
+        repo.alta(Medico(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                            Especialidad::CARD));
     });
 
     CHECK(error.lanzo);
@@ -537,7 +538,7 @@ TEST_CASE("el alta de un profesor con un legajo ya usado lanza DatoInvalidoExcep
     CHECK(error.campo == "legajo");
     CHECK(error.valor == "LEG-1001");
     CHECK(error.mensaje == "Dato invalido en campo 'legajo': 'LEG-1001' "
-                           "(ya lo tiene el profesor #1)");
+                           "(ya lo tiene el medico #1)");
 }
 
 TEST_CASE("el alta con el MISMO legajo en otra capitalizacion tambien lanza",
@@ -545,12 +546,12 @@ TEST_CASE("el alta con el MISMO legajo en otra capitalizacion tambien lanza",
     const std::string ruta = rutaDePrueba("legajo_duplicado_otro_caso.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));  // este tiene "LEG-1001"
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));  // este tiene "LEG-1001"
 
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "leg-1001",
-                            "Algoritmos I"));
+        repo.alta(Medico(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "leg-1001",
+                            Especialidad::CARD));
     });
 
     CHECK(error.lanzo);
@@ -559,24 +560,24 @@ TEST_CASE("el alta con el MISMO legajo en otra capitalizacion tambien lanza",
     CHECK(error.valor == "leg-1001");
 }
 
-TEST_CASE("el alta con un legajo LIBRE no lanza y deja al profesor en el repositorio",
+TEST_CASE("el alta con un legajo LIBRE no lanza y deja al medico en el repositorio",
           repositorio_alta_legajo_libre) {
     const std::string ruta = rutaDePrueba("legajo_libre.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));
 
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-9999",
-                            "Algoritmos I"));
+        repo.alta(Medico(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-9999",
+                            Especialidad::CARD));
     });
 
     CHECK(!error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     CHECK(repo.contar() == 2);
 
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(2, encontrado));
     CHECK(encontrado.getLegajo() == "LEG-9999");
 }
@@ -586,13 +587,13 @@ TEST_CASE("tras el rechazo por legajo repetido el repositorio queda INTACTO",
     const std::string ruta = rutaDePrueba("legajo_rechazo_intacto.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));
     const std::size_t antes = repo.contar();
 
     const ErrorCapturado error = capturarError([&] {
-        repo.alta(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
-                            "Algoritmos I"));
+        repo.alta(Medico(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                            Especialidad::CARD));
     });
     CHECK(error.lanzo);
 
@@ -600,8 +601,8 @@ TEST_CASE("tras el rechazo por legajo repetido el repositorio queda INTACTO",
     CHECK(repo.contar() == 1);
 
     bool aparece = false;
-    for (const Profesor& profesor : repo.listar()) {
-        if (profesor.getId() == 2) {
+    for (const Medico& medico : repo.listar()) {
+        if (medico.getId() == 2) {
             aparece = true;
         }
     }
@@ -610,33 +611,33 @@ TEST_CASE("tras el rechazo por legajo repetido el repositorio queda INTACTO",
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
 
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.getLegajo() == "LEG-1001");
 }
 
-TEST_CASE("modificar con el legajo de OTRO profesor lanza DatoInvalidoException",
+TEST_CASE("modificar con el legajo de OTRO medico lanza DatoInvalidoException",
           repositorio_modificar_legajo_de_otro) {
     const std::string ruta = rutaDePrueba("legajo_modificar_de_otro.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));  // "LEG-1001"
-    repo.alta(profesorDePrueba(2));  // "LEG-1002"
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));  // "LEG-1001"
+    repo.alta(medicoDePrueba(2));  // "LEG-1002"
 
     const ErrorCapturado error = capturarError([&] {
-        repo.modificar(Profesor(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
-                                "Algoritmos I"));
+        repo.modificar(Medico(2, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "LEG-1001",
+                                Especialidad::CARD));
     });
 
     CHECK(error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     CHECK(error.campo == "legajo");
     CHECK(error.mensaje == "Dato invalido en campo 'legajo': 'LEG-1001' "
-                           "(ya lo tiene el profesor #1)");
+                           "(ya lo tiene el medico #1)");
 
     CHECK(repo.contar() == 2);
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(2, encontrado));
     CHECK(encontrado.getLegajo() == "LEG-1002");
 }
@@ -646,19 +647,19 @@ TEST_CASE("modificar conservando el legajo PROPIO no lanza",
     const std::string ruta = rutaDePrueba("legajo_modificar_propio.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(7));  // "LEG-1007"
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(7));  // "LEG-1007"
 
     const ErrorCapturado error = capturarError([&] {
-        repo.modificar(Profesor(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "LEG-1007",
-                                "Base de Datos"));
+        repo.modificar(Medico(7, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "LEG-1007",
+                                Especialidad::PEDI));
     });
 
     CHECK(!error.lanzo);
     CHECK(!error.lanzoOtraExcepcion);
     CHECK(repo.contar() == 1);
 
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(7, encontrado));
     CHECK(encontrado.getLegajo() == "LEG-1007");
     CHECK(encontrado.getNombre() == "Nuevo");
@@ -669,9 +670,9 @@ TEST_CASE("existeLegajo devuelve true con el id que lo tiene, y false con -1",
     const std::string ruta = rutaDePrueba("existe_legajo.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));
-    repo.alta(profesorDePrueba(7));
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));
+    repo.alta(medicoDePrueba(7));
 
     int idExistente = -1;
     CHECK(repo.existeLegajo("LEG-1007", idExistente));
@@ -700,10 +701,10 @@ TEST_CASE("buscarPorId de un id que no existe devuelve false y no lanza",
     const std::string ruta = rutaDePrueba("busqueda_inexistente.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
-    Alumno encontrado;
+    Paciente encontrado;
     // La ausencia es un DATO de la consulta, no un error: no lanza nada.
     const Fallo fallo = capturarTipo<ExcepcionSistema>(
         [&] { CHECK(!repo.buscarPorId(99, encontrado)); });
@@ -716,10 +717,10 @@ TEST_CASE("buscarPorId de un id que no existe en un repositorio vacio devuelve f
     const std::string ruta = rutaDePrueba("busqueda_vacia.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(!repo.buscarPorId(1, encontrado));
     CHECK(repo.contar() == 0);
 }
@@ -729,18 +730,18 @@ TEST_CASE("buscarPorId encuentra el id en un repositorio con muchos ids",
     const std::string ruta = rutaDePrueba("busqueda_ok.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= 50; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
     // El id buscado esta en el MEDIO del arbol: si la busqueda por id
     // estuviera rota (por ejemplo, si usara `ArbolBST::buscar()` con una
     // sonda mal construida), este seria el caso que falla.
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(25, encontrado));
     CHECK(encontrado.getId() == 25);
-    CHECK(encontrado.getMatricula() == "MAT-20025");
+    CHECK(encontrado.getDni() == "2020025");
 
     // Y el ultimo, que esta en una hoja del arbol balanceado.
     CHECK(repo.buscarPorId(50, encontrado));
@@ -755,11 +756,11 @@ TEST_CASE("contar devuelve la cantidad exacta", repositorio_contar_exacto) {
     const std::string ruta = rutaDePrueba("contar.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     CHECK(repo.contar() == 0);
 
     for (int id = 1; id <= 7; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
         CHECK(repo.contar() == static_cast<std::size_t>(id));
     }
 
@@ -772,7 +773,7 @@ TEST_CASE("proximoId sobre un repositorio vacio devuelve 1", repositorio_proximo
     const std::string ruta = rutaDePrueba("proximo_vacio.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
     CHECK(repo.proximoId() == 1);
 }
@@ -781,10 +782,10 @@ TEST_CASE("proximoId sobre los ids {1, 7, 12} devuelve 13", repositorio_proximo_
     const std::string ruta = rutaDePrueba("proximo_ids.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
-    repo.alta(alumnoDePrueba(7));
-    repo.alta(alumnoDePrueba(12));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
+    repo.alta(pacienteDePrueba(7));
+    repo.alta(pacienteDePrueba(12));
 
     // El id propuesto es el MAXIMO + 1, no la cantidad de entidades: con los
     // ids {1, 7, 12} hay 3 entidades, pero el siguiente libre es el 13.
@@ -795,28 +796,28 @@ TEST_CASE("proximoId sobre los ids {1, 7, 12} devuelve 13", repositorio_proximo_
 // ROUND TRIP
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el round trip del alumno conserva todos los campos",
-          repositorio_round_trip_alumno) {
-    const std::string ruta = rutaDePrueba("round_trip_alumno.dat");
+TEST_CASE("el round trip del paciente conserva todos los campos",
+          repositorio_round_trip_paciente) {
+    const std::string ruta = rutaDePrueba("round_trip_paciente.dat");
     std::filesystem::remove(ruta);
 
-    std::vector<Alumno> originales;
+    std::vector<Paciente> originales;
     for (int id = 1; id <= 100; ++id) {
-        originales.push_back(alumnoDePrueba(id));
+        originales.push_back(pacienteDePrueba(id));
     }
 
     {
-        RepositorioAlumnos repo(ruta);
-        for (const Alumno& alumno : originales) {
-            repo.alta(alumno);
+        RepositorioPacientes repo(ruta);
+        for (const Paciente& paciente : originales) {
+            repo.alta(paciente);
         }
     }
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
     CHECK(repo.contar() == 100);
 
-    const std::vector<Alumno> cargados = repo.listar();
+    const std::vector<Paciente> cargados = repo.listar();
     CHECK(cargados.size() == 100);
 
     // Campo por campo: `operator==` compararia solo el id y el test pasaria
@@ -828,32 +829,32 @@ TEST_CASE("el round trip del alumno conserva todos los campos",
         CHECK(cargados[i].getEmail() == originales[i].getEmail());
         CHECK(cargados[i].getTelefono() == originales[i].getTelefono());
         CHECK(cargados[i].esActivo() == originales[i].esActivo());
-        CHECK(cargados[i].getMatricula() == originales[i].getMatricula());
+        CHECK(cargados[i].getDni() == originales[i].getDni());
     }
 }
 
-TEST_CASE("el round trip del profesor conserva todos los campos",
-          repositorio_round_trip_profesor) {
-    const std::string ruta = rutaDePrueba("round_trip_profesor.dat");
+TEST_CASE("el round trip del medico conserva todos los campos",
+          repositorio_round_trip_medico) {
+    const std::string ruta = rutaDePrueba("round_trip_medico.dat");
     std::filesystem::remove(ruta);
 
-    std::vector<Profesor> originales;
+    std::vector<Medico> originales;
     for (int id = 1; id <= 100; ++id) {
-        originales.push_back(profesorDePrueba(id));
+        originales.push_back(medicoDePrueba(id));
     }
 
     {
-        RepositorioProfesores repo(ruta);
-        for (const Profesor& profesor : originales) {
-            repo.alta(profesor);
+        RepositorioMedicos repo(ruta);
+        for (const Medico& medico : originales) {
+            repo.alta(medico);
         }
     }
 
-    RepositorioProfesores repo(ruta);
+    RepositorioMedicos repo(ruta);
     repo.cargar();
     CHECK(repo.contar() == 100);
 
-    const std::vector<Profesor> cargados = repo.listar();
+    const std::vector<Medico> cargados = repo.listar();
     CHECK(cargados.size() == 100);
 
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
@@ -896,13 +897,13 @@ TEST_CASE("el round trip del turno conserva todos los campos",
     // con `==` el test pasaria aunque se perdiera la fecha.
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
         CHECK(cargados[i].getId() == originales[i].getId());
-        CHECK(cargados[i].getIdProfesor() == originales[i].getIdProfesor());
-        CHECK(cargados[i].getIdAlumno() == originales[i].getIdAlumno());
-        CHECK(cargados[i].getMateria() == originales[i].getMateria());
+        CHECK(cargados[i].getIdMedico() == originales[i].getIdMedico());
+        CHECK(cargados[i].getIdPaciente() == originales[i].getIdPaciente());
+        CHECK(cargados[i].getEspecialidad() == originales[i].getEspecialidad());
         CHECK(cargados[i].getFecha() == originales[i].getFecha());
         CHECK(cargados[i].getHora() == originales[i].getHora());
         CHECK(cargados[i].getDuracionMin() == originales[i].getDuracionMin());
-        CHECK(cargados[i].getAula() == originales[i].getAula());
+        CHECK(cargados[i].getConsultorio() == originales[i].getConsultorio());
         CHECK(cargados[i].getEstado() == originales[i].getEstado());
         CHECK(cargados[i].getIdTurnoReemplazante() == originales[i].getIdTurnoReemplazante());
     }
@@ -917,13 +918,13 @@ TEST_CASE("el arbol cargado queda balanceado", repositorio_arbol_balanceado) {
     std::filesystem::remove(ruta);
 
     {
-        RepositorioAlumnos repo(ruta);
+        RepositorioPacientes repo(ruta);
         for (int id = 1; id <= 100; ++id) {
-            repo.alta(alumnoDePrueba(id));
+            repo.alta(pacienteDePrueba(id));
         }
     }
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
 
     // ESTE es el test que verifica la decision R6: al cargar se usa
@@ -944,13 +945,13 @@ TEST_CASE("el arbol cargado con ids espaciados queda balanceado",
     std::filesystem::remove(ruta);
 
     {
-        RepositorioAlumnos repo(ruta);
+        RepositorioPacientes repo(ruta);
         for (int id = 1; id <= 200; id += 2) {
-            repo.alta(alumnoDePrueba(id));
+            repo.alta(pacienteDePrueba(id));
         }
     }
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
     CHECK(repo.arbol().size() == 100);
     CHECK(repo.arbol().altura() <= 11);
@@ -966,21 +967,21 @@ TEST_CASE("persistir deja el archivo con el header, el esquema y los registros o
     std::filesystem::remove(ruta);
 
     {
-        RepositorioAlumnos repo(ruta);
+        RepositorioPacientes repo(ruta);
         // Se dan de alta en ORDEN DESCENDENTE: el archivo tiene que salir
         // ordenado por id igual, porque lo que se escribe es el `inOrder()`
         // del arbol, no el orden en que se dieron de alta.
-        repo.alta(alumnoDePrueba(5));
-        repo.alta(alumnoDePrueba(1));
-        repo.alta(alumnoDePrueba(9));
-        repo.alta(alumnoDePrueba(3));
+        repo.alta(pacienteDePrueba(5));
+        repo.alta(pacienteDePrueba(1));
+        repo.alta(pacienteDePrueba(9));
+        repo.alta(pacienteDePrueba(3));
     }
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 6);
     // La linea 1 es el header y la 2 el esquema.
-    CHECK(lineas[0] == "#ALUMNOS|1|4");
-    CHECK(lineas[1] == Alumno::esquema());
+    CHECK(lineas[0] == "#PACIENTES|1|4");
+    CHECK(lineas[1] == Paciente::esquema());
 
     // Y los registros salen ordenados por id.
     int idAnterior = 0;
@@ -1020,7 +1021,7 @@ TEST_CASE("cargar un archivo que no existe lo crea vacio y no falla",
     std::filesystem::remove(ruta);
     CHECK(!existeArchivo(ruta));
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
 
     // NO lanza: la aplicacion no puede romperse al arrancar por un archivo
     // que todavia no esta (es el mismo criterio que el caso "abc" de la
@@ -1033,8 +1034,8 @@ TEST_CASE("cargar un archivo que no existe lo crea vacio y no falla",
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 2);
-    CHECK(lineas[0] == "#ALUMNOS|1|0");
-    CHECK(lineas[1] == Alumno::esquema());
+    CHECK(lineas[0] == "#PACIENTES|1|0");
+    CHECK(lineas[1] == Paciente::esquema());
 
     // Y el repositorio quedo vacio, listo para usarse.
     CHECK(repo.contar() == 0);
@@ -1046,8 +1047,8 @@ TEST_CASE("cargar un archivo que no existe no borra uno que ya existe",
     const std::string ruta = rutaDePrueba("no_pisa.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     // Se carga de nuevo: el archivo existe, asi que se leen sus datos.
     repo.cargar();
@@ -1058,21 +1059,21 @@ TEST_CASE("cargar un archivo que no existe no borra uno que ya existe",
 // LA BAJA LOGICA
 // ---------------------------------------------------------------------------
 
-TEST_CASE("la baja logica del alumno no lo borra y deja activo = false",
-          repositorio_baja_logica_alumno) {
-    const std::string ruta = rutaDePrueba("baja_alumno.dat");
+TEST_CASE("la baja logica del paciente no lo borra y deja activo = false",
+          repositorio_baja_logica_paciente) {
+    const std::string ruta = rutaDePrueba("baja_paciente.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
-    repo.alta(alumnoDePrueba(2));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
+    repo.alta(pacienteDePrueba(2));
 
     repo.bajaLogica(1);
 
     // La entidad SIGUE en el repositorio: la baja es LOGICA, no fisica.
     CHECK(repo.contar() == 2);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(!encontrado.esActivo());
 
@@ -1081,24 +1082,24 @@ TEST_CASE("la baja logica del alumno no lo borra y deja activo = false",
     CHECK(encontrado.esActivo());
 }
 
-TEST_CASE("la baja logica del alumno sobrevive al round trip",
+TEST_CASE("la baja logica del paciente sobrevive al round trip",
           repositorio_baja_logica_round_trip) {
-    const std::string ruta = rutaDePrueba("baja_alumno_round_trip.dat");
+    const std::string ruta = rutaDePrueba("baja_paciente_round_trip.dat");
     std::filesystem::remove(ruta);
 
     {
-        RepositorioAlumnos repo(ruta);
-        repo.alta(alumnoDePrueba(1));
+        RepositorioPacientes repo(ruta);
+        repo.alta(pacienteDePrueba(1));
         repo.bajaLogica(1);
     }
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     repo.cargar();
 
     // La entidad vuelve, y vuelve INACTIVA: el `activo = 0` del archivo se
     // lee como `activo = false`.
     CHECK(repo.contar() == 1);
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(!encontrado.esActivo());
 
@@ -1108,56 +1109,56 @@ TEST_CASE("la baja logica del alumno sobrevive al round trip",
     CHECK(Utils::separar(lineas[2], '|')[5] == "0");
 }
 
-TEST_CASE("reactivar el alumno lo vuelve a activar", repositorio_reactivar_alumno) {
-    const std::string ruta = rutaDePrueba("reactivar_alumno.dat");
+TEST_CASE("reactivar el paciente lo vuelve a activar", repositorio_reactivar_paciente) {
+    const std::string ruta = rutaDePrueba("reactivar_paciente.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
     repo.bajaLogica(1);
 
     repo.reactivar(1);
 
     // La entidad sigue en el repositorio (la reactivacion tampoco borra).
     CHECK(repo.contar() == 1);
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.esActivo());
 }
 
-TEST_CASE("la baja logica del profesor no lo borra y deja activo = false",
-          repositorio_baja_logica_profesor) {
-    const std::string ruta = rutaDePrueba("baja_profesor.dat");
+TEST_CASE("la baja logica del medico no lo borra y deja activo = false",
+          repositorio_baja_logica_medico) {
+    const std::string ruta = rutaDePrueba("baja_medico.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));
 
     repo.bajaLogica(1);
 
     CHECK(repo.contar() == 1);
 
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(!encontrado.esActivo());
 }
 
-TEST_CASE("la baja logica del profesor sobrevive al round trip y se puede reactivar",
-          repositorio_baja_logica_profesor_round_trip) {
-    const std::string ruta = rutaDePrueba("baja_profesor_round_trip.dat");
+TEST_CASE("la baja logica del medico sobrevive al round trip y se puede reactivar",
+          repositorio_baja_logica_medico_round_trip) {
+    const std::string ruta = rutaDePrueba("baja_medico_round_trip.dat");
     std::filesystem::remove(ruta);
 
     {
-        RepositorioProfesores repo(ruta);
-        repo.alta(profesorDePrueba(1));
+        RepositorioMedicos repo(ruta);
+        repo.alta(medicoDePrueba(1));
         repo.bajaLogica(1);
     }
 
-    RepositorioProfesores repo(ruta);
+    RepositorioMedicos repo(ruta);
     repo.cargar();
 
     CHECK(repo.contar() == 1);
-    Profesor encontrado;
+    Medico encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(!encontrado.esActivo());
 
@@ -1166,7 +1167,7 @@ TEST_CASE("la baja logica del profesor sobrevive al round trip y se puede reacti
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.esActivo());
 
-    RepositorioProfesores repo2(ruta);
+    RepositorioMedicos repo2(ruta);
     repo2.cargar();
     CHECK(repo2.buscarPorId(1, encontrado));
     CHECK(encontrado.esActivo());
@@ -1177,8 +1178,8 @@ TEST_CASE("la baja logica de un id que no existe lanza EntidadNoExisteException"
     const std::string ruta = rutaDePrueba("baja_inexistente.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     const Fallo fallo = capturarTipo<EntidadNoExisteException>(
         [&] { repo.bajaLogica(99); });
@@ -1263,9 +1264,9 @@ TEST_CASE("el arbol en memoria queda balanceado despues de 1000 altas",
     const std::string ruta = rutaDePrueba("balanceado_en_memoria.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= 1000; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
     CHECK(repo.contar() == 1000);
@@ -1288,26 +1289,26 @@ TEST_CASE("el arbol en memoria sigue balanceado despues de 1000 modificaciones",
     const std::string ruta = rutaDePrueba("balanceado_modificar.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= 1000; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
     // Se modifica el primero: es el que cambia la forma del arbol (en un
     // BST plano, sacar la raiz de una cadena la deja desbalanceada).
-    repo.modificar(Alumno(1, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "MAT-99999"));
+    repo.modificar(Paciente(1, "Nuevo", "Nombre", "nuevo@unlp.edu.ar", "2214000000", "2099999"));
 
     CHECK(repo.contar() == 1000);
     CHECK(repo.arbol().altura() <= 12);
 
     // Y se modifica uno del medio, que es la raiz del arbol balanceado.
-    repo.modificar(Alumno(500, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "MAT-88888"));
+    repo.modificar(Paciente(500, "Otro", "Nombre", "otro@unlp.edu.ar", "2214000000", "2088888"));
 
     CHECK(repo.contar() == 1000);
     CHECK(repo.arbol().altura() <= 12);
 
     // La entidad modificada sigue siendo la correcta y no se duplico.
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.getNombre() == "Nuevo");
     CHECK(repo.buscarPorId(500, encontrado));
@@ -1329,9 +1330,9 @@ TEST_CASE("la busqueda por id hace O(log n) comparaciones: se cuentan, no se mid
     // mide la complejidad REAL de la busqueda del repositorio.
     const int cantidad = 1000;
 
-    std::vector<Alumno> ordenados;
+    std::vector<Paciente> ordenados;
     for (int id = 1; id <= cantidad; ++id) {
-        ordenados.push_back(alumnoDePrueba(id));
+        ordenados.push_back(pacienteDePrueba(id));
     }
 
     // El arbol del repositorio: balanceado, con la misma altura que el que
@@ -1339,18 +1340,18 @@ TEST_CASE("la busqueda por id hace O(log n) comparaciones: se cuentan, no se mid
     const std::string ruta = rutaDePrueba("log_n.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= cantidad; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
-    ArbolBST<Alumno> arbol;
+    ArbolBST<Paciente> arbol;
     arbol.construirDesdeOrdenados(ordenados);
 
     // El comparador por id, IGUAL al del repositorio, pero contando.
     struct ComparadorContador {
         int* contador;
-        int operator()(int clave, const Alumno& valor) const {
+        int operator()(int clave, const Paciente& valor) const {
             ++(*contador);
             if (clave < valor.getId()) {
                 return -1;
@@ -1362,7 +1363,7 @@ TEST_CASE("la busqueda por id hace O(log n) comparaciones: se cuentan, no se mid
         }
     };
 
-    Alumno fuera;
+    Paciente fuera;
     int comparaciones = 0;
     CHECK(arbol.buscarPorClave(777, ComparadorContador{&comparaciones}, fuera));
     CHECK(fuera.getId() == 777);
@@ -1389,14 +1390,14 @@ TEST_CASE("la cuenta de comparaciones no crece con la cantidad de entidades",
     const std::string ruta = rutaDePrueba("comparaciones_no_crecen.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= 100; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
     struct ComparadorContador {
         int* contador;
-        int operator()(int clave, const Alumno& valor) const {
+        int operator()(int clave, const Paciente& valor) const {
             ++(*contador);
             if (clave < valor.getId()) {
                 return -1;
@@ -1409,23 +1410,23 @@ TEST_CASE("la cuenta de comparaciones no crece con la cantidad de entidades",
     };
 
     // Con 100 entidades.
-    std::vector<Alumno> cien;
+    std::vector<Paciente> cien;
     for (int id = 1; id <= 100; ++id) {
-        cien.push_back(alumnoDePrueba(id));
+        cien.push_back(pacienteDePrueba(id));
     }
-    ArbolBST<Alumno> arbolCien;
+    ArbolBST<Paciente> arbolCien;
     arbolCien.construirDesdeOrdenados(cien);
 
-    Alumno fuera;
+    Paciente fuera;
     int comparacionesCien = 0;
     CHECK(arbolCien.buscarPorClave(77, ComparadorContador{&comparacionesCien}, fuera));
 
     // Con 1000 entidades.
-    std::vector<Alumno> mil;
+    std::vector<Paciente> mil;
     for (int id = 1; id <= 1000; ++id) {
-        mil.push_back(alumnoDePrueba(id));
+        mil.push_back(pacienteDePrueba(id));
     }
-    ArbolBST<Alumno> arbolMil;
+    ArbolBST<Paciente> arbolMil;
     arbolMil.construirDesdeOrdenados(mil);
 
     int comparacionesMil = 0;
@@ -1450,14 +1451,14 @@ TEST_CASE("la busqueda por id del repositorio no recorre el arbol: cuenta compar
     const std::string ruta = rutaDePrueba("no_recorre.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     for (int id = 1; id <= 1000; ++id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
 
     struct ComparadorContador {
         int* contador;
-        int operator()(int clave, const Alumno& valor) const {
+        int operator()(int clave, const Paciente& valor) const {
             ++(*contador);
             if (clave < valor.getId()) {
                 return -1;
@@ -1471,7 +1472,7 @@ TEST_CASE("la busqueda por id del repositorio no recorre el arbol: cuenta compar
 
     // La busqueda de un id que NO existe tambien tiene que ser O(log n):
     // el descenso termina en una hoja, sin recorrer el arbol.
-    Alumno fuera;
+    Paciente fuera;
     int comparaciones = 0;
     CHECK(!repo.arbol().buscarPorClave(5000, ComparadorContador{&comparaciones}, fuera));
     CHECK(comparaciones <= repo.arbol().altura());
@@ -1484,38 +1485,38 @@ TEST_CASE("la busqueda por id sigue funcionando en los tres repositorios",
     // entidades. En particular `Turno` NO tiene `getTipo()` (no es una
     // `Persona`): si el comparador dependiera del tipo, el repositorio de
     // turnos no compilaria.
-    const std::string rutaAlumnos = rutaDePrueba("tres_alumnos.dat");
-    const std::string rutaProfesores = rutaDePrueba("tres_profesores.dat");
+    const std::string rutaPacientes = rutaDePrueba("tres_pacientes.dat");
+    const std::string rutaMedicos = rutaDePrueba("tres_medicos.dat");
     const std::string rutaTurnos = rutaDePrueba("tres_turnos.dat");
-    std::filesystem::remove(rutaAlumnos);
-    std::filesystem::remove(rutaProfesores);
+    std::filesystem::remove(rutaPacientes);
+    std::filesystem::remove(rutaMedicos);
     std::filesystem::remove(rutaTurnos);
 
-    RepositorioAlumnos repoAlumnos(rutaAlumnos);
-    RepositorioProfesores repoProfesores(rutaProfesores);
+    RepositorioPacientes repoPacientes(rutaPacientes);
+    RepositorioMedicos repoMedicos(rutaMedicos);
     RepositorioTurnos repoTurnos(rutaTurnos);
 
     for (int id = 1; id <= 200; ++id) {
-        repoAlumnos.alta(alumnoDePrueba(id));
-        repoProfesores.alta(profesorDePrueba(id));
+        repoPacientes.alta(pacienteDePrueba(id));
+        repoMedicos.alta(medicoDePrueba(id));
         repoTurnos.alta(turnoDePrueba(id));
     }
 
     // Los tres arboles quedan balanceados.
-    CHECK(repoAlumnos.arbol().altura() <= 12);
-    CHECK(repoProfesores.arbol().altura() <= 12);
+    CHECK(repoPacientes.arbol().altura() <= 12);
+    CHECK(repoMedicos.arbol().altura() <= 12);
     CHECK(repoTurnos.arbol().altura() <= 12);
 
     // Y los tres encuentran por id, tanto un id presente como uno ausente.
-    Alumno alumno;
-    CHECK(repoAlumnos.buscarPorId(150, alumno));
-    CHECK(alumno.getId() == 150);
-    CHECK(!repoAlumnos.buscarPorId(500, alumno));
+    Paciente paciente;
+    CHECK(repoPacientes.buscarPorId(150, paciente));
+    CHECK(paciente.getId() == 150);
+    CHECK(!repoPacientes.buscarPorId(500, paciente));
 
-    Profesor profesor;
-    CHECK(repoProfesores.buscarPorId(150, profesor));
-    CHECK(profesor.getId() == 150);
-    CHECK(!repoProfesores.buscarPorId(500, profesor));
+    Medico medico;
+    CHECK(repoMedicos.buscarPorId(150, medico));
+    CHECK(medico.getId() == 150);
+    CHECK(!repoMedicos.buscarPorId(500, medico));
 
     Turno turno;
     CHECK(repoTurnos.buscarPorId(150, turno));
@@ -1531,17 +1532,17 @@ TEST_CASE("la busqueda por id devuelve la entidad COMPLETA, no solo el id",
     const std::string ruta = rutaDePrueba("entidad_completa.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(7));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(7));
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(7, encontrado));
     CHECK(encontrado.getId() == 7);
     CHECK(encontrado.getNombre() == nombreDePrueba(7));
     CHECK(encontrado.getApellido() == apellidoDePrueba(7));
-    CHECK(encontrado.getEmail() == "alumno7@unlp.edu.ar");
+    CHECK(encontrado.getEmail() == "paciente7@unlp.edu.ar");
     CHECK(encontrado.getTelefono() == "2214556677");
-    CHECK(encontrado.getMatricula() == "MAT-20007");
+    CHECK(encontrado.getDni() == "2020007");
     CHECK(encontrado.esActivo());
 }
 
@@ -1552,12 +1553,12 @@ TEST_CASE("la busqueda por id de un id ausente NO modifica la variable de salida
     const std::string ruta = rutaDePrueba("no_toca_salida.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
 
     // Se busca primero una entidad QUE EXISTE, para dejar `fuera` con un
     // valor reconocible.
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(1, encontrado));
     CHECK(encontrado.getId() == 1);
 
@@ -1565,7 +1566,7 @@ TEST_CASE("la busqueda por id de un id ausente NO modifica la variable de salida
     // entidad anterior, no vacia ni modificada.
     CHECK(!repo.buscarPorId(999, encontrado));
     CHECK(encontrado.getId() == 1);
-    CHECK(encontrado.getMatricula() == "MAT-20001");
+    CHECK(encontrado.getDni() == "2020001");
 }
 
 TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado por id",
@@ -1576,13 +1577,13 @@ TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado p
     const std::string ruta = rutaDePrueba("ordenado_tras_mutar.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     // Altas en orden DESCENDENTE: el archivo tiene que salir ordenado igual.
     for (int id = 20; id >= 1; --id) {
-        repo.alta(alumnoDePrueba(id));
+        repo.alta(pacienteDePrueba(id));
     }
     // Y una modificacion en el medio.
-    repo.modificar(Alumno(10, "Cambio", "Nombre", "cambio@unlp.edu.ar", "2214000000", "MAT-77777"));
+    repo.modificar(Paciente(10, "Cambio", "Nombre", "cambio@unlp.edu.ar", "2214000000", "2077777"));
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 22);
@@ -1596,7 +1597,7 @@ TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado p
     CHECK(Utils::separar(lineas[21], '|')[0] == "20");
 
     // Y `listar()` tambien sale ordenado por id.
-    const std::vector<Alumno> listados = repo.listar();
+    const std::vector<Paciente> listados = repo.listar();
     CHECK(listados.size() == 20);
     for (std::size_t i = 1; i < listados.size(); ++i) {
         CHECK(listados[i - 1].getId() < listados[i].getId());
@@ -1621,27 +1622,27 @@ TEST_CASE("buscarPorNombre encuentra por coincidencia parcial, sin distinguir ma
     const std::string ruta = rutaDePrueba("buscar_por_nombre.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(Alumno(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "MAT-20001"));
-    repo.alta(Alumno(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "MAT-20002"));
-    repo.alta(Alumno(3, "Caro", "Sosa", "caro3@unlp.edu.ar", "2214556677", "MAT-20003"));
-    repo.alta(Alumno(4, "Daniela", "Vega", "daniela4@unlp.edu.ar", "2214556677", "MAT-20004"));
+    RepositorioPacientes repo(ruta);
+    repo.alta(Paciente(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "2020001"));
+    repo.alta(Paciente(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "2020002"));
+    repo.alta(Paciente(3, "Caro", "Sosa", "caro3@unlp.edu.ar", "2214556677", "2020003"));
+    repo.alta(Paciente(4, "Daniela", "Vega", "daniela4@unlp.edu.ar", "2214556677", "2020004"));
 
     // POR EL NOMBRE, de forma PARCIAL: "an" esta DENTRO de "Ana" y de
     // "Daniela", y en ningun otro nombre ni apellido.
-    const std::vector<Alumno> porNombre = repo.buscarPorNombre("an");
+    const std::vector<Paciente> porNombre = repo.buscarPorNombre("an");
     CHECK(porNombre.size() == 2);
     CHECK(porNombre[0].getId() == 1);
     CHECK(porNombre[1].getId() == 4);
 
     // POR EL APELLIDO: "per" esta dentro de "Perez" y de nada mas.
-    const std::vector<Alumno> porApellido = repo.buscarPorNombre("per");
+    const std::vector<Paciente> porApellido = repo.buscarPorNombre("per");
     CHECK(porApellido.size() == 1);
     CHECK(porApellido[0].getId() == 2);
 
     // Y un texto que aparece en VARIOS apellidos: "ez" esta dentro de
     // "Gomez" y de "Perez".
-    const std::vector<Alumno> porVarios = repo.buscarPorNombre("ez");
+    const std::vector<Paciente> porVarios = repo.buscarPorNombre("ez");
     CHECK(porVarios.size() == 2);
     CHECK(porVarios[0].getId() == 1);
     CHECK(porVarios[1].getId() == 2);
@@ -1673,31 +1674,31 @@ TEST_CASE("buscarPorNombre devuelve los resultados ordenados por id",
     const std::string ruta = rutaDePrueba("buscar_por_nombre_ordenado.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
+    RepositorioPacientes repo(ruta);
     // Se dan de alta en ORDEN DESCENDENTE: el resultado tiene que salir
     // ordenado por id igual, porque lo que se filtra es el `listar()` del
     // arbol, que ya viene ordenado.
-    repo.alta(Alumno(30, "Ana", "Gomez", "ana30@unlp.edu.ar", "2214556677", "MAT-20030"));
-    repo.alta(Alumno(20, "Ana", "Perez", "ana20@unlp.edu.ar", "2214556677", "MAT-20020"));
-    repo.alta(Alumno(10, "Ana", "Sosa", "ana10@unlp.edu.ar", "2214556677", "MAT-20010"));
+    repo.alta(Paciente(30, "Ana", "Gomez", "ana30@unlp.edu.ar", "2214556677", "2020030"));
+    repo.alta(Paciente(20, "Ana", "Perez", "ana20@unlp.edu.ar", "2214556677", "2020020"));
+    repo.alta(Paciente(10, "Ana", "Sosa", "ana10@unlp.edu.ar", "2214556677", "2020010"));
 
-    const std::vector<Alumno> encontrados = repo.buscarPorNombre("ana");
+    const std::vector<Paciente> encontrados = repo.buscarPorNombre("ana");
     CHECK(encontrados.size() == 3);
     CHECK(encontrados[0].getId() == 10);
     CHECK(encontrados[1].getId() == 20);
     CHECK(encontrados[2].getId() == 30);
 }
 
-TEST_CASE("buscarPorNombre funciona tambien en el repositorio de profesores",
-          repositorio_buscar_por_nombre_profesores) {
-    const std::string ruta = rutaDePrueba("buscar_por_nombre_profesores.dat");
+TEST_CASE("buscarPorNombre funciona tambien en el repositorio de medicos",
+          repositorio_buscar_por_nombre_medicos) {
+    const std::string ruta = rutaDePrueba("buscar_por_nombre_medicos.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(Profesor(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "LEG-1001",
-                       "Algoritmos I"));
-    repo.alta(Profesor(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "LEG-1002",
-                       "Base de Datos"));
+    RepositorioMedicos repo(ruta);
+    repo.alta(Medico(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "LEG-1001",
+                       Especialidad::CARD));
+    repo.alta(Medico(2, "Beto", "Perez", "beto2@unlp.edu.ar", "2214556677", "LEG-1002",
+                       Especialidad::PEDI));
 
     CHECK(repo.buscarPorNombre("beto").size() == 1);
     CHECK(repo.buscarPorNombre("BET").size() == 1);
@@ -1708,35 +1709,35 @@ TEST_CASE("buscarPorNombre funciona tambien en el repositorio de profesores",
 // ---------------------------------------------------------------------------
 // LOS ACTIVOS Y LOS INACTIVOS
 //
-// La baja es LOGICA: un alumno o un profesor dado de baja sigue en el
+// La baja es LOGICA: un paciente o un medico dado de baja sigue en el
 // repositorio. Estas dos consultas son las que permiten separar los dos
 // grupos: la de los que se pueden agendar y la de los que hay que reactivar.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("listarActivos y listarInactivos separan los alumnos por su estado",
-          repositorio_alumnos_activos_e_inactivos) {
-    const std::string ruta = rutaDePrueba("alumnos_activos.dat");
+TEST_CASE("listarActivos y listarInactivos separan los pacientes por su estado",
+          repositorio_pacientes_activos_e_inactivos) {
+    const std::string ruta = rutaDePrueba("pacientes_activos.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos repo(ruta);
-    repo.alta(alumnoDePrueba(1));
-    repo.alta(alumnoDePrueba(2));
-    repo.alta(alumnoDePrueba(3));
+    RepositorioPacientes repo(ruta);
+    repo.alta(pacienteDePrueba(1));
+    repo.alta(pacienteDePrueba(2));
+    repo.alta(pacienteDePrueba(3));
 
     repo.bajaLogica(2);
 
-    const std::vector<Alumno> activos = repo.listarActivos();
+    const std::vector<Paciente> activos = repo.listarActivos();
     CHECK(activos.size() == 2);
     CHECK(activos[0].getId() == 1);
     CHECK(activos[1].getId() == 3);
 
-    const std::vector<Alumno> inactivos = repo.listarInactivos();
+    const std::vector<Paciente> inactivos = repo.listarInactivos();
     CHECK(inactivos.size() == 1);
     CHECK(inactivos[0].getId() == 2);
 
-    // NINGUN ALUMNO ESTA EN LAS DOS LISTAS.
-    for (const Alumno& activo : activos) {
-        for (const Alumno& inactivo : inactivos) {
+    // NINGUN PACIENTE ESTA EN LAS DOS LISTAS.
+    for (const Paciente& activo : activos) {
+        for (const Paciente& inactivo : inactivos) {
             CHECK(activo.getId() != inactivo.getId());
         }
     }
@@ -1745,30 +1746,30 @@ TEST_CASE("listarActivos y listarInactivos separan los alumnos por su estado",
     CHECK(repo.contar() == 3);
 }
 
-TEST_CASE("listarActivos y listarInactivos separan los profesores por su estado",
-          repositorio_profesores_activos_e_inactivos) {
-    const std::string ruta = rutaDePrueba("profesores_activos.dat");
+TEST_CASE("listarActivos y listarInactivos separan los medicos por su estado",
+          repositorio_medicos_activos_e_inactivos) {
+    const std::string ruta = rutaDePrueba("medicos_activos.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioProfesores repo(ruta);
-    repo.alta(profesorDePrueba(1));
-    repo.alta(profesorDePrueba(2));
-    repo.alta(profesorDePrueba(3));
+    RepositorioMedicos repo(ruta);
+    repo.alta(medicoDePrueba(1));
+    repo.alta(medicoDePrueba(2));
+    repo.alta(medicoDePrueba(3));
 
     repo.bajaLogica(3);
 
-    const std::vector<Profesor> activos = repo.listarActivos();
+    const std::vector<Medico> activos = repo.listarActivos();
     CHECK(activos.size() == 2);
     CHECK(activos[0].getId() == 1);
     CHECK(activos[1].getId() == 2);
 
-    const std::vector<Profesor> inactivos = repo.listarInactivos();
+    const std::vector<Medico> inactivos = repo.listarInactivos();
     CHECK(inactivos.size() == 1);
     CHECK(inactivos[0].getId() == 3);
 
-    // NINGUN PROFESOR ESTA EN LAS DOS LISTAS.
-    for (const Profesor& activo : activos) {
-        for (const Profesor& inactivo : inactivos) {
+    // NINGUN MEDICO ESTA EN LAS DOS LISTAS.
+    for (const Medico& activo : activos) {
+        for (const Medico& inactivo : inactivos) {
             CHECK(activo.getId() != inactivo.getId());
         }
     }
@@ -1789,32 +1790,32 @@ TEST_CASE("un fake en memoria cumple el contrato de IRepositorio",
     //
     // Acá se verifica que el contrato es COMPLETO: si `IRepositorio<T>`
     // tuviera un metodo mas, este fake no compilaria.
-    class RepositorioEnMemoria : public IRepositorio<Alumno> {
+    class RepositorioEnMemoria : public IRepositorio<Paciente> {
     public:
-        void alta(const Alumno& entidad) override { _alumnos.push_back(entidad); }
-        void modificar(const Alumno& entidad) override {
-            for (Alumno& alumno : _alumnos) {
-                if (alumno.getId() == entidad.getId()) {
-                    alumno = entidad;
+        void alta(const Paciente& entidad) override { _pacientes.push_back(entidad); }
+        void modificar(const Paciente& entidad) override {
+            for (Paciente& paciente : _pacientes) {
+                if (paciente.getId() == entidad.getId()) {
+                    paciente = entidad;
                     return;
                 }
             }
         }
-        bool buscarPorId(int id, Alumno& fuera) const override {
-            for (const Alumno& alumno : _alumnos) {
-                if (alumno.getId() == id) {
-                    fuera = alumno;
+        bool buscarPorId(int id, Paciente& fuera) const override {
+            for (const Paciente& paciente : _pacientes) {
+                if (paciente.getId() == id) {
+                    fuera = paciente;
                     return true;
                 }
             }
             return false;
         }
-        std::vector<Alumno> listar() const override { return _alumnos; }
-        std::size_t contar() const override { return _alumnos.size(); }
+        std::vector<Paciente> listar() const override { return _pacientes; }
+        std::size_t contar() const override { return _pacientes.size(); }
         int proximoId() const override {
             int maximo = 0;
-            for (const Alumno& alumno : _alumnos) {
-                maximo = alumno.getId() > maximo ? alumno.getId() : maximo;
+            for (const Paciente& paciente : _pacientes) {
+                maximo = paciente.getId() > maximo ? paciente.getId() : maximo;
             }
             return maximo + 1;
         }
@@ -1822,22 +1823,22 @@ TEST_CASE("un fake en memoria cumple el contrato de IRepositorio",
         void persistir() override {}
 
     private:
-        std::vector<Alumno> _alumnos;
+        std::vector<Paciente> _pacientes;
     };
 
     RepositorioEnMemoria fake;
-    fake.alta(alumnoDePrueba(1));
-    fake.alta(alumnoDePrueba(2));
+    fake.alta(pacienteDePrueba(1));
+    fake.alta(pacienteDePrueba(2));
 
     CHECK(fake.contar() == 2);
     CHECK(fake.proximoId() == 3);
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(fake.buscarPorId(2, encontrado));
     CHECK(encontrado.getId() == 2);
     CHECK(!fake.buscarPorId(9, encontrado));
 
-    fake.modificar(alumnoDePrueba(1));
+    fake.modificar(pacienteDePrueba(1));
     CHECK(fake.buscarPorId(1, encontrado));
     CHECK(encontrado.getId() == 1);
 }
@@ -1850,22 +1851,22 @@ TEST_CASE("el repositorio se puede usar a traves de la interfaz", repositorio_us
     const std::string ruta = rutaDePrueba("via_interfaz.dat");
     std::filesystem::remove(ruta);
 
-    RepositorioAlumnos concreto(ruta);
+    RepositorioPacientes concreto(ruta);
 
     // Se escribe CONTRA LA INTERFAZ: asi se ve que la implementacion
     // concreta es reemplazable (por un fake, en los tests del servicio).
-    IRepositorio<Alumno>& repo = concreto;
+    IRepositorio<Paciente>& repo = concreto;
 
-    repo.alta(alumnoDePrueba(3));
+    repo.alta(pacienteDePrueba(3));
 
-    Alumno encontrado;
+    Paciente encontrado;
     CHECK(repo.buscarPorId(3, encontrado));
     CHECK(repo.contar() == 1);
     CHECK(repo.proximoId() == 4);
 
-    // Y el repositorio de alumnos tambien se puede ver por la interfaz de
+    // Y el repositorio de pacientes tambien se puede ver por la interfaz de
     // la baja logica: es la misma objeto.
-    IRepositorioBajaLogica<Alumno>& conBaja = concreto;
+    IRepositorioBajaLogica<Paciente>& conBaja = concreto;
     conBaja.bajaLogica(3);
     CHECK(repo.buscarPorId(3, encontrado));
     CHECK(!encontrado.esActivo());

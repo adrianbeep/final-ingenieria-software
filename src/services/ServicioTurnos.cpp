@@ -1,5 +1,6 @@
 #include "services/ServicioTurnos.h"
 
+#include "domain/Especialidad.h"
 #include "exceptions/ExcepcionesSistema.h"
 
 #include <ctime>
@@ -93,11 +94,11 @@ bool seSolapan(const Ventana& a, const Ventana& b) {
 // Construccion
 // ---------------------------------------------------------------------------
 
-ServicioTurnos::ServicioTurnos(IRepositorio<Alumno>& alumnos_,
-                               IRepositorio<Profesor>& profesors_,
+ServicioTurnos::ServicioTurnos(IRepositorio<Paciente>& pacientes_,
+                               IRepositorio<Medico>& medicos_,
                                IRepositorio<Turno>& turnos_)
-    : _alumnos(alumnos_),
-      _profesores(profesors_),
+    : _pacientes(pacientes_),
+      _medicos(medicos_),
       _turnos(turnos_) {
 }
 
@@ -160,17 +161,17 @@ void ServicioTurnos::reprogramar(int idTurno_,
 
     // La reprogramacion crea un turno NUEVO (decision #8 del proyecto): el
     // viejo queda `Reprogramado` y apunta al nuevo. El turno nuevo hereda
-    // alumno, profesor, materia, duracion y aula, y toma la fecha y la
+    // paciente, medico, especialidad, duracion y consultorio, y toma la fecha y la
     // hora nuevas.
     const int idNuevo = _turnos.proximoId();
     Turno nuevo(idNuevo,
-                 original.getIdProfesor(),
-                 original.getIdAlumno(),
-                 original.getMateria(),
+                 original.getIdMedico(),
+                 original.getIdPaciente(),
+                 original.getEspecialidad(),
                  nuevaFecha_,
                  nuevaHora_,
                  original.getDuracionMin(),
-                 original.getAula());
+                 original.getConsultorio());
 
     // Las reglas de `agendar` valen TAMBIEN para el turno nuevo: no se
     // puede esquivar el control de solapamiento reprogramando. Se aplican
@@ -194,17 +195,17 @@ void ServicioTurnos::reprogramar(int idTurno_,
 }
 
 // ---------------------------------------------------------------------------
-// TURNOS VIGENTES DE UN ALUMNO
+// TURNOS VIGENTES DE UN PACIENTE
 // ---------------------------------------------------------------------------
 
-std::vector<Turno> ServicioTurnos::turnosVigentesDe(int idAlumno_) const {
+std::vector<Turno> ServicioTurnos::turnosVigentesDe(int idPaciente_) const {
     std::vector<Turno> vigentes;
 
     // Solo los turnos `Activo` cuentan: un turno cancelado o reprogramado
     // sigue en el repositorio (su baja es logica) pero NO ocupa un horario
     // ni se muestra como pendiente.
     for (const Turno& turno : _turnos.listar()) {
-        if (turno.getIdAlumno() == idAlumno_ && turno.getEstado() == EstadoTurno::Activo) {
+        if (turno.getIdPaciente() == idPaciente_ && turno.getEstado() == EstadoTurno::Activo) {
             vigentes.push_back(turno);
         }
     }
@@ -230,16 +231,16 @@ std::vector<Turno> ServicioTurnos::turnosVigentesDe(int idAlumno_) const {
 //
 // QUE HAY DE UNO Y OTRO
 //
-// La diferencia entre las cinco consultas es SOLO el filtro: por alumno, por
-// profesor, por materia, por fecha o por rango de fechas. El resto del
+// La diferencia entre las cinco consultas es SOLO el filtro: por paciente, por
+// medico, por especialidad, por fecha o por rango de fechas. El resto del
 // comportamiento es identico, asi que todas comparten la misma forma.
 // ---------------------------------------------------------------------------
 
-std::vector<Turno> ServicioTurnos::turnosDeAlumno(int idAlumno_) const {
+std::vector<Turno> ServicioTurnos::turnosDePaciente(int idPaciente_) const {
     std::vector<Turno> turnos;
 
     for (const Turno& turno : _turnos.listar()) {
-        if (turno.getIdAlumno() == idAlumno_) {
+        if (turno.getIdPaciente() == idPaciente_) {
             turnos.push_back(turno);
         }
     }
@@ -247,11 +248,11 @@ std::vector<Turno> ServicioTurnos::turnosDeAlumno(int idAlumno_) const {
     return turnos;
 }
 
-std::vector<Turno> ServicioTurnos::turnosDeProfesor(int idProfesor_) const {
+std::vector<Turno> ServicioTurnos::turnosDeMedico(int idMedico_) const {
     std::vector<Turno> turnos;
 
     for (const Turno& turno : _turnos.listar()) {
-        if (turno.getIdProfesor() == idProfesor_) {
+        if (turno.getIdMedico() == idMedico_) {
             turnos.push_back(turno);
         }
     }
@@ -259,11 +260,11 @@ std::vector<Turno> ServicioTurnos::turnosDeProfesor(int idProfesor_) const {
     return turnos;
 }
 
-std::vector<Turno> ServicioTurnos::turnosDeMateria(Materia materia_) const {
+std::vector<Turno> ServicioTurnos::turnosDeEspecialidad(Especialidad especialidad_) const {
     std::vector<Turno> turnos;
 
     for (const Turno& turno : _turnos.listar()) {
-        if (turno.getMateria() == materia_) {
+        if (turno.getEspecialidad() == especialidad_) {
             turnos.push_back(turno);
         }
     }
@@ -318,9 +319,9 @@ std::vector<Turno> ServicioTurnos::turnosDeRango(const Fecha& desde_, const Fech
 // ---------------------------------------------------------------------------
 
 void ServicioTurnos::modificarTurno(int idTurno_,
-                                    const std::string& nuevaAula_,
+                                    const std::string& nuevoConsultorio_,
                                     int nuevaDuracionMin_,
-                                    Materia nuevaMateria_) {
+                                    Especialidad nuevaEspecialidad_) {
     Turno turno = buscarTurno(idTurno_);
 
     // Un turno que NO esta activo no se modifica: `Cancelado` y
@@ -333,15 +334,15 @@ void ServicioTurnos::modificarTurno(int idTurno_,
 
     // Se modifican SOLO los tres datos que se pueden cambiar. La fecha y la
     // hora NO se tocan: moverlas es reprogramar, y reprogramar crea un turno
-    // nuevo con su propio historial. El alumno, el profesor y el estado
+    // nuevo con su propio historial. El paciente, el medico y el estado
     // tampoco cambian.
     //
     // Los setters validan: la duracion tiene que ser un multiplo de 15 (y
-    // de 240 minutos como maximo) y el aula tiene que tener entre 1 y 20
+    // de 240 minutos como maximo) y el consultorio tiene que tener entre 1 y 20
     // caracteres. Si alguno esta mal, la excepcion sale de aca.
-    turno.setAula(nuevaAula_);
+    turno.setConsultorio(nuevoConsultorio_);
     turno.setDuracionMin(nuevaDuracionMin_);
-    turno.setMateria(nuevaMateria_);
+    turno.setEspecialidad(nuevaEspecialidad_);
 
     // Se revalidan los DATOS del turno con los valores nuevos: en
     // particular, que con la duracion nueva el turno siga TERMINANDO dentro
@@ -350,8 +351,8 @@ void ServicioTurnos::modificarTurno(int idTurno_,
     //
     // Se usa el MISMO helper que usa `agendar`: la regla del fin del
     // horario vive ahi y no se reimplementa. Lo que NO se usa es
-    // `validarAgendamiento`: ese helper tambien exige que el alumno y el
-    // profesor existan y esten activos y que la fecha no haya pasado, y
+    // `validarAgendamiento`: ese helper tambien exige que el paciente y el
+    // medico existan y esten activos y que la fecha no haya pasado, y
     // esas comprobaciones no aplican a una modificacion (el turno ya existe,
     // y puede estar en el pasado).
     validarDatosDelTurno(turno);
@@ -371,24 +372,35 @@ void ServicioTurnos::modificarTurno(int idTurno_,
 // ---------------------------------------------------------------------------
 
 void ServicioTurnos::validarAgendamiento(const Turno& turno_) {
-    // --- REGLA 1: el alumno existe y esta activo ---
-    Alumno alumno;
-    if (!_alumnos.buscarPorId(turno_.getIdAlumno(), alumno)) {
-        throw EntidadNoExisteException(turno_.getIdAlumno(), "Alumno");
+    // --- REGLA 1: el paciente existe y esta activo ---
+    Paciente paciente;
+    if (!_pacientes.buscarPorId(turno_.getIdPaciente(), paciente)) {
+        throw EntidadNoExisteException(turno_.getIdPaciente(), "Paciente");
     }
-    if (!alumno.esActivo()) {
-        throw DatoInvalidoException("alumno", std::to_string(alumno.getId()),
-                                    "el alumno esta dado de baja y no puede tener turnos");
+    if (!paciente.esActivo()) {
+        throw DatoInvalidoException("paciente", std::to_string(paciente.getId()),
+                                    "el paciente esta dado de baja y no puede tener turnos");
     }
 
-    // --- REGLA 2: el profesor existe y esta activo ---
-    Profesor profesor;
-    if (!_profesores.buscarPorId(turno_.getIdProfesor(), profesor)) {
-        throw EntidadNoExisteException(turno_.getIdProfesor(), "Profesor");
+    // --- REGLA 2: el medico existe y esta activo ---
+    Medico medico;
+    if (!_medicos.buscarPorId(turno_.getIdMedico(), medico)) {
+        throw EntidadNoExisteException(turno_.getIdMedico(), "Medico");
     }
-    if (!profesor.esActivo()) {
-        throw DatoInvalidoException("profesor", std::to_string(profesor.getId()),
-                                    "el profesor esta dado de baja y no puede tener turnos");
+    if (!medico.esActivo()) {
+        throw DatoInvalidoException("medico", std::to_string(medico.getId()),
+                                    "el medico esta dado de baja y no puede tener turnos");
+    }
+
+    // --- REGLA 2b: el turno es de la especialidad del medico ---
+    //
+    // Un medico atiende UNA especialidad: no puede atender un turno de otra.
+    // El valor de la excepcion es el CODIGO de la especialidad del turno
+    // ("DERM"), no la descripcion: el codigo es el dato que viaja en el
+    // archivo.
+    if (medico.getEspecialidad() != turno_.getEspecialidad()) {
+        throw DatoInvalidoException("especialidad", codigoDe(turno_.getEspecialidad()),
+                                    "el medico no atiende esa especialidad");
     }
 
     // --- REGLA 3: la fecha existe y no esta en el pasado ---
@@ -434,7 +446,7 @@ void ServicioTurnos::validarDatosDelTurno(const Turno& turno_) {
     //
     // El tope de las 22:00 marca el fin del horario en que la institucion
     // atiende. Un turno que EMPIEZA a las 21:30 y dura 90 minutos termina
-    // a las 23:00: la clase se esta dictando cuando ya no hay nadie que
+    // a las 23:00: la consulta se esta dictando cuando ya no hay nadie que
     // atienda. Por eso se exige que el turno TERMINE antes del tope, y no
     // solo que empiece dentro del horario.
     //
@@ -450,11 +462,11 @@ void ServicioTurnos::validarDatosDelTurno(const Turno& turno_) {
     }
 
     // Lo que SOBRA de las reglas anteriores (fecha, hora y duracion ya
-    // quedaron chequeadas) es el aula: por eso el mensaje la nombra.
+    // quedaron chequeadas) es el consultorio: por eso el mensaje la nombra.
     if (!turno_.esValido()) {
-        throw DatoInvalidoException("aula", turno_.getAula(),
-                                    "se esperaba un aula de 1 a 20 caracteres, con letras, digitos, "
-                                    "espacios, '-' y '.'");
+        throw DatoInvalidoException("consultorio", turno_.getConsultorio(),
+                                    "se esperaba un consultorio de 1 a 20 caracteres, con letras, "
+                                    "digitos, espacios, '-' y '.'");
     }
 }
 
@@ -482,12 +494,12 @@ void ServicioTurnos::verificarSolapamiento(const Turno& turno_, int idTurnoExclu
 
         // EL CHOQUE SE BUSCA EN LOS DOS EJES (decision R8 del issue #14)
         //
-        // No puede ser que el alumno Y el profesor sean la misma persona,
+        // No puede ser que el paciente Y el medico sean la misma persona,
         // asi que basta con que coincida UNO de los dos: si coincide el
-        // alumno, el alumno esta ocupado; si coincide el profesor, el
-        // profesor esta ocupado.
-        if (existente.getIdAlumno() != turno_.getIdAlumno()
-            && existente.getIdProfesor() != turno_.getIdProfesor()) {
+        // paciente, el paciente esta ocupado; si coincide el medico, el
+        // medico esta ocupado.
+        if (existente.getIdPaciente() != turno_.getIdPaciente()
+            && existente.getIdMedico() != turno_.getIdMedico()) {
             continue;
         }
 
@@ -497,11 +509,11 @@ void ServicioTurnos::verificarSolapamiento(const Turno& turno_, int idTurnoExclu
 
         // El detalle lleva los ids del turno que YA ESTABA: son los que
         // estaban ocupados. Es el mismo formato que usa el mensaje de la
-        // excepcion de la Fase 1 ("idProfesor=N idAlumno=M").
+        // excepcion de la Fase 1 ("idMedico=N idPaciente=M").
         throw TurnoOcupadoException(
             existente.getId(),
-            "idProfesor=" + std::to_string(existente.getIdProfesor())
-                + " idAlumno=" + std::to_string(existente.getIdAlumno()));
+            "idMedico=" + std::to_string(existente.getIdMedico())
+                + " idPaciente=" + std::to_string(existente.getIdPaciente()));
     }
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "entities/Alumno.h"
-#include "entities/Profesor.h"
+#include "entities/Paciente.h"
+#include "entities/Medico.h"
 #include "entities/Turno.h"
 #include "repositories/IRepositorio.h"
 #include "utils/Fecha.h"
@@ -13,7 +13,7 @@
 //
 // QUE ES Y QUE NO ES
 //
-// Este servicio decide QUE SE PUEDE HACER: si un alumno inactivo puede
+// Este servicio decide QUE SE PUEDE HACER: si un paciente inactivo puede
 // tener un turno, si dos horarios se pisan, si un turno cancelado se puede
 // reprogramar. No decide COMO se guarda nada: no sabe de archivos, ni de
 // arboles, ni de registros. Por eso recibe repositorios por INTERFAZ y no
@@ -22,7 +22,7 @@
 // QUE HACE EL SERVICIO Y NO HACE EL REPOSITORIO
 //
 // El repositorio guarda y devuelve entidades. No sabe si dos turnos se
-// solapan, no valida que un alumno inactivo pueda ser agendado y no decide
+// solapan, no valida que un paciente inactivo pueda ser agendado y no decide
 // si un turno cancelado se puede reprogramar. Eso es TODO de este servicio,
 // y es la unica razon de que la capa exista.
 //
@@ -43,7 +43,7 @@
 // El servicio NO hereda de la entidad ni la extiende: no sabe como se
 // construye un turno, solo lo recibe ya construido y decide si ese turno
 // tiene permiso de existir. La unica regla que el servicio reimplanta es
-// la de los datos validos del turno (hora, duracion, aula), y lo hace
+// la de los datos validos del turno (hora, duracion, consultorio), y lo hace
 // porque el llamador puede haber construido el turno a mano: el servicio
 // no puede confiar en que el otro hizo bien su trabajo.
 //
@@ -63,19 +63,20 @@ class ServicioTurnos {
 public:
     // Recibe INTERFACES: los tests pueden inyectar fakes en memoria y
     // probar las reglas sin tocar el disco.
-    explicit ServicioTurnos(IRepositorio<Alumno>& alumnos_,
-                            IRepositorio<Profesor>& profesors_,
+    explicit ServicioTurnos(IRepositorio<Paciente>& pacientes_,
+                            IRepositorio<Medico>& medicos_,
                             IRepositorio<Turno>& turnos_);
 
     // Agenda un turno nuevo.
     //
     // ORDEN DE LAS REGLAS (cada una lanza antes de pasar a la siguiente):
-    //   1. el alumno existe y esta activo;
-    //   2. el profesor existe y esta activo;
+    //   1. el paciente existe y esta activo;
+    //   2. el medico existe y esta activo;
+    //   2b. el turno es de la especialidad del medico;
     //   3. la fecha no esta en el pasado;
     //   4. la hora, la duracion y el resto de los datos son validos;
-    //   5. el turno no se pisa con ningun turno vigente, NI por el alumno
-    //      NI por el profesor.
+    //   5. el turno no se pisa con ningun turno vigente, NI por el paciente
+    //      NI por el medico.
     //
     // El turno se guarda recien cuando TODAS las reglas pasaron: si una
     // falla, el repositorio queda como estaba.
@@ -99,16 +100,16 @@ public:
     // falla, NINGUNO de los dos turnos se modifica.
     void reprogramar(int idTurno_, const Fecha& nuevaFecha_, const Hora& nuevaHora_);
 
-    // Los turnos VIGENTES (`Activo`) de un alumno.
+    // Los turnos VIGENTES (`Activo`) de un paciente.
     //
     // Toda pantalla filtra por aca: un turno cancelado o reprogramado no se
     // muestra como pendiente, aunque siga en el repositorio.
-    std::vector<Turno> turnosVigentesDe(int idAlumno_) const;
+    std::vector<Turno> turnosVigentesDe(int idPaciente_) const;
 
     // ------------------------------------------------------------------------
     // LAS CONSULTAS DE LA INTERFAZ
     //
-    // Son las que arman las pantallas de Consultas, el Historial de alumnos y
+    // Son las que arman las pantallas de Consultas, el Historial de pacientes y
     // el Calendario. Las cinco tienen el MISMO criterio, y es el de
     // `turnosVigentesDe`:
     //
@@ -123,14 +124,14 @@ public:
     //     entrega ordenados, asi que el filtrado conserva el orden.
     // ------------------------------------------------------------------------
 
-    // Todos los turnos de un alumno, en cualquier estado.
-    std::vector<Turno> turnosDeAlumno(int idAlumno_) const;
+    // Todos los turnos de un paciente, en cualquier estado.
+    std::vector<Turno> turnosDePaciente(int idPaciente_) const;
 
-    // Todos los turnos de un profesor, en cualquier estado.
-    std::vector<Turno> turnosDeProfesor(int idProfesor_) const;
+    // Todos los turnos de un medico, en cualquier estado.
+    std::vector<Turno> turnosDeMedico(int idMedico_) const;
 
-    // Todos los turnos de una materia, en cualquier estado.
-    std::vector<Turno> turnosDeMateria(Materia materia_) const;
+    // Todos los turnos de una especialidad, en cualquier estado.
+    std::vector<Turno> turnosDeEspecialidad(Especialidad especialidad_) const;
 
     // Todos los turnos de una fecha, en cualquier estado.
     std::vector<Turno> turnosDeFecha(const Fecha& fecha_) const;
@@ -143,31 +144,31 @@ public:
     // lo pidio.
     std::vector<Turno> turnosDeRango(const Fecha& desde_, const Fecha& hasta_) const;
 
-    // Modifica un turno ya agendado: cambia su AULA, su DURACION y su
-    // MATERIA.
+    // Modifica un turno ya agendado: cambia su CONSULTORIO, su DURACION y su
+    // ESPECIALIDAD.
     //
     // QUE SE PUEDE CAMBIAR Y QUE NO
     //
     // La FECHA y la HORA NO se tocan: moverlas es REPROGRAMAR, y reprogramar
     // tiene sus propias reglas (crea un turno nuevo y deja el viejo como
-    // `Reprogramado`). El alumno, el profesor y el estado tampoco cambian.
+    // `Reprogramado`). El paciente, el medico y el estado tampoco cambian.
     //
     // LAS REGLAS
     //
     //   1. el turno tiene que existir;
     //   2. el turno tiene que estar `Activo` (un cancelado o un
     //      reprogramado no se modifica: son estados finales);
-    //   3. los datos nuevos tienen que ser validos (la duracion y el aula los
-    //      validan sus propios setters);
+    //   3. los datos nuevos tienen que ser validos (la duracion y el
+    //      consultorio los validan sus propios setters);
     //   4. el turno tiene que seguir TERMINANDO dentro del horario de
     //      atencion, con la duracion nueva;
     //   5. el turno no puede pisar a NINGUN otro turno.
     //
     // Si alguna regla falla, el turno queda EXACTAMENTE como estaba.
     void modificarTurno(int idTurno_,
-                        const std::string& nuevaAula_,
+                        const std::string& nuevoConsultorio_,
                         int nuevaDuracionMin_,
-                        Materia nuevaMateria_);
+                        Especialidad nuevaEspecialidad_);
 
 private:
     // Aplica TODAS las reglas de `agendar` a un turno candidato. Es el
@@ -175,7 +176,7 @@ private:
     // que reprogramar no puede esquivar ninguna.
     void validarAgendamiento(const Turno& turno_);
 
-    // Revisa los datos PROPIOS del turno: id, hora, duracion y aula.
+    // Revisa los datos PROPIOS del turno: id, hora, duracion y consultorio.
     //
     // POR QUE SE REVISA LO QUE LA ENTIDAD YA VALIDO
     //
@@ -188,7 +189,7 @@ private:
     void validarDatosDelTurno(const Turno& turno_);
 
     // Lanza `TurnoOcupadoException` si el turno se pisa con algun turno
-    // vigente, sea por el alumno o por el profesor.
+    // vigente, sea por el paciente o por el medico.
     //
     // `idTurnoExcluido` es el turno que NO se mira (o -1, que es "no
     // excluir a nadie").
@@ -215,7 +216,7 @@ private:
     // del "ahora".
     static Fecha fechaDeHoy();
 
-    IRepositorio<Alumno>& _alumnos;
-    IRepositorio<Profesor>& _profesores;
+    IRepositorio<Paciente>& _pacientes;
+    IRepositorio<Medico>& _medicos;
     IRepositorio<Turno>& _turnos;
 };

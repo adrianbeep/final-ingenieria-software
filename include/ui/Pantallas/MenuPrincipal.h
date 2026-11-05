@@ -19,7 +19,7 @@
 // EL MENSAJE DE LA ULTIMA OPERACION
 //
 // La pantalla guarda el mensaje de la ultima operacion y lo muestra, para que
-// el usuario vea el "OK  Alumno #7 registrado." al volver del motor CRUD. El
+// el usuario vea el "OK  Paciente #7 registrado." al volver del motor CRUD. El
 // mensaje vive en el contexto (es lo unico que se comparte entre pantallas).
 // ---------------------------------------------------------------------------
 namespace ui {
@@ -45,8 +45,8 @@ private:
     // separador mas), este numero tiene que cambiar con el.
     static constexpr int FILA_INICIAL = 2;
 
-    void abrirAlumnos();
-    void abrirProfesores();
+    void abrirPacientes();
+    void abrirMedicos();
 
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(int indice) const;

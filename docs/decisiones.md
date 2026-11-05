@@ -1,0 +1,52 @@
+# Decisiones de diseno
+
+Este documento es el registro de las decisiones del proyecto: **que se decidio,
+por que, y que alternativa se descarto**. Es un entregable de la Fase 8, pero
+se mantiene al dia desde el primer commit: si una decision cambia, se cambia
+aca.
+
+La tabla canonica vive en el
+[issue #1](https://github.com/adrianbeep/final-ingenieria-software/issues/1),
+que es el roadmap. Las decisiones de la Fase 6 (la interfaz) estan en el
+[issue #16](https://github.com/adrianbeep/final-ingenieria-software/issues/16).
+
+## Decisiones del dominio y del proyecto
+
+| # | Decision | Alternativa descartada | Por que |
+|---|---|---|---|
+| 1 | Dominio: **Medico / Paciente / Turno**. `especialidad` es `enum class`, no entidad | `Especialidad` como entidad CRUD (+8 pantallas) | La especialidad se **elige de una lista**, no se escribe: el estado invalido es irrepresentable. Hacerla entidad agrega una tabla, un repositorio y pantallas, y no aporta ninguna regla que el enum no cubra |
+| 2 | **12 especialidades** definidas por codigo | Especialidad como `string` libre | Con el codigo, el dato persistido no depende del nombre: cambiar "Cardiologia" por "Cardiologia Clinica" no invalida los archivos |
+| 3 | Se persisten los **codigos** (`"CARD"`), nunca el indice del enum | Guardar `(int)especialidad` | El indice depende del **orden** de la declaracion: insertar una especialidad al medio corrompe todos los archivos guardados |
+| 4 | Sin `carrera`, sin `edad` | Relleno de dominio que agrandaba el alcance | La consigna no lo pide. Cada campo que no se usa es un campo que hay que validar, persistir y mostrar |
+| 5 | **Busqueda en dos pasos:** criterio y luego valor | Buscador multi-campo | El criterio se elige de una lista y el valor se escribe. Un buscador multi-campo obliga a decidir que campo se busca y es mas dificil de usar |
+| 6 | **Calendario = menu propio**, no submenu de Reportes | Calentado en Consultas | El calendario es una grilla del mes: no es una tabla mas. Mezclarlo con los reportes lo convierte en una pantalla que no se parece a nada |
+| 7 | `Configuracion` = **colores + datos de ejemplo**. Nada mas | Menu de reglas de negocio | El usuario no configura el dominio: el dominio son reglas de negocio, no preferencias |
+| 8 | **Reprogramar crea turno nuevo**, el viejo queda `Reprogramado` | Editar el turno en el sitio | El turno tiene **historial**: un paciente que reprograma tiene dos turnos, el viejo cancelado y el nuevo. Editar en el sitio borra el pasado |
+| 9 | `Theme.h` con toda la paleta centralizada | Colores hardcodeados en cada pantalla | Con la paleta en un solo lugar, cambiar el tema es cambiar un archivo. Ademas el tema es dato puro y se puede testear sin FTXUI |
+| 10 | Baja logica en las 3 entidades. La "baja definitiva" es **fuera de alcance** | Borrado fisico | El turno tiene que seguir existiendo para que el historial signifique algo. La baja definitiva es un requerimiento distinto y queda explicitamente afuera |
+| 11 | **`ArchivoTexto<T>`, no `ArchivoCSV<T>`** | "CSV" es mentira: no hay comas ni comillas | El separador real es `|`, y el formato tiene un header con version y esquema. Llamarlo CSV seria mentir sobre el formato |
+| 12 | **`T::fromRegistro(linea)`, no `T::fromCSV(linea)`** | "registro" es el termino del dominio | Un registro es una fila del archivo: el nombre que usa el dominio. "fromCSV" prometeria un formato que el proyecto no tiene |
+| 13 | **Los archivos se escriben en modo BINARIO** | El modo texto hacia que los bytes dependieran del sistema operativo | En modo texto, el runtime traduce `'\n'` a CRLF en Windows y lo deja en LF en Linux: el archivo commiteado solo era reproducible en la maquina donde se genero. En modo binario los bytes son **identicos en cualquier sistema operativo** |
+| 14 | **El dominio es de TURNOS MEDICOS**: `Medico`, `Paciente`, `Turno`, `Especialidad` | Mantener el vocabulario academico con la regla de exclusividad | El modelo original **ya era un consultorio con los sustantivos cambiados**: duracion en multiplos de 15 hasta 240 min, horario 08:00-22:00, "legajo" alfanumerico (el legajo profesional), "aula" (el consultorio), estados `Activo`/`Cancelado`/`Reprogramado`, y el medico **exclusivo**. La exclusividad en una facultad no tiene sentido (un profesor no puede tener dos alumnos a la vez); en un consultorio es lo obvio |
+| 15 | **Un medico tiene UNA especialidad** (el `enum class Especialidad`) y **el turno tiene que ser de la especialidad del medico que lo atiende** | La especialidad como texto libre, sin relacionar con el turno | Con el enum, la especialidad **deja de ser decorativa**: se puede comparar. Y aparece la primera regla de negocio que hace algo: hoy `especialidad` no se usaba para nada, y el ejemplo de datos tenia 11 de 13 turnos con el medico de otra especialidad, algo que con esta regla **no se puede crear** |
+| 16 | **`Paciente::dni`** (7 u 8 digitos numericos) y **`Turno::consultorio`** (el mismo validador que "aula"). El `legajo` del medico **se mantiene**: ya era el legajo profesional | (a) la `matricula` alfanumerica; (b) el `dni` en el medico | El DNI es el identificador unico natural de un paciente. Y "legajo profesional" es literalmente lo que el modelo ya tenia: no hay ni que cambiarlo ni que renombrarlo |
+| 17 | **El modulo "Consultas y Reportes" se llama "Reportes"** | Dejarlo como "Consultas y Reportes" | En el dominio medico, "consulta" **es** el turno: un modulo "Consultas" junto a otro "Turnos" seria ambiguo |
+
+## Decisiones de la Fase 6 (la interfaz)
+
+Estas no son decisiones de dominio: son de ingenieria de la capa de
+presentacion. El detalle completo esta en el
+[issue #16](https://github.com/adrianbeep/final-ingenieria-software/issues/16).
+
+| # | Decision | Alternativa descartada | Por que |
+|---|---|---|---|
+| 18 | **FTXUI v7.0.3 amalgamado, vendorizado** en `third_party/ftxui/` | (a) instalada en el sistema; (b) descargada en el build; (c) motor TUI propio | Vendorizar hace el proyecto **autosuficiente**: `git clone` + `make` funciona sin internet, en cualquier maquina, con la version congelada y auditable por SHA256. Las otras dos vias rompen el criterio de aceptacion del proyecto. El costo es el diff: 22.396 lineas de terceros que se revisan por hash y licencia, no linea a linea |
+| 19 | **Teclado primero**: el mouse es un plus, nunca la unica via | Mouse como interaccion principal | En consola el mouse es incomodo (el scroll es un click accidental, no hay hover, se pierde el foco). Una app operable 100% con teclado es ademas accesible |
+| 20 | **El dominio no depende de FTXUI** | FTXUI en todo el proyecto | La UI es la unica capa que puede conocer el motor de terminal. Lo verifica el CI con un grep, como la regla de que el dominio no toca I/O |
+| 21 | **Sin terminal no hay TUI**: se imprime el menu en texto plano y se sale con codigo 0 | Entrar al alternate screen igual | FTXUI no trae guard de TTY, y `App::Loop()` sin terminal no retorna nunca. Sin este guard, el CI se cuelga hasta su timeout de 6 h |
+| 22 | **La interaccion es nuestra; FTXUI aporta el terminal** | Usar los componentes `ftxui::Menu` y `ftxui::Input` | La logica de navegacion y el hit-testing del raton quedan **testeables** con el arnes propio, que es lo que permite que la UI tenga tests de verdad |
+| 23 | **La lectura es un widget con estado** (`ui::Campo`), no una llamada bloqueante | Dejar el lector bloqueante de la Fase 1 | Un lector bloqueante no puede existir en un modelo de eventos. El contrato se conserva entero (3 intentos y despues `DatoInvalidoException`) pero cambia de soporte: el error se muestra en la pantalla y el usuario reintenta |
+| 24 | **El evento va primero a la pantalla**, y solo si no lo consume lo maneja la aplicacion | Interceptar `Escape` antes | Asi `Esc` sube un nivel dentro de un modulo, y la aplicacion solo lo ve cuando la pantalla no lo quiere |
+| 25 | **El `0` es "volver" en los menus, pero es DATO en un campo de texto** con texto | `0` siempre es "volver" | Si el `0` fuera siempre "volver", no se podrian escribir telefonos ni DNIs con ceros |
+| 26 | **El Contexto expone los repositorios CONCRETOS**, no las interfaces | Exponer `IRepositorio<T>` | Las interfaces genericas no declaran las busquedas por nombre ni por identificador unico, que son operaciones que la UI necesita. Si la UI las reimplementa, la regla queda duplicada en dos capas y los metodos del repositorio quedan sin consumidor |
+| 27 | **La logica de la UI es testeable sin FTXUI**: el render es lo unico que lo toca | Que las pantallas sean funciones que imprimen y leen | En una TUI no hay una llamada que espere la linea. El modelo de eventos es el unico que hace que la navegacion con flechas y con raton sean la misma interaccion |

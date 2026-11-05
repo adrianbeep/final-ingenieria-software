@@ -1,21 +1,21 @@
 #pragma once
 
-#include "entities/Profesor.h"
-#include "repositories/RepositorioProfesores.h"
+#include "entities/Medico.h"
+#include "repositories/RepositorioMedicos.h"
 #include "services/ServicioTurnos.h"
 #include "ui/CrudPersonas.h"
 
 #include <memory>
 
 // ---------------------------------------------------------------------------
-// La pantalla de PROFESORES.
+// La pantalla de MEDICOS.
 //
-// Es la HERMANA de la de alumnos: el motor (`ui::CrudPersonas`) es el mismo y
+// Es la HERMANA de la de pacientes: el motor (`ui::CrudPersonas`) es el mismo y
 // lo unico que cambia son los datos (las columnas, los campos, el
 // constructor y los criterios de busqueda).
 //
-// TODO lo que es ESPECIFICO de los profesores vive en
-// `src/ui/Pantallas/Profesores.cpp`.
+// TODO lo que es ESPECIFICO de los medicos vive en
+// `src/ui/Pantallas/Medicos.cpp`.
 //
 // POR QUE EL REPOSITORIO ES EL CONCRETO
 //
@@ -32,13 +32,13 @@ class Pantalla;
 
 namespace Pantallas {
 
-// La configuracion del CRUD de profesores.
-CrudPersonas<Profesor>::Config configDeProfesores(RepositorioProfesores& repositorio,
+// La configuracion del CRUD de medicos.
+CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
                                                    ServicioTurnos& servicioTurnos);
 
-// La pantalla de profesores, lista para apilarse en la aplicacion.
-std::unique_ptr<Pantalla> crearPantallaProfesores(Aplicacion& aplicacion,
-                                                    RepositorioProfesores& repositorio,
+// La pantalla de medicos, lista para apilarse en la aplicacion.
+std::unique_ptr<Pantalla> crearPantallaMedicos(Aplicacion& aplicacion,
+                                                    RepositorioMedicos& repositorio,
                                                     ServicioTurnos& servicioTurnos);
 
 } // namespace Pantallas

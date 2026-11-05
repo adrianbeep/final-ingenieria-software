@@ -18,7 +18,7 @@
 // COMPILADOR deberia impedir. Con dos interfaces, el compilador lo
 // impide: el repositorio de turnos sencillamente no implementa esta.
 //
-// SOLO la implementan los repositorios de ALUMNO y PROFESOR, que si tienen
+// SOLO la implementan los repositorios de PACIENTE y MEDICO, que si tienen
 // el flag `activo` (en `Persona`).
 // ---------------------------------------------------------------------------
 template <class T>
