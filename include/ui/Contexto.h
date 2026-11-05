@@ -55,7 +55,7 @@
 // EL MENSAJE DE LA ULTIMA OPERACION
 //
 // Es el UNICO estado que se comparte ENTRE pantallas: el motor CRUD avisa
-// "OK  Alumno #7 registrado." y el menu principal lo muestra cuando el
+// "OK  Paciente #7 registrado." y el menu principal lo muestra cuando el
 // usuario vuelve. Vive en el contexto (y no en una variable global) porque
 // el contexto es justamente el objeto que las pantallas tienen en comun.
 //

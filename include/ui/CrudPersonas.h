@@ -153,8 +153,9 @@ public:
 
     // TODO lo que cambia entre un paciente y un medico.
     struct Config {
-        std::string singular;                        // "alumno"
-        std::string plural;                          // "alumnos"
+        std::string singular;                        // "paciente"
+        std::string plural;                          // "pacientes"
+        std::string opcionFicha;                     // "Ver ficha + historial"
         std::vector<std::string> cabeceras;          // las columnas de la tabla
         Fila fila;                                   // la fila de una entidad
         std::vector<CampoFormulario> campos;         // el formulario
@@ -342,12 +343,19 @@ CrudPersonas<T>::CrudPersonas(Aplicacion& app, IRepositorio<T>& repositorio,
     //
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles.
-    _menu.agregar('1', "Registrar", [this]() { iniciarRegistro(); });
-    _menu.agregar('2', "Modificar", [this]() { iniciarModificacion(); });
+    //
+    // LAS DOS PRIMERAS OPCIONES LLEVAN EL NOMBRE DE LA ENTIDAD
+    //
+    // El motor es generico, asi que el texto sale de la configuracion:
+    // "Registrar paciente" en una pantalla y "Registrar medico" en la otra.
+    // La opcion de la ficha tambien: cada pantalla dice lo que su ficha
+    // muestra ("Ver ficha + historial", "Ver ficha + turnos").
+    _menu.agregar('1', "Registrar " + _config.singular, [this]() { iniciarRegistro(); });
+    _menu.agregar('2', "Modificar " + _config.singular, [this]() { iniciarModificacion(); });
     _menu.agregar('3', "Baja / Reactivar", [this]() { iniciarBaja(); });
     _menu.agregar('4', "Listar todos", [this]() { irA(Vista::Listado); });
     _menu.agregar('5', "Buscar", [this]() { abrirCriterio(); });
-    _menu.agregar('6', "Ver ficha + historial", [this]() { iniciarFicha(); });
+    _menu.agregar('6', _config.opcionFicha, [this]() { iniciarFicha(); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 
     // EL MENU DE CRITERIOS

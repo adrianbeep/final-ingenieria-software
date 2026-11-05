@@ -19,8 +19,8 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     : _aplicacion(aplicacion), _menu("Sistema de Turnos") {
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles (aca, "Salir").
-    _menu.agregar('1', "Alumnos", [this]() { abrirPacientes(); });
-    _menu.agregar('2', "Profesores", [this]() { abrirMedicos(); });
+    _menu.agregar('1', "Pacientes", [this]() { abrirPacientes(); });
+    _menu.agregar('2', "Medicos", [this]() { abrirMedicos(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del

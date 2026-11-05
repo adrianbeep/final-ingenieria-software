@@ -12,7 +12,7 @@
 // NACE CON LAS OPCIONES CUYO MODULO YA EXISTE (decision D33)
 //
 // El menu no promete pantallas que todavia no estan: en este PR son
-// "1. Alumnos", "2. Profesores" y "0. Salir". Los PRs siguientes van
+// "1. Pacientes", "2. Medicos" y "0. Salir". Los PRs siguientes van
 // agregar su opcion en su lugar, asi que la lista nunca promete nada que no
 // funcione.
 //

@@ -786,9 +786,9 @@ TEST_CASE("el texto plano de la confirmacion tiene la pregunta y las opciones",
 // ---------------------------------------------------------------------------
 
 TEST_CASE("el mensaje de exito usa el formato OK", mensaje_exito) {
-    const ui::Mensaje mensaje = ui::Mensaje::exito("Alumno #7 registrado.");
+    const ui::Mensaje mensaje = ui::Mensaje::exito("Paciente #7 registrado.");
 
-    CHECK(mensaje.texto() == "OK  Alumno #7 registrado.");
+    CHECK(mensaje.texto() == "OK  Paciente #7 registrado.");
     CHECK(mensaje.esExito() == true);
     CHECK(mensaje.esError() == false);
     CHECK(mensaje.esVacio() == false);
@@ -1013,11 +1013,11 @@ TEST_CASE("el menu del motor muestra las seis opciones y el cero de volver",
 
     CHECK(motor.vista() == "Menu");
     // El titulo es el nombre de la entidad en plural.
-    CHECK(motor.titulo() == "ALUMNOS");
+    CHECK(motor.titulo() == "PACIENTES");
 
     const std::string texto = motor.vistaTextoPlano();
-    CHECK(texto.find("1. Registrar") != std::string::npos);
-    CHECK(texto.find("2. Modificar") != std::string::npos);
+    CHECK(texto.find("1. Registrar paciente") != std::string::npos);
+    CHECK(texto.find("2. Modificar paciente") != std::string::npos);
     CHECK(texto.find("3. Baja / Reactivar") != std::string::npos);
     CHECK(texto.find("4. Listar todos") != std::string::npos);
     CHECK(texto.find("5. Buscar") != std::string::npos);
@@ -1072,7 +1072,7 @@ TEST_CASE("registrar un paciente lo deja en el repositorio", crud_registrar) {
     }
 
     // El mensaje de exito tiene el formato de la aplicacion.
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 registrado.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Paciente #1 registrado.");
 }
 
 TEST_CASE("un email invalido muestra el error y a la tercera vez lanza",
@@ -1134,7 +1134,7 @@ TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar
     const std::string formulario = motor.vistaTextoPlano();
     CHECK(formulario.find("nombre: Ana|") != std::string::npos);
     CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
-    CHECK(formulario.find("matricula: 2020391|") != std::string::npos);
+    CHECK(formulario.find("dni: 2020391|") != std::string::npos);
 
     // Se cambia el nombre: tres retrocesos y "Sol".
     motor.manejar(eventoTecla(ui::TipoTecla::Retroceso));
@@ -1151,7 +1151,7 @@ TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar
     // Los datos que NO se tocaron siguen como estaban.
     CHECK(paciente.getApellido() == "Gomez");
     CHECK(paciente.getDni() == "2020391");
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 modificado.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Paciente #1 modificado.");
 }
 
 TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
@@ -1168,7 +1168,7 @@ TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
 
     // La vista de confirmacion pregunta QUE va a pasar.
     CHECK(motor.vista() == "Confirmar");
-    CHECK(motor.vistaTextoPlano().find("Dar de baja al alumno #1?") != std::string::npos);
+    CHECK(motor.vistaTextoPlano().find("Dar de baja al paciente #1?") != std::string::npos);
 
     // "No": vuelve a la vista anterior (la del id) y NO toca nada.
     motor.manejar(eventoCaracter('2'));
@@ -1196,20 +1196,20 @@ TEST_CASE("la baja confirmada deja al paciente inactivo y la reactivation lo act
     CHECK(motor.vista() == "Menu");
     CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
     CHECK(paciente.esActivo() == false);
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 dado de baja.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Paciente #1 dado de baja.");
 
     // LA REACTIVACION
     motor.manejar(eventoCaracter('3'));
     escribir(motor, "1");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
     // Ahora la accion es la contraria: la pregunta lo dice.
-    CHECK(motor.vistaTextoPlano().find("Reactivar al alumno #1?") != std::string::npos);
+    CHECK(motor.vistaTextoPlano().find("Reactivar al paciente #1?") != std::string::npos);
     motor.manejar(eventoCaracter('1'));  // "Si"
 
     CHECK(motor.vista() == "Menu");
     CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
     CHECK(paciente.esActivo() == true);
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 reactivado.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Paciente #1 reactivado.");
 }
 
 TEST_CASE("listar muestra una fila por paciente", crud_listar) {
@@ -1237,7 +1237,7 @@ TEST_CASE("un listado vacio dice que no hay y como volver", crud_listado_vacio) 
     CHECK(motor.vista() == "Listado");
 
     const std::string texto = motor.vistaTextoPlano();
-    CHECK(texto.find("No hay alumnos") != std::string::npos);
+    CHECK(texto.find("No hay pacientes") != std::string::npos);
     CHECK(texto.find("0: volver al menu") != std::string::npos);
 }
 
@@ -1317,7 +1317,7 @@ TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexi
 
     // La vista NO cambia: el usuario corrige el id.
     CHECK(motor.vista() == "Id");
-    CHECK(motor.vistaTextoPlano().find("no existe alumno #9") != std::string::npos);
+    CHECK(motor.vistaTextoPlano().find("no existe paciente #9") != std::string::npos);
 }
 
 TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
@@ -1396,8 +1396,8 @@ TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
     const std::vector<std::string> lineas = renderizarLineas(motor.renderizar(), 60, 12);
     CHECK(lineas.size() == 12);
     if (lineas.size() == 12) {
-        CHECK(lineas[0].find("ALUMNOS") != std::string::npos);
-        CHECK(lineas[2].find("1. Registrar") != std::string::npos);
+        CHECK(lineas[0].find("PACIENTES") != std::string::npos);
+        CHECK(lineas[2].find("1. Registrar paciente") != std::string::npos);
         CHECK(lineas[8].find("0. Volver") != std::string::npos);
     }
 
@@ -1600,10 +1600,15 @@ TEST_CASE("el menu de medicos muestra las seis opciones y el cero de volver",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     CHECK(motor.vista() == "Menu");
-    CHECK(motor.titulo() == "PROFESORES");
+    CHECK(motor.titulo() == "MEDICOS");
 
     const std::string texto = motor.vistaTextoPlano();
-    CHECK(texto.find("1. Registrar") != std::string::npos);
+    CHECK(texto.find("1. Registrar medico") != std::string::npos);
+    CHECK(texto.find("2. Modificar medico") != std::string::npos);
+    CHECK(texto.find("3. Baja / Reactivar") != std::string::npos);
+    CHECK(texto.find("4. Listar todos") != std::string::npos);
     CHECK(texto.find("5. Buscar") != std::string::npos);
+    // La ficha del medico muestra sus TURNOS, no su historial.
+    CHECK(texto.find("6. Ver ficha + turnos") != std::string::npos);
     CHECK(texto.find("0. Volver") != std::string::npos);
 }
