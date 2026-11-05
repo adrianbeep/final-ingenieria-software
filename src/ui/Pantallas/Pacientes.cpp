@@ -20,12 +20,18 @@
 // de la entidad y los criterios de busqueda. El motor (`ui::CrudPersonas`)
 // es generico: no sabe que existe una entidad que se llame "paciente".
 //
-// LOS ROTULOS VISIBLES NO CAMBIAN EN ESTE PR
+// EL VOCABULARIO VISIBLE TAMBIEN ES CONFIGURACION
 //
-// El `singular`, el `plural` y las cabeceras siguen diciendo "alumno",
-// "alumnos" y "matricula": son el texto que ve el usuario y los cambia el
-// PR siguiente. Lo que cambia aca son los IDENTIFICADORES: la entidad es
-// `Paciente` y el dato es el `dni`.
+// El `singular`, el `plural` y las cabeceras son el TEXTO que ve el usuario,
+// y por eso tambien viven aca. El motor los lee y arma con ellos el titulo
+// de la pantalla ("PACIENTES"), el titulo del submenu de busqueda ("Buscar
+// pacientes"), los mensajes de exito, la pregunta de la baja y el estado
+// vacio ("No hay pacientes para mostrar.").
+//
+// Por eso el rotulo de un campo y el nombre de su columna viajan JUNTOS:
+// el motor busca el valor inicial del formulario por el nombre de la
+// columna. Si el rotulo no calzara con el nombre de la columna, el dni
+// apareceria VACIO al modificar un paciente.
 // ---------------------------------------------------------------------------
 namespace ui {
 namespace Pantallas {
@@ -34,7 +40,7 @@ namespace {
 // LA FILA DE UN PACIENTE
 //
 // Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
-// `email`, `telefono`, `matricula` (el dni) y `estado`.
+// `email`, `telefono`, `dni` y `estado`.
 std::vector<std::string> filaDe(const Paciente& paciente) {
     return {std::to_string(paciente.getId()),
             paciente.getNombre(),
@@ -89,10 +95,10 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
                                               ServicioTurnos& servicioTurnos) {
     CrudPersonas<Paciente>::Config config;
 
-    config.singular = "alumno";
-    config.plural = "alumnos";
+    config.singular = "paciente";
+    config.plural = "pacientes";
 
-    config.cabeceras = {"id", "nombre", "apellido", "email", "telefono", "matricula", "estado"};
+    config.cabeceras = {"id", "nombre", "apellido", "email", "telefono", "dni", "estado"};
     config.fila = [](const Paciente& paciente) { return filaDe(paciente); };
 
     // EL FORMULARIO
@@ -112,7 +118,7 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
         {"telefono", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
              paciente.setTelefono(texto);
          })},
-        {"matricula", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+        {"dni", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
              paciente.setDni(texto);
          })}};
 
@@ -139,7 +145,7 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     // La pantalla NO tiene reglas de busqueda propias: las pregunta al
     // repositorio, que es quien tiene el conjunto de los pacientes. El "nombre
     // o apellido" usa `buscarPorNombre` (coincidencia PARCIAL e insensible a
-    // mayusculas) y la "matricula" usa `existeDni` (coincidencia EXACTA
+    // mayusculas) y el "dni" usa `existeDni` (coincidencia EXACTA
     // e insensible a mayusculas, la misma con la que se verifica su
     // unicidad). Si la pantalla copiara la regla, habria DOS reglas que se
     // pueden desincronizar.
@@ -163,7 +169,7 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
              }
              return filas;
          }},
-        {"matricula", [&repositorio](const std::string& valor) {
+        {"dni", [&repositorio](const std::string& valor) {
              std::vector<std::vector<std::string>> filas;
              // El repositorio devuelve el id del paciente que tiene el
              // dni: con ese id se arma la fila.
@@ -178,11 +184,17 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
              return filas;
          }}};
 
+    // EL ROTULO DE LA FICHA
+    //
+    // El motor arma la opcion 6 del menu con este texto: cada pantalla dice
+    // lo que su ficha muestra.
+    config.opcionFicha = "Ver ficha + historial";
+
     // LOS TURNOS DE LA FICHA
     //
     // Los VIGENTES son los que espera la persona y el HISTORIAL son todos
     // (los cancelados y los reprogramados tambien son parte de su historia).
-    config.turnos.cabeceras = {"id", "fecha", "hora", "duracion", "aula", "materia", "estado"};
+    config.turnos.cabeceras = {"id", "fecha", "hora", "duracion", "consultorio", "especialidad", "estado"};
     config.turnos.vigentes = [&servicioTurnos](int id) {
         std::vector<std::vector<std::string>> filas;
         for (const Turno& turno : servicioTurnos.turnosVigentesDe(id)) {

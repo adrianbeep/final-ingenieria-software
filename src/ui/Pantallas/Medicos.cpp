@@ -18,12 +18,14 @@
 // el mismo, asi que lo que cambia son los DATOS (las columnas, los campos,
 // el constructor de la entidad y los criterios de busqueda).
 //
-// LOS ROTULOS VISIBLES NO CAMBIAN EN ESTE PR
+// EL VOCABULARIO VISIBLE TAMBIEN ES CONFIGURACION
 //
-// El `singular` y el `plural` siguen diciendo "profesor" y "profesores":
-// son el texto que ve el usuario y los cambia el PR siguiente. Lo que
-// cambia aca son los IDENTIFICADORES: la entidad es `Medico` y su
-// especialidad es el `enum class` del catalogo.
+// El `singular` y el `plural` son el TEXTO que ve el usuario, y por eso
+// tambien viven aca. El motor los lee y arma con ellos el titulo de la
+// pantalla ("MEDICOS"), el titulo del submenu de busqueda ("Buscar medicos"),
+// los mensajes de exito, la pregunta de la baja y el estado vacio ("No hay
+// medicos para mostrar.").
+//
 // ---------------------------------------------------------------------------
 namespace ui {
 namespace Pantallas {
@@ -34,7 +36,7 @@ namespace {
 // Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
 // `email`, `telefono`, `legajo`, `especialidad` y `estado`.
 //
-// La especialidad se muestra con su DESCRIPCION ("Cardiologia"), que es lo
+// La especialidad se muestra con su DESCRIPCION ("Cardiología"), que es lo
 // que el usuario lee: el CODIGO ("CARD") es el dato que viaja en el archivo.
 std::vector<std::string> filaDe(const Medico& medico) {
     return {std::to_string(medico.getId()),
@@ -84,8 +86,8 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
                                                    ServicioTurnos& servicioTurnos) {
     CrudPersonas<Medico>::Config config;
 
-    config.singular = "profesor";
-    config.plural = "profesores";
+    config.singular = "medico";
+    config.plural = "medicos";
 
     config.cabeceras = {"id",  "nombre",      "apellido", "email",
                         "telefono", "legajo", "especialidad", "estado"};
@@ -180,6 +182,12 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
              return filas;
          }}};
 
+    // EL ROTULO DE LA FICHA
+    //
+    // El motor arma la opcion 6 del menu con este texto: cada pantalla dice
+    // lo que su ficha muestra.
+    config.opcionFicha = "Ver ficha + turnos";
+
     // LOS TURNOS DE LA FICHA
     //
     // Los VIGENTES son los que el medico tiene por delante y el HISTORIAL
@@ -189,7 +197,7 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     // El servicio no tiene una consulta de "turnos vigentes de un medico"
     // (la que usa es la de los pacientes): los vigentes se sacan del historial
     // filtrando por estado.
-    config.turnos.cabeceras = {"id", "fecha", "hora", "duracion", "aula", "materia", "estado"};
+    config.turnos.cabeceras = {"id", "fecha", "hora", "duracion", "consultorio", "especialidad", "estado"};
     config.turnos.vigentes = [&servicioTurnos](int id) {
         std::vector<std::vector<std::string>> filas;
         for (const Turno& turno : servicioTurnos.turnosDeMedico(id)) {

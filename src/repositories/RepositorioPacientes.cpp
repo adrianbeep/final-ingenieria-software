@@ -97,7 +97,7 @@ bool RepositorioPacientes::buscarDni(const std::string& dni,
         return false;
     }
 
-    // POR QUE UN RECORRIDO LINEAL Y NO UN INDICE SECUNDARIO POR MATRICULA
+    // POR QUE UN RECORRIDO LINEAL Y NO UN INDICE SECUNDARIO POR DNI
     //
     // La matriz del repositorio esta indexada por ID, no por dni: el
     // `ArbolBST` ordena por `getId()`. Agregar un indice secundario por
