@@ -24,12 +24,12 @@
 
 // ---------------------------------------------------------------------------
 // El motor CRUD de personas: la pantalla que sabe registrar, modificar,
-// dar de baja, listar, buscar y mostrar la ficha de un ALUMNO o de un
-// PROFESOR.
+// dar de baja, listar, buscar y mostrar la ficha de un PACIENTE o de un
+// MEDICO.
 //
 // POR QUE UN TEMPLATE Y NO DOS PANTALLAS
 //
-// El flujo de un alumno y el de un profesor es EL MISMO: las mismas vistas,
+// El flujo de un paciente y el de un medico es EL MISMO: las mismas vistas,
 // las mismas reglas de navegacion, los mismos mensajes. Lo UNICO que cambia
 // son los datos (las columnas, los campos, el constructor y los criterios de
 // busqueda). Es el mismo criterio que usa el proyecto en la capa de dominio
@@ -75,7 +75,7 @@ struct CampoFormulario {
 //
 // SON FILAS Y NO ENTIDADES
 //
-// Los turnos de un alumno son `Turno`, no `Alumno`: el motor es generico
+// Los turnos de un paciente son `Turno`, no `Paciente`: el motor es generico
 // sobre el tipo de la persona y no tiene por que saber como se ve un turno.
 // Por eso el que decide es el que arma la CONFIGURACION: devuelve las
 // filas ya formateadas, con el orden de `cabeceras`.
@@ -99,7 +99,7 @@ struct CriterioBusqueda {
 
 // El texto en mayusculas.
 //
-// SOLO ASCII: es para los titulos ("ALUMNOS", "PROFESORES"), que son
+// SOLO ASCII: es para los titulos ("PACIENTES", "MEDICOS"), que son
 // nombres de entidad y no texto de usuario. Por eso no hace falta
 // decodificar UTF-8.
 inline std::string aMayusculas(const std::string& texto) {
@@ -151,7 +151,7 @@ public:
     // La fila de una entidad: las celdas, en el orden de las cabeceras.
     using Fila = std::function<std::vector<std::string>(const T&)>;
 
-    // TODO lo que cambia entre un alumno y un profesor.
+    // TODO lo que cambia entre un paciente y un medico.
     struct Config {
         std::string singular;                        // "alumno"
         std::string plural;                          // "alumnos"
@@ -433,7 +433,7 @@ bool CrudPersonas<T>::esTeclaEscape(const Evento& evento) const {
 // EL '0' ES "VOLVER" SOLO SI EL CAMPO ESTA VACIO
 //
 // Con algo escrito el '0' es un DATO (un telefono puede tener un cero, una
-// matricula puede empezar con un cero) y se lo queda el campo.
+// dni puede empezar con un cero) y se lo queda el campo.
 //
 // LA MISMA REGLA EN TODAS LAS VISTAS CON CAMPO
 //
@@ -814,7 +814,7 @@ void CrudPersonas<T>::confirmarFormulario() {
         irA(Vista::Menu);
     } catch (const DatoInvalidoException& error) {
         // El repositorio puede rechazar la entidad (por ejemplo, la
-        // matricula ya la tiene otro). El error se muestra y el formulario
+        // dni ya la tiene otro). El error se muestra y el formulario
         // sigue abierto: no se pierde lo que el usuario escribio.
         avisar(error.motivo());
     } catch (const ExcepcionSistema& error) {

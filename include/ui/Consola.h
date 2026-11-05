@@ -36,9 +36,9 @@
 // dato, o lanzan `DatoInvalidoException` con el campo que fallo. Son lo que
 // usa el `ui::Campo` como validador, y se testean sin terminal.
 //
-// LA MATERIA NO TIENE VALIDADOR
+// LA ESPECIALIDAD NO TIENE VALIDADOR
 //
-// La materia se elige de una lista NUMERADA de doce (un `Menu`), asi que el
+// La especialidad se elige de una lista NUMERADA de doce (un `Menu`), asi que el
 // estado invalido es irrepresentable: no hay nada que validar.
 // ---------------------------------------------------------------------------
 namespace ui {

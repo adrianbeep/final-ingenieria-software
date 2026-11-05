@@ -4,8 +4,8 @@
 #include "ui/ColorFtxui.h"
 #include "ui/Contexto.h"
 #include "ui/Mensaje.h"
-#include "ui/Pantallas/Alumnos.h"
-#include "ui/Pantallas/Profesores.h"
+#include "ui/Pantallas/Pacientes.h"
+#include "ui/Pantallas/Medicos.h"
 
 #include <ftxui.hpp>
 
@@ -19,8 +19,8 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     : _aplicacion(aplicacion), _menu("Sistema de Turnos") {
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles (aca, "Salir").
-    _menu.agregar('1', "Alumnos", [this]() { abrirAlumnos(); });
-    _menu.agregar('2', "Profesores", [this]() { abrirProfesores(); });
+    _menu.agregar('1', "Alumnos", [this]() { abrirPacientes(); });
+    _menu.agregar('2', "Profesores", [this]() { abrirMedicos(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -32,19 +32,19 @@ std::string MenuPrincipal::titulo() const {
     return "Menu principal";
 }
 
-void MenuPrincipal::abrirAlumnos() {
+void MenuPrincipal::abrirPacientes() {
     // Los repositorios y el servicio salen del CONTEXTO: la pantalla no
     // recibe collaborators por parametro, los pide al contexto de la
     // aplicacion.
     _aplicacion.ir([](ui::Aplicacion& app) {
-        return crearPantallaAlumnos(app, app.contexto().alumnos(),
+        return crearPantallaPacientes(app, app.contexto().pacientes(),
                                     app.contexto().servicioTurnos());
     });
 }
 
-void MenuPrincipal::abrirProfesores() {
+void MenuPrincipal::abrirMedicos() {
     _aplicacion.ir([](ui::Aplicacion& app) {
-        return crearPantallaProfesores(app, app.contexto().profesores(),
+        return crearPantallaMedicos(app, app.contexto().medicos(),
                                        app.contexto().servicioTurnos());
     });
 }
@@ -83,7 +83,7 @@ ftxui::Element MenuPrincipal::renderizar() {
     // EL MENSAJE DE LA ULTIMA OPERACION
     //
     // Va debajo del menu: es el resultado de lo que se hizo en la pantalla
-    // anterior (por ejemplo, el alta de un alumno).
+    // anterior (por ejemplo, el alta de un paciente).
     const Mensaje& mensaje = _aplicacion.contexto().mensaje();
     if (!mensaje.esVacio()) {
         lineas.push_back(lineaMensaje());

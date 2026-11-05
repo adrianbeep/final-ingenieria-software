@@ -128,7 +128,7 @@ TEST_CASE("esAlfanumericoConSignos rechaza lo que no esta en el conjunto", utils
 TEST_CASE("cantidadCaracteres cuenta codepoints y no bytes", utils_cantidad_caracteres) {
     CHECK(Utils::cantidadCaracteres("") == 0);
     CHECK(Utils::cantidadCaracteres("abc") == 3);
-    CHECK(Utils::cantidadCaracteres("Aula 3") == 6);
+    CHECK(Utils::cantidadCaracteres("Sala 3") == 6);
     // Con tilde: 4 caracteres, pero 5 bytes.
     CHECK(Utils::cantidadCaracteres("A\xC3\xB1o") == 3);
     CHECK(std::string("A\xC3\xB1o").size() == 4);

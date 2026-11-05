@@ -12,7 +12,7 @@
 // POR QUE UNA LISTA Y NO UN `std::vector`
 //
 // Porque el requisito 7 de la consigna pide una estructura IMPLEMENTADA POR
-// EL ALUMNO, y porque el caso de uso real calza: el historial es append-only
+// EL PACIENTE, y porque el caso de uso real calza: el historial es append-only
 // (crece al final), de solo lectura y sin busquedas.
 //
 //   `std::vector<T>`                  `ListaEnlazada<T>`

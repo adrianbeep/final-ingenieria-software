@@ -3,8 +3,8 @@
 #include "ui/Pantallas/MenuPrincipal.h"
 
 #include "exceptions/ExcepcionesSistema.h"
-#include "repositories/RepositorioAlumnos.h"
-#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioPacientes.h"
+#include "repositories/RepositorioMedicos.h"
 #include "repositories/RepositorioTurnos.h"
 #include "services/ServicioTurnos.h"
 
@@ -23,22 +23,22 @@ int main() {
         // Son los mismos objetos que implementan el CRUD y la baja logica:
         // por eso el contexto los recibe una sola vez (el repositorio
         // concreto cumple los dos papeles).
-        RepositorioAlumnos alumnos("data/alumnos.dat");
-        RepositorioProfesores profesores("data/profesores.dat");
+        RepositorioPacientes pacientes("data/pacientes.dat");
+        RepositorioMedicos medicos("data/medicos.dat");
         RepositorioTurnos turnos("data/turnos.dat");
 
         // Los archivos de datos se cargan al arrancar. Si no existen, el
         // repositorio los crea vacios: la aplicacion no puede romperse por
         // un archivo faltante.
-        alumnos.cargar();
-        profesores.cargar();
+        pacientes.cargar();
+        medicos.cargar();
         turnos.cargar();
 
         // EL SERVICIO DE REGLAS DE NEGOCIO
-        ServicioTurnos servicioTurnos(alumnos, profesores, turnos);
+        ServicioTurnos servicioTurnos(pacientes, medicos, turnos);
 
         // EL CONTEXTO: lo que todas las pantallas necesitan.
-        ui::Contexto contexto(alumnos, profesores, turnos, servicioTurnos);
+        ui::Contexto contexto(pacientes, medicos, turnos, servicioTurnos);
 
         ui::Aplicacion aplicacion("Sistema de Turnos", contexto);
 

@@ -1,4 +1,4 @@
-#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioMedicos.h"
 
 #include "exceptions/ExcepcionesSistema.h"
 #include "repositories/BajaLogicaCompartida.h"
@@ -10,37 +10,37 @@
 // ---------------------------------------------------------------------------
 // El nombre de la entidad que viaja en el header del archivo de datos.
 //
-// NO es mecanico a partir de `getTipo()`: `getTipo()` devuelve "Profesor" y el
+// NO es mecanico a partir de `getTipo()`: `getTipo()` devuelve "Medico" y el
 // plural no sale de ahi. Por eso el nombre va escrito aca, en MAYUSCULAS.
 // ---------------------------------------------------------------------------
 namespace {
 
-const char* NOMBRE_ENTIDAD = "PROFESORES";
+const char* NOMBRE_ENTIDAD = "MEDICOS";
 
 } // namespace
 
-RepositorioProfesores::RepositorioProfesores(std::string ruta)
-    : RepositorioCRUD<Profesor>(std::move(ruta), NOMBRE_ENTIDAD) {
+RepositorioMedicos::RepositorioMedicos(std::string ruta)
+    : RepositorioCRUD<Medico>(std::move(ruta), NOMBRE_ENTIDAD) {
 }
 
-void RepositorioProfesores::bajaLogica(int id) {
-    // La logica es la MISMA que la del alumno: vive en
+void RepositorioMedicos::bajaLogica(int id) {
+    // La logica es la MISMA que la del paciente: vive en
     // `BajaLogicaCompartida`, escrita UNA sola vez.
-    BajaLogicaCompartida<Profesor>::darDeBaja(*this, id);
+    BajaLogicaCompartida<Medico>::darDeBaja(*this, id);
 }
 
-void RepositorioProfesores::reactivar(int id) {
-    BajaLogicaCompartida<Profesor>::reactivar(*this, id);
+void RepositorioMedicos::reactivar(int id) {
+    BajaLogicaCompartida<Medico>::reactivar(*this, id);
 }
 
-bool RepositorioProfesores::existeLegajo(const std::string& legajo, int& idExistente) const {
+bool RepositorioMedicos::existeLegajo(const std::string& legajo, int& idExistente) const {
     // No excluye a nadie: la pregunta es "existe ESTE legajo en el
     // repositorio", sin excepciones.
     return buscarLegajo(legajo, -1, idExistente);
 }
 
-std::vector<Profesor> RepositorioProfesores::listarActivos() const {
-    std::vector<Profesor> activos;
+std::vector<Medico> RepositorioMedicos::listarActivos() const {
+    std::vector<Medico> activos;
 
     // `listar()` sale ordenado por id, asi que el resultado tambien.
     //
@@ -50,32 +50,32 @@ std::vector<Profesor> RepositorioProfesores::listarActivos() const {
     // estado mas que hay que mantener en cada alta, modificacion, baja y
     // recarga, con el riesgo de que se desincronice del arbol. El volumen del
     // sistema lo hace irrelevante: un recorrido lineal sobre cientos de
-    // profesores es despreciable al lado de escribir el archivo. Es el mismo
+    // medicos es despreciable al lado de escribir el archivo. Es el mismo
     // criterio que usa la busqueda por legajo.
-    for (const Profesor& profesor : listar()) {
-        if (profesor.esActivo()) {
-            activos.push_back(profesor);
+    for (const Medico& medico : listar()) {
+        if (medico.esActivo()) {
+            activos.push_back(medico);
         }
     }
 
     return activos;
 }
 
-std::vector<Profesor> RepositorioProfesores::listarInactivos() const {
-    std::vector<Profesor> inactivos;
+std::vector<Medico> RepositorioMedicos::listarInactivos() const {
+    std::vector<Medico> inactivos;
 
-    // Los INACTIVOS tambien se listan: la baja es LOGICA, asi que el profesor
+    // Los INACTIVOS tambien se listan: la baja es LOGICA, asi que el medico
     // sigue en el repositorio y hay que poder mostrarlo (y reactivarlo).
-    for (const Profesor& profesor : listar()) {
-        if (!profesor.esActivo()) {
-            inactivos.push_back(profesor);
+    for (const Medico& medico : listar()) {
+        if (!medico.esActivo()) {
+            inactivos.push_back(medico);
         }
     }
 
     return inactivos;
 }
 
-bool RepositorioProfesores::buscarLegajo(const std::string& legajo,
+bool RepositorioMedicos::buscarLegajo(const std::string& legajo,
                                           int idExcluido,
                                           int& idExistente) const {
     // La salida arranca en -1 (la convencion del contrato): si no se
@@ -90,7 +90,7 @@ bool RepositorioProfesores::buscarLegajo(const std::string& legajo,
     // `Utils::aMinusculas` es la UNICA forma de comparar textos en este
     // proyecto: decodifica UTF-8 y baja tanto el ASCII como el rango Latin-1
     // Supplement. Los legajos del dominio son alfanumericos ASCII (ver
-    // `Profesor::legajoValido`), asi que para ellos alcanza (y sobra) la
+    // `Medico::legajoValido`), asi que para ellos alcanza (y sobra) la
     // parte ASCII de `aMinusculas`.
     const std::string buscado = Utils::aMinusculas(Utils::trim(legajo));
     if (buscado.empty()) {
@@ -106,16 +106,16 @@ bool RepositorioProfesores::buscarLegajo(const std::string& legajo,
     // entidades es despreciable al lado de escribir el archivo), y el indice
     // tendria que mantenerce en cada alta, modificacion, baja y recarga, con
     // el riesgo de un estado mas que se desincroniza del arbol.
-    const std::vector<Profesor> todos = listar();
+    const std::vector<Medico> todos = listar();
 
-    for (const Profesor& profesor : todos) {
-        if (profesor.getId() == idExcluido) {
+    for (const Medico& medico : todos) {
+        if (medico.getId() == idExcluido) {
             continue;
         }
         // El legajo guardado ya viene recortado (el setter lo recorta), asi
         // que alcanza con bajarlo a minusculas.
-        if (Utils::aMinusculas(profesor.getLegajo()) == buscado) {
-            idExistente = profesor.getId();
+        if (Utils::aMinusculas(medico.getLegajo()) == buscado) {
+            idExistente = medico.getId();
             return true;
         }
     }
@@ -123,7 +123,7 @@ bool RepositorioProfesores::buscarLegajo(const std::string& legajo,
     return false;
 }
 
-void RepositorioProfesores::alta(const Profesor& profesor) {
+void RepositorioMedicos::alta(const Medico& medico) {
     // La unicidad del legajo se verifica ANTES de tocar el arbol: si la
     // excepcion saliera despues, el repositorio quedaria con la entidad
     // insertada y el archivo con un registro de mas.
@@ -136,29 +136,29 @@ void RepositorioProfesores::alta(const Profesor& profesor) {
     // hasta el CRUD, que lanza `IdDuplicadoException`: ese error es mas
     // especifico que "legajo repetido" para ese caso.
     int idExistente = -1;
-    if (buscarLegajo(profesor.getLegajo(), profesor.getId(), idExistente)) {
-        throw DatoInvalidoException("legajo", profesor.getLegajo(),
-                                    "ya lo tiene el profesor #" + std::to_string(idExistente));
+    if (buscarLegajo(medico.getLegajo(), medico.getId(), idExistente)) {
+        throw DatoInvalidoException("legajo", medico.getLegajo(),
+                                    "ya lo tiene el medico #" + std::to_string(idExistente));
     }
 
     // A partir de aca, el CRUD hace su trabajo: si el id esta ocupado lanza
     // `IdDuplicadoException`, si no inserta, rebalancea y persiste.
-    RepositorioCRUD<Profesor>::alta(profesor);
+    RepositorioCRUD<Medico>::alta(medico);
 }
 
-void RepositorioProfesores::modificar(const Profesor& profesor) {
+void RepositorioMedicos::modificar(const Medico& medico) {
     // Misma regla que en `alta`, con la EXCLUSION por el propio id: el
-    // profesor que se esta modificando conserva su legajo y no puede chocar
-    // consigo mismo. Solo choca con el legajo de OTRO profesor.
+    // medico que se esta modificando conserva su legajo y no puede chocar
+    // consigo mismo. Solo choca con el legajo de OTRO medico.
     //
     // La validacion va ANTES de tocar el arbol, por la misma razon que en
     // `alta`: si la excepcion saliera despues, el repositorio quedaria con
     // la entidad nueva y el archivo con un registro de mas.
     int idExistente = -1;
-    if (buscarLegajo(profesor.getLegajo(), profesor.getId(), idExistente)) {
-        throw DatoInvalidoException("legajo", profesor.getLegajo(),
-                                    "ya lo tiene el profesor #" + std::to_string(idExistente));
+    if (buscarLegajo(medico.getLegajo(), medico.getId(), idExistente)) {
+        throw DatoInvalidoException("legajo", medico.getLegajo(),
+                                    "ya lo tiene el medico #" + std::to_string(idExistente));
     }
 
-    RepositorioCRUD<Profesor>::modificar(profesor);
+    RepositorioCRUD<Medico>::modificar(medico);
 }

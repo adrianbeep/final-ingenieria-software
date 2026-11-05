@@ -1,6 +1,6 @@
 #pragma once
 
-#include "entities/Profesor.h"
+#include "entities/Medico.h"
 #include "repositories/IRepositorioBajaLogica.h"
 #include "repositories/RepositorioCRUD.h"
 
@@ -8,24 +8,24 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// RepositorioProfesores: el repositorio de PROFESORES.
+// RepositorioMedicos: el repositorio de MEDICOS.
 //
-// Es `RepositorioCRUD<Profesor>` MAS la baja logica Y la unicidad del
+// Es `RepositorioCRUD<Medico>` MAS la baja logica Y la unicidad del
 // legajo. El resto del CRUD no se reimplementa: sale del template.
 //
-// POR QUE IMPLEMENTA `IRepositorioBajaLogica<Profesor>`
+// POR QUE IMPLEMENTA `IRepositorioBajaLogica<Medico>`
 //
-// Un profesor TIENE el flag `activo` (lo hereda de `Persona`), asi que se
+// Un medico TIENE el flag `activo` (lo hereda de `Persona`), asi que se
 // puede dar de baja logicamente y reactivar. Un turno no: por eso el
 // repositorio de turnos NO implementa esta interfaz (decision R2 del issue
 // #14).
 //
 // LA UNICIDAD DEL LEGAJO: POR QUE VIVE ACA Y NO EN LA ENTIDAD
 //
-// `entities/Profesor.h` dice que el legajo es UNICO y que la unicidad la
+// `entities/Medico.h` dice que el legajo es UNICO y que la unicidad la
 // verifica el repositorio. Ese comentario existia desde la Fase 2 pero la
 // verificacion NUNCA se implemento: hoy `alta()` solo detecta ids
-// duplicados, asi que se podian dar de alta dos profesores con el mismo
+// duplicados, asi que se podian dar de alta dos medicos con el mismo
 // legajo y el sistema quedaba inconsistente.
 //
 // Y el repositorio es el UNICO lugar donde se puede verificar: la entidad
@@ -38,16 +38,16 @@
 // arbol: si la excepcion saliera despues, el repositorio quedaria con la
 // entidad insertada y el archivo con un registro de mas.
 // ---------------------------------------------------------------------------
-class RepositorioProfesores : public RepositorioCRUD<Profesor>,
-                              public IRepositorioBajaLogica<Profesor> {
+class RepositorioMedicos : public RepositorioCRUD<Medico>,
+                              public IRepositorioBajaLogica<Medico> {
 public:
-    explicit RepositorioProfesores(std::string ruta);
+    explicit RepositorioMedicos(std::string ruta);
 
     void bajaLogica(int id) override;
     void reactivar(int id) override;
 
-    // Devuelve true si YA existe un profesor con ese legajo.
-    // idExistente = id del profesor que lo tiene, o -1 si no existe ninguno.
+    // Devuelve true si YA existe un medico con ese legajo.
+    // idExistente = id del medico que lo tiene, o -1 si no existe ninguno.
     //
     // La comparacion es CASE-INSENSITIVE: "LEG-1001" y "leg-1001" son el
     // MISMO legajo.
@@ -57,25 +57,25 @@ public:
     // que usa `buscarPorId()` cuando no encuentra el id).
     bool existeLegajo(const std::string& legajo, int& idExistente) const;
 
-    // Los profesores ACTIVOS, en orden ascendente de id.
+    // Los medicos ACTIVOS, en orden ascendente de id.
     //
-    // Es la consulta de las pantallas que eligen a QUIEN agendar: un profesor
+    // Es la consulta de las pantallas que eligen a QUIEN agendar: un medico
     // dado de baja no puede tener turnos (es una regla del servicio), asi
     // que no tiene sentido ofrecerlo.
     //
     // NO lanza y NO modifica nada: es una CONSULTA.
-    std::vector<Profesor> listarActivos() const;
+    std::vector<Medico> listarActivos() const;
 
-    // Los profesores DADOS DE BAJA, en orden ascendente de id.
+    // Los medicos DADOS DE BAJA, en orden ascendente de id.
     //
-    // Es la consulta de la pantalla de reactivation: un profesor dado de baja
+    // Es la consulta de la pantalla de reactivation: un medico dado de baja
     // sigue en el repositorio (la baja es logica), asi que hay que poder
     // listarlos para volver a activarlos.
-    std::vector<Profesor> listarInactivos() const;
+    std::vector<Medico> listarInactivos() const;
 
     // Las dos ESCRITURAS pasan por la unicidad del legajo.
-    void alta(const Profesor& profesor) override;
-    void modificar(const Profesor& profesor) override;
+    void alta(const Medico& medico) override;
+    void modificar(const Medico& medico) override;
 
 private:
     // Busca el legajo IGNORANDO a la entidad con id `idExcluido`.
@@ -84,7 +84,7 @@ private:
     // POR QUE HACE FALTA LA EXCLUSION
     //
     // `modificar` REEMPLAZA a la entidad que ya esta guardada: si el
-    // profesor #7 conserva su propio legajo no puede chocar consigo mismo.
+    // medico #7 conserva su propio legajo no puede chocar consigo mismo.
     // La exclusion es por `getId()`, que es la clave con la que el
     // repositorio indexa las entidades.
     //

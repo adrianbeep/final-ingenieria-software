@@ -1,12 +1,12 @@
 #include "test_framework.h"
 
-#include "domain/Materia.h"
-#include "entities/Alumno.h"
-#include "entities/Profesor.h"
+#include "domain/Especialidad.h"
+#include "entities/Paciente.h"
+#include "entities/Medico.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
-#include "repositories/RepositorioAlumnos.h"
-#include "repositories/RepositorioProfesores.h"
+#include "repositories/RepositorioPacientes.h"
+#include "repositories/RepositorioMedicos.h"
 #include "repositories/RepositorioTurnos.h"
 #include "services/ServicioTurnos.h"
 #include "ui/Aplicacion.h"
@@ -19,8 +19,8 @@
 #include "ui/Evento.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
-#include "ui/Pantallas/Alumnos.h"
-#include "ui/Pantallas/Profesores.h"
+#include "ui/Pantallas/Pacientes.h"
+#include "ui/Pantallas/Medicos.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
@@ -748,11 +748,11 @@ TEST_CASE("el campo no toma los clics del raton", campo_ignora_raton) {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("la confirmacion responde Si", confirmacion_si) {
-    ui::Confirmacion confirmacion("Desea dar de baja al alumno?");
+    ui::Confirmacion confirmacion("Desea dar de baja al paciente?");
 
     CHECK(confirmacion.respondida() == false);
     CHECK(confirmacion.confirmo() == false);
-    CHECK(confirmacion.pregunta() == "Desea dar de baja al alumno?");
+    CHECK(confirmacion.pregunta() == "Desea dar de baja al paciente?");
 
     // El atajo '1' es "Si".
     CHECK(confirmacion.aplicarEvento(eventoCaracter('1')) == true);
@@ -762,7 +762,7 @@ TEST_CASE("la confirmacion responde Si", confirmacion_si) {
 }
 
 TEST_CASE("la confirmacion responde No", confirmacion_no) {
-    ui::Confirmacion confirmacion("Desea dar de baja al alumno?");
+    ui::Confirmacion confirmacion("Desea dar de baja al paciente?");
 
     // El atajo '2' es "No".
     CHECK(confirmacion.aplicarEvento(eventoCaracter('2')) == true);
@@ -804,9 +804,9 @@ TEST_CASE("el mensaje de error usa el formato ERR", mensaje_error) {
 }
 
 TEST_CASE("el mensaje de aviso tiene su propio formato", mensaje_aviso) {
-    const ui::Mensaje mensaje = ui::Mensaje::aviso("La matricula ya existe");
+    const ui::Mensaje mensaje = ui::Mensaje::aviso("La dni ya existe");
 
-    CHECK(mensaje.texto() == "AVISO La matricula ya existe");
+    CHECK(mensaje.texto() == "AVISO La dni ya existe");
     CHECK(mensaje.esExito() == false);
     CHECK(mensaje.esError() == false);
     CHECK(mensaje.esVacio() == false);
@@ -870,19 +870,19 @@ TEST_CASE("el render de la tabla tiene las cabeceras y los datos",
     definirNoColor("1");
     ui::Theme::recargarEntorno();
 
-    ui::Tabla tabla({"Materia", "Aula"});
-    tabla.agregarFila({"Algoritmos", "204"});
-    tabla.agregarFila({"Base de Datos", "301"});
+    ui::Tabla tabla({"Especialidad", "Consultorio"});
+    tabla.agregarFila({"Cardiologia", "204"});
+    tabla.agregarFila({"Pediatria", "301"});
 
     const std::vector<std::string> lineas = renderizarLineas(tabla.renderizar(), 32, 5);
 
     CHECK(lineas.size() == 5);
     if (lineas.size() == 5) {
-        CHECK(lineas[1].find("Materia") != std::string::npos);
-        CHECK(lineas[1].find("Aula") != std::string::npos);
-        CHECK(lineas[3].find("Algoritmos") != std::string::npos);
+        CHECK(lineas[1].find("Especialidad") != std::string::npos);
+        CHECK(lineas[1].find("Consultorio") != std::string::npos);
+        CHECK(lineas[3].find("Cardiologia") != std::string::npos);
         CHECK(lineas[3].find("204") != std::string::npos);
-        CHECK(lineas[4].find("Base de Datos") != std::string::npos);
+        CHECK(lineas[4].find("Pediatria") != std::string::npos);
         CHECK(lineas[4].find("301") != std::string::npos);
     }
 
@@ -904,9 +904,9 @@ TEST_CASE("el render de la tabla tiene las cabeceras y los datos",
 //
 // LOS DATOS VAN A UN ARCHIVO REAL
 //
-// El repositorio de alumnos es el de verdad (escribiendo en un directorio
+// El repositorio de pacientes es el de verdad (escribiendo en un directorio
 // temporal): asi se prueba tambien la persistencia y la unicidad de la
-// matricula, que son reglas del dominio y no de la interfaz.
+// dni, que son reglas del dominio y no de la interfaz.
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -955,27 +955,27 @@ public:
 // tengan las reglas de busqueda del repositorio), asi que el escenario usa
 // los mismos tres que usa la aplicacion. Los del motor CRUD siguen siendo
 // los de verdad: asi se prueban tambien la persistencia y la unicidad de la
-// matricula, que son reglas del dominio y no de la interfaz.
+// dni, que son reglas del dominio y no de la interfaz.
 struct Escenario {
     explicit Escenario(const std::string& nombre)
-        : alumnos(rutaNuevaDePrueba(nombre)),
-          profesores(rutaNuevaDePrueba(nombre + "-profesores")),
+        : pacientes(rutaNuevaDePrueba(nombre)),
+          medicos(rutaNuevaDePrueba(nombre + "-medicos")),
           turnos(rutaNuevaDePrueba(nombre + "-turnos")),
-          servicio(alumnos, profesores, turnos),
-          contexto(alumnos, profesores, turnos, servicio),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
           aplicacion("Prueba", contexto) {
-        alumnos.cargar();
+        pacientes.cargar();
 
         aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
 
-        auto motor = std::make_unique<ui::CrudPersonas<Alumno>>(
-            aplicacion, alumnos, alumnos, ui::Pantallas::configDeAlumnos(alumnos, servicio));
+        auto motor = std::make_unique<ui::CrudPersonas<Paciente>>(
+            aplicacion, pacientes, pacientes, ui::Pantallas::configDePacientes(pacientes, servicio));
         puntero = motor.get();
         aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
     }
 
-    RepositorioAlumnos alumnos;
-    RepositorioProfesores profesores;
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
     RepositorioTurnos turnos;
     ServicioTurnos servicio;
     ui::Contexto contexto;
@@ -983,13 +983,13 @@ struct Escenario {
 
     // El motor. OJO: si el motor sale de la pila (por ejemplo, con el '0'),
     // este puntero queda colgando y no se puede volver a usar.
-    ui::CrudPersonas<Alumno>* puntero = nullptr;
+    ui::CrudPersonas<Paciente>* puntero = nullptr;
 };
 
 // Escribe un texto en la pantalla (un evento por caracter).
 //
-// Es un TEMPLATE porque el motor es generico: sirve para el de alumnos y
-// para el de profesores.
+// Es un TEMPLATE porque el motor es generico: sirve para el de pacientes y
+// para el de medicos.
 template <class T>
 void escribir(ui::CrudPersonas<T>& pantalla, const std::string& texto) {
     for (const char caracter : texto) {
@@ -997,11 +997,11 @@ void escribir(ui::CrudPersonas<T>& pantalla, const std::string& texto) {
     }
 }
 
-// Un alumno valido, para las pruebas que necesitan uno ya cargado.
-Alumno alumnoDePrueba(int id, const std::string& nombre, const std::string& apellido,
-                      const std::string& matricula) {
-    return Alumno(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
-                  matricula);
+// Un paciente valido, para las pruebas que necesitan uno ya cargado.
+Paciente pacienteDePrueba(int id, const std::string& nombre, const std::string& apellido,
+                      const std::string& dni) {
+    return Paciente(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
+                  dni);
 }
 
 } // namespace
@@ -1009,7 +1009,7 @@ Alumno alumnoDePrueba(int id, const std::string& nombre, const std::string& apel
 TEST_CASE("el menu del motor muestra las seis opciones y el cero de volver",
            crud_menu_inicial) {
     Escenario escenario("crud_menu_inicial");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     CHECK(motor.vista() == "Menu");
     // El titulo es el nombre de la entidad en plural.
@@ -1028,7 +1028,7 @@ TEST_CASE("el menu del motor muestra las seis opciones y el cero de volver",
 TEST_CASE("el cero del menu del motor vuelve a la pantalla anterior",
            crud_menu_cero_vuelve) {
     Escenario escenario("crud_menu_cero_vuelve");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     // Todavia esta el motor arriba de la pila.
     CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
@@ -1039,9 +1039,9 @@ TEST_CASE("el cero del menu del motor vuelve a la pantalla anterior",
     CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
 }
 
-TEST_CASE("registrar un alumno lo deja en el repositorio", crud_registrar) {
+TEST_CASE("registrar un paciente lo deja en el repositorio", crud_registrar) {
     Escenario escenario("crud_registrar");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('1'));
     CHECK(motor.vista() == "Formulario");
@@ -1054,21 +1054,21 @@ TEST_CASE("registrar un alumno lo deja en el repositorio", crud_registrar) {
     motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
     escribir(motor, "2214556677");
     motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
-    escribir(motor, "MAT-20391");
+    escribir(motor, "2020391");
 
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
 
-    // Vuelve al menu y el alumno esta en el repositorio.
+    // Vuelve al menu y el paciente esta en el repositorio.
     CHECK(motor.vista() == "Menu");
-    const std::vector<Alumno> alumnos = escenario.alumnos.listar();
-    CHECK(alumnos.size() == 1);
-    if (!alumnos.empty()) {
-        CHECK(alumnos[0].getId() == 1);
-        CHECK(alumnos[0].getNombre() == "Ana");
-        CHECK(alumnos[0].getApellido() == "Gomez");
-        CHECK(alumnos[0].getEmail() == "ana.gomez@unlp.edu.ar");
-        CHECK(alumnos[0].getTelefono() == "2214556677");
-        CHECK(alumnos[0].getMatricula() == "MAT-20391");
+    const std::vector<Paciente> pacientes = escenario.pacientes.listar();
+    CHECK(pacientes.size() == 1);
+    if (!pacientes.empty()) {
+        CHECK(pacientes[0].getId() == 1);
+        CHECK(pacientes[0].getNombre() == "Ana");
+        CHECK(pacientes[0].getApellido() == "Gomez");
+        CHECK(pacientes[0].getEmail() == "ana.gomez@unlp.edu.ar");
+        CHECK(pacientes[0].getTelefono() == "2214556677");
+        CHECK(pacientes[0].getDni() == "2020391");
     }
 
     // El mensaje de exito tiene el formato de la aplicacion.
@@ -1078,7 +1078,7 @@ TEST_CASE("registrar un alumno lo deja en el repositorio", crud_registrar) {
 TEST_CASE("un email invalido muestra el error y a la tercera vez lanza",
            crud_email_invalido) {
     Escenario escenario("crud_email_invalido");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('1'));
     escribir(motor, "Ana");
@@ -1089,7 +1089,7 @@ TEST_CASE("un email invalido muestra el error y a la tercera vez lanza",
     motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
     escribir(motor, "2214556677");
     motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
-    escribir(motor, "MAT-20391");
+    escribir(motor, "2020391");
 
     // El primer intento: el error aparece DEBAJO del campo.
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -1114,14 +1114,14 @@ TEST_CASE("un email invalido muestra el error y a la tercera vez lanza",
     CHECK(lanzo == true);
 
     // Y NO se registro nada.
-    CHECK(escenario.alumnos.listar().empty() == true);
+    CHECK(escenario.pacientes.listar().empty() == true);
 }
 
 TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar) {
     Escenario escenario("crud_modificar");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
     CHECK(motor.vista() == "Id");
@@ -1134,7 +1134,7 @@ TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar
     const std::string formulario = motor.vistaTextoPlano();
     CHECK(formulario.find("nombre: Ana|") != std::string::npos);
     CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
-    CHECK(formulario.find("matricula: MAT-20391|") != std::string::npos);
+    CHECK(formulario.find("matricula: 2020391|") != std::string::npos);
 
     // Se cambia el nombre: tres retrocesos y "Sol".
     motor.manejar(eventoTecla(ui::TipoTecla::Retroceso));
@@ -1145,21 +1145,21 @@ TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
 
     CHECK(motor.vista() == "Menu");
-    Alumno alumno;
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.getNombre() == "Sol");
+    Paciente paciente;
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.getNombre() == "Sol");
     // Los datos que NO se tocaron siguen como estaban.
-    CHECK(alumno.getApellido() == "Gomez");
-    CHECK(alumno.getMatricula() == "MAT-20391");
+    CHECK(paciente.getApellido() == "Gomez");
+    CHECK(paciente.getDni() == "2020391");
     CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 modificado.");
 }
 
 TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
            crud_baja_sin_confirmar) {
     Escenario escenario("crud_baja_sin_confirmar");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
     CHECK(motor.vista() == "Id");
@@ -1174,18 +1174,18 @@ TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
     motor.manejar(eventoCaracter('2'));
     CHECK(motor.vista() == "Id");
 
-    Alumno alumno;
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.esActivo() == true);
+    Paciente paciente;
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.esActivo() == true);
 }
 
-TEST_CASE("la baja confirmada deja al alumno inactivo y la reactivation lo activa",
+TEST_CASE("la baja confirmada deja al paciente inactivo y la reactivation lo activa",
            crud_baja_y_reactivacion) {
     Escenario escenario("crud_baja_y_reactivacion");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
-    Alumno alumno;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+    Paciente paciente;
 
     // LA BAJA
     motor.manejar(eventoCaracter('3'));
@@ -1194,8 +1194,8 @@ TEST_CASE("la baja confirmada deja al alumno inactivo y la reactivation lo activ
     motor.manejar(eventoCaracter('1'));  // "Si"
 
     CHECK(motor.vista() == "Menu");
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.esActivo() == false);
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.esActivo() == false);
     CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 dado de baja.");
 
     // LA REACTIVACION
@@ -1207,17 +1207,17 @@ TEST_CASE("la baja confirmada deja al alumno inactivo y la reactivation lo activ
     motor.manejar(eventoCaracter('1'));  // "Si"
 
     CHECK(motor.vista() == "Menu");
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.esActivo() == true);
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.esActivo() == true);
     CHECK(escenario.contexto.mensaje().texto() == "OK  Alumno #1 reactivado.");
 }
 
-TEST_CASE("listar muestra una fila por alumno", crud_listar) {
+TEST_CASE("listar muestra una fila por paciente", crud_listar) {
     Escenario escenario("crud_listar");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.pacientes.alta(pacienteDePrueba(2, "Beto", "Diaz", "2020392"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('4'));
     CHECK(motor.vista() == "Listado");
@@ -1231,7 +1231,7 @@ TEST_CASE("listar muestra una fila por alumno", crud_listar) {
 
 TEST_CASE("un listado vacio dice que no hay y como volver", crud_listado_vacio) {
     Escenario escenario("crud_listado_vacio");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('4'));
     CHECK(motor.vista() == "Listado");
@@ -1243,10 +1243,10 @@ TEST_CASE("un listado vacio dice que no hay y como volver", crud_listado_vacio) 
 
 TEST_CASE("buscar por nombre devuelve las filas de las coincidencias", crud_buscar) {
     Escenario escenario("crud_buscar");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.pacientes.alta(pacienteDePrueba(2, "Beto", "Diaz", "2020392"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('5'));
     CHECK(motor.vista() == "Criterio");
@@ -1266,9 +1266,9 @@ TEST_CASE("buscar por nombre devuelve las filas de las coincidencias", crud_busc
 
 TEST_CASE("una busqueda sin coincidencias dice que no hay", crud_sin_coincidencias) {
     Escenario escenario("crud_sin_coincidencias");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('5'));
     motor.manejar(eventoCaracter('2'));
@@ -1281,16 +1281,16 @@ TEST_CASE("una busqueda sin coincidencias dice que no hay", crud_sin_coincidenci
 
 TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
     Escenario escenario("crud_ficha");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
     // Un turno vigente y uno cancelado: la ficha muestra los dos, pero en
     // tablas distintas.
     escenario.turnos.alta(
-        Turno(1, 1, 1, Materia::ALG1, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+        Turno(1, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
     escenario.turnos.alta(
-        Turno(2, 1, 1, Materia::BDD, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2",
+        Turno(2, 1, 1, Especialidad::PEDI, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2",
               EstadoTurno::Cancelado));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('6'));
     CHECK(motor.vista() == "Id");
@@ -1309,7 +1309,7 @@ TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
 
 TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexistente) {
     Escenario escenario("crud_id_inexistente");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
     escribir(motor, "9");
@@ -1323,9 +1323,9 @@ TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexi
 TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
            crud_cero_es_dato) {
     Escenario escenario("crud_cero_es_dato");
-    escenario.alumnos.alta(alumnoDePrueba(10, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(10, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
     escribir(motor, "1");
@@ -1338,7 +1338,7 @@ TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
 
 TEST_CASE("el cero de un campo vacio vuelve al menu del motor", crud_cero_vuelve) {
     Escenario escenario("crud_cero_vuelve");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
     CHECK(motor.vista() == "Id");
@@ -1350,9 +1350,9 @@ TEST_CASE("el cero de un campo vacio vuelve al menu del motor", crud_cero_vuelve
 TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
            crud_confirmacion_raton) {
     Escenario escenario("crud_confirmacion_raton");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
 
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
     escribir(motor, "1");
@@ -1369,9 +1369,9 @@ TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
     motor.manejar(encabezado);
 
     CHECK(motor.vista() == "Confirmar");
-    Alumno alumno;
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.esActivo() == true);
+    Paciente paciente;
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.esActivo() == true);
 
     // Un clic en la fila del "Si" (la fila 3) SI confirma.
     ui::Evento si;
@@ -1381,8 +1381,8 @@ TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
     motor.manejar(si);
 
     CHECK(motor.vista() == "Menu");
-    CHECK(escenario.alumnos.buscarPorId(1, alumno) == true);
-    CHECK(alumno.esActivo() == false);
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.esActivo() == false);
 }
 
 TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
@@ -1391,7 +1391,7 @@ TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
     ui::Theme::recargarEntorno();
 
     Escenario escenario("crud_render");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     const std::vector<std::string> lineas = renderizarLineas(motor.renderizar(), 60, 12);
     CHECK(lineas.size() == 12);
@@ -1415,7 +1415,7 @@ TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
 TEST_CASE("el escape del motor sube un nivel y no sale de la pantalla",
            crud_escape_sube_un_nivel) {
     Escenario escenario("crud_escape_sube_un_nivel");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     // La vista del id: el `Escape` vuelve al menu del motor.
     motor.manejar(eventoCaracter('2'));
@@ -1430,7 +1430,7 @@ TEST_CASE("el escape del motor sube un nivel y no sale de la pantalla",
 TEST_CASE("el escape del menu del motor no lo consume (lo maneja la aplicacion)",
            crud_escape_del_menu) {
     Escenario escenario("crud_escape_del_menu");
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     CHECK(motor.vista() == "Menu");
     // El motor NO consume el `Escape`: lo deja pasar para que la aplicacion
@@ -1442,8 +1442,8 @@ TEST_CASE("el escape del menu del motor no lo consume (lo maneja la aplicacion)"
 TEST_CASE("el escape de la confirmacion vuelve a la vista del id",
            crud_escape_de_la_confirmacion) {
     Escenario escenario("crud_escape_de_la_confirmacion");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
     escribir(motor, "1");
@@ -1457,8 +1457,8 @@ TEST_CASE("el escape de la confirmacion vuelve a la vista del id",
 TEST_CASE("el escape de los resultados vuelve al menu del motor",
            crud_escape_de_los_resultados) {
     Escenario escenario("crud_escape_de_los_resultados");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('5'));
     motor.manejar(eventoCaracter('2'));
@@ -1479,9 +1479,9 @@ TEST_CASE("el escape de los resultados vuelve al menu del motor",
 TEST_CASE("la busqueda por nombre es parcial e insensible a mayusculas",
            crud_buscar_nombre_regla) {
     Escenario escenario("crud_buscar_nombre_regla");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    escenario.alumnos.alta(alumnoDePrueba(2, "Beto", "Diaz", "MAT-20392"));
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.pacientes.alta(pacienteDePrueba(2, "Beto", "Diaz", "2020392"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     // Un fragmento del apellido, en minusculas.
     motor.manejar(eventoCaracter('5'));
@@ -1495,85 +1495,83 @@ TEST_CASE("la busqueda por nombre es parcial e insensible a mayusculas",
     CHECK(texto.find("Diaz") == std::string::npos);
 }
 
-TEST_CASE("la busqueda por matricula es exacta e insensible a mayusculas",
-           crud_buscar_matricula_regla) {
-    Escenario escenario("crud_buscar_matricula_regla");
-    escenario.alumnos.alta(alumnoDePrueba(1, "Ana", "Gomez", "MAT-20391"));
-    ui::CrudPersonas<Alumno>& motor = *escenario.puntero;
+TEST_CASE("la busqueda por dni es exacta", crud_buscar_dni_regla) {
+    Escenario escenario("crud_buscar_dni_regla");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
-    // El criterio de matricula es el TERCERO.
+    // El criterio de dni es el TERCERO.
     motor.manejar(eventoCaracter('5'));
     motor.manejar(eventoCaracter('3'));
 
-    // En minusculas: la misma matricula (la regla es insensible a
-    // mayusculas).
-    escribir(motor, "mat-20391");
+    // El dni exacto: es la MISMA dni.
+    escribir(motor, "2020391");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(motor.vista() == "Resultados");
     const std::string texto = motor.vistaTextoPlano();
-    CHECK(texto.find("MAT-20391") != std::string::npos);
+    CHECK(texto.find("2020391") != std::string::npos);
     CHECK(texto.find("Ana") != std::string::npos);
 
     // Un fragmento NO alcanza: la coincidencia es EXACTA.
     motor.manejar(eventoCaracter('0'));
     motor.manejar(eventoCaracter('5'));
     motor.manejar(eventoCaracter('3'));
-    escribir(motor, "MAT-2039");
+    escribir(motor, "202039");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(motor.vista() == "Resultados");
     CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
   }
 
 // ---------------------------------------------------------------------------
-// LA PANTALLA DE PROFESORES
+// LA PANTALLA DE MEDICOS
 //
-// Es la hermana de la de alumnos: el motor es el mismo y lo unico que cambia
+// Es la hermana de la de pacientes: el motor es el mismo y lo unico que cambia
 // son los datos. Lo que se verifica aca es que el criterio del legajo usa la
 // MISMA regla del repositorio (coincidencia EXACTA e insensible a mayusculas).
 // ---------------------------------------------------------------------------
 namespace {
 
-// El escenario de las pruebas de la pantalla de profesores.
-struct EscenarioProfesores {
-    explicit EscenarioProfesores(const std::string& nombre)
-        : profesores(rutaNuevaDePrueba(nombre + "-profesores")),
-          alumnos(rutaNuevaDePrueba(nombre + "-alumnos")),
+// El escenario de las pruebas de la pantalla de medicos.
+struct EscenarioMedicos {
+    explicit EscenarioMedicos(const std::string& nombre)
+        : medicos(rutaNuevaDePrueba(nombre + "-medicos")),
+          pacientes(rutaNuevaDePrueba(nombre + "-pacientes")),
           turnos(rutaNuevaDePrueba(nombre + "-turnos")),
-          servicio(alumnos, profesores, turnos),
-          contexto(alumnos, profesores, turnos, servicio),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
           aplicacion("Prueba", contexto) {
         aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
 
-        auto motor = std::make_unique<ui::CrudPersonas<Profesor>>(
-            aplicacion, profesores, profesores,
-            ui::Pantallas::configDeProfesores(profesores, servicio));
+        auto motor = std::make_unique<ui::CrudPersonas<Medico>>(
+            aplicacion, medicos, medicos,
+            ui::Pantallas::configDeMedicos(medicos, servicio));
         puntero = motor.get();
         aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
     }
 
-    RepositorioProfesores profesores;
-    RepositorioAlumnos alumnos;
+    RepositorioMedicos medicos;
+    RepositorioPacientes pacientes;
     RepositorioTurnos turnos;
     ServicioTurnos servicio;
     ui::Contexto contexto;
     ui::Aplicacion aplicacion;
-    ui::CrudPersonas<Profesor>* puntero = nullptr;
+    ui::CrudPersonas<Medico>* puntero = nullptr;
 };
 
-// Un profesor valido, para las pruebas que necesitan uno ya cargado.
-Profesor profesorDePrueba(int id, const std::string& nombre, const std::string& apellido,
+// Un medico valido, para las pruebas que necesitan uno ya cargado.
+Medico medicoDePrueba(int id, const std::string& nombre, const std::string& apellido,
                           const std::string& legajo) {
-    return Profesor(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
-                    legajo, "Algebra");
+    return Medico(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
+                    legajo, Especialidad::GAST);
 }
 
 } // namespace
 
 TEST_CASE("la busqueda por legajo es exacta e insensible a mayusculas",
            crud_buscar_legajo_regla) {
-    EscenarioProfesores escenario("crud_buscar_legajo_regla");
-    escenario.profesores.alta(profesorDePrueba(1, "Ana", "Gomez", "LEG-1001"));
-    ui::CrudPersonas<Profesor>& motor = *escenario.puntero;
+    EscenarioMedicos escenario("crud_buscar_legajo_regla");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     // El criterio de legajo es el TERCERO.
     motor.manejar(eventoCaracter('5'));
@@ -1596,10 +1594,10 @@ TEST_CASE("la busqueda por legajo es exacta e insensible a mayusculas",
     CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
 }
 
-TEST_CASE("el menu de profesores muestra las seis opciones y el cero de volver",
-           crud_profesores_menu_inicial) {
-    EscenarioProfesores escenario("crud_profesores_menu_inicial");
-    ui::CrudPersonas<Profesor>& motor = *escenario.puntero;
+TEST_CASE("el menu de medicos muestra las seis opciones y el cero de volver",
+           crud_medicos_menu_inicial) {
+    EscenarioMedicos escenario("crud_medicos_menu_inicial");
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     CHECK(motor.vista() == "Menu");
     CHECK(motor.titulo() == "PROFESORES");

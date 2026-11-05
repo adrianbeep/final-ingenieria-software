@@ -69,8 +69,8 @@ target_link_libraries(ftxui PUBLIC Threads::Threads)
 # Topologia COMPLETA (cada fase agrega su target aca):
 #   core        STATIC    src/domain + src/utils + src/exceptions   [Fase 1]
 #   ui          STATIC    src/ui                                     [Fase 0/1/6]
-#   profesores  STATIC    src/entities/Profesor.cpp                  [Fase 2]
-#   alumnos     STATIC    src/entities/Alumno.cpp                    [Fase 2]
+#   medicos     STATIC    src/entities/Medico.cpp                    [Fase 2]
+#   pacientes   STATIC    src/entities/Paciente.cpp                  [Fase 2]
 #   turnos      STATIC    src/entities/Turno.cpp                     [Fase 2]
 #   structures  INTERFACE  templates header-only (ArbolBST, ListaEnlazada) [Fase 3]
 #   persistencia INTERFACE  ArchivoTexto<T> es template              [Fase 4]
@@ -114,20 +114,20 @@ target_include_directories(ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # `ui`, asi que tampoco hay ciclo.
 target_link_libraries(ui PUBLIC core warnings ftxui Threads::Threads repositorios repositorios_concretos servicios)
 
-# --- Entidades: profesor, alumno y turno ---
+# --- Entidades: medico, paciente y turno ---
 # Son tres targets y no uno solo porque son modulos independientes: cada uno
-# depende de `core` (donde estan `Materia`, `Fecha`, `Hora`, `Utils` y las
+# depende de `core` (donde estan `Especialidad`, `Fecha`, `Hora`, `Utils` y las
 # excepciones) y ninguno depende de los otros dos.
 #
 # `Persona` NO tiene target propio: es header-only (ver include/entities/
 # Persona.h), asi que su codigo entra en cada uno de los tres.
-add_library(profesores STATIC src/entities/Profesor.cpp)
-target_include_directories(profesores PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(profesores PUBLIC core warnings)
+add_library(medicos STATIC src/entities/Medico.cpp)
+target_include_directories(medicos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(medicos PUBLIC core warnings)
 
-add_library(alumnos STATIC src/entities/Alumno.cpp)
-target_include_directories(alumnos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(alumnos PUBLIC core warnings)
+add_library(pacientes STATIC src/entities/Paciente.cpp)
+target_include_directories(pacientes PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(pacientes PUBLIC core warnings)
 
 add_library(turnos STATIC src/entities/Turno.cpp)
 target_include_directories(turnos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -163,7 +163,7 @@ target_link_libraries(persistencia INTERFACE core)
 # `structures` y `persistencia`, asi que el target es INTERFACE.
 #
 # Este target es SOLO la parte header-only. Los tres repositorios concretos
-# (alumnos, profesores y turnos) SI tienen .cpp, asi que van en un target
+# (pacientes, medicos y turnos) SI tienen .cpp, asi que van en un target
 # STATIC aparte, `repositorios_concretos`, que es el que enlazan los tests y
 # el ejecutable.
 #
@@ -174,14 +174,14 @@ add_library(repositorios INTERFACE)
 target_include_directories(repositorios INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(repositorios INTERFACE core structures persistencia warnings)
 
-# --- repositorios concretos: alumnos, profesores y turnos ---
+# --- repositorios concretos: pacientes, medicos y turnos ---
 # Es un target STATIC, no INTERFACE, porque los tres repositorios tienen
 # metodos que NO son de template (`bajaLogica`, `reactivar`): hay codigo que
 # compilar y que empaquetar en una libreria.
 #
 # Los tres son modulos del mismo tipo (un repositorio por entidad), asi que
 # van juntos en UNA sola libreria: comparten la implementacion de la baja
-# logica (`BajaLogicaCompartida`), que es la misma para alumnos y profesores.
+# logica (`BajaLogicaCompartida`), que es la misma para pacientes y medicos.
 file(GLOB REPOSITORIOS_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/repositories/*.cpp")
 add_library(repositorios_concretos STATIC ${REPOSITORIOS_SRCS})
 target_include_directories(repositorios_concretos PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -195,11 +195,11 @@ target_link_libraries(repositorios_concretos PUBLIC core structures persistencia
 # Enlaza con `core` (de ahi vienen `Fecha`, `Hora`, `Utils` y las
 # excepciones), con `repositorios` (las interfaces `IRepositorio<T>`, que es
 # contra lo que el servicio escribe) y con las tres entidades, porque el
-# servicio construye turnos y consulta alumnos y profesores.
+# servicio construye turnos y consulta pacientes y medicos.
 file(GLOB SERVICES_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/services/*.cpp")
 add_library(servicios STATIC ${SERVICES_SRCS})
 target_include_directories(servicios PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(servicios PUBLIC core alumnos profesores turnos repositorios warnings)
+target_link_libraries(servicios PUBLIC core pacientes medicos turnos repositorios warnings)
 
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
 # Enlaza `repositorios_concretos` porque el `main` arma los tres
@@ -217,5 +217,5 @@ enable_testing()
 file(GLOB TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 add_executable(tests ${TEST_SRCS})
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(tests PRIVATE core ui profesores alumnos turnos structures persistencia repositorios repositorios_concretos servicios warnings)
+target_link_libraries(tests PRIVATE core ui medicos pacientes turnos structures persistencia repositorios repositorios_concretos servicios warnings)
 add_test(NAME tests COMMAND tests)

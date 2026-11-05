@@ -1,6 +1,6 @@
-#include "ui/Pantallas/Alumnos.h"
+#include "ui/Pantallas/Pacientes.h"
 
-#include "domain/Materia.h"
+#include "domain/Especialidad.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "repositories/IRepositorioBajaLogica.h"
@@ -12,43 +12,50 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// La configuracion del CRUD de ALUMNOS.
+// La configuracion del CRUD de PACIENTES.
 //
-// ACA VIVE TODO LO QUE ES ESPECIFICO DE LOS ALUMNOS
+// ACA VIVE TODO LO QUE ES ESPECIFICO DE LOS PACIENTES
 //
 // Las columnas, los campos del formulario, los validadores, el constructor
 // de la entidad y los criterios de busqueda. El motor (`ui::CrudPersonas`)
-// es generico: no sabe que existe una entidad que se llame "alumno".
+// es generico: no sabe que existe una entidad que se llame "paciente".
+//
+// LOS ROTULOS VISIBLES NO CAMBIAN EN ESTE PR
+//
+// El `singular`, el `plural` y las cabeceras siguen diciendo "alumno",
+// "alumnos" y "matricula": son el texto que ve el usuario y los cambia el
+// PR siguiente. Lo que cambia aca son los IDENTIFICADORES: la entidad es
+// `Paciente` y el dato es el `dni`.
 // ---------------------------------------------------------------------------
 namespace ui {
 namespace Pantallas {
 namespace {
 
-// LA FILA DE UN ALUMNO
+// LA FILA DE UN PACIENTE
 //
 // Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
-// `email`, `telefono`, `matricula` y `estado`.
-std::vector<std::string> filaDe(const Alumno& alumno) {
-    return {std::to_string(alumno.getId()),
-            alumno.getNombre(),
-            alumno.getApellido(),
-            alumno.getEmail(),
-            alumno.getTelefono(),
-            alumno.getMatricula(),
-            alumno.esActivo() ? "activo" : "inactivo"};
+// `email`, `telefono`, `matricula` (el dni) y `estado`.
+std::vector<std::string> filaDe(const Paciente& paciente) {
+    return {std::to_string(paciente.getId()),
+            paciente.getNombre(),
+            paciente.getApellido(),
+            paciente.getEmail(),
+            paciente.getTelefono(),
+            paciente.getDni(),
+            paciente.esActivo() ? "activo" : "inactivo"};
 }
 
 // LA FILA DE UN TURNO
 //
-// Es la fila de la ficha: los turnos del alumno con su estado, para que se
+// Es la fila de la ficha: los turnos del paciente con su estado, para que se
 // vea cuales estan vigentes y cuales son parte del historial.
 std::vector<std::string> filaDeTurno(const Turno& turno) {
     return {std::to_string(turno.getId()),
             turno.getFecha().aTexto(),
             turno.getHora().aTexto(),
             std::to_string(turno.getDuracionMin()),
-            turno.getAula(),
-            descripcionDe(turno.getMateria()),
+            turno.getConsultorio(),
+            descripcionDe(turno.getEspecialidad()),
             estadoATexto(turno.getEstado())};
 }
 
@@ -61,14 +68,14 @@ std::vector<std::string> filaDeTurno(const Turno& turno) {
 // del campo lo captura y devuelve ese motivo (o una cadena vacia si el valor
 // sirve). Si la pantalla copiara la regla, habria DOS reglas que se pueden
 // desincronizar: la del dominio y la de la interfaz.
-Campo::Validador validadorDelCampo(std::function<void(Alumno&, const std::string&)> aplicar) {
+Campo::Validador validadorDelCampo(std::function<void(Paciente&, const std::string&)> aplicar) {
     return [aplicar](const std::string& texto) -> std::string {
-        // Se usa un alumno de prueba: lo que se valida es el DATO, no el
-        // alumno (aun asi, el setter recorta el texto, que es lo que se
+        // Se usa un paciente de prueba: lo que se valida es el DATO, no el
+        // paciente (aun asi, el setter recorta el texto, que es lo que se
         // guarda).
-        Alumno alumno;
+        Paciente paciente;
         try {
-            aplicar(alumno, texto);
+            aplicar(paciente, texto);
         } catch (const DatoInvalidoException& error) {
             return error.motivo();
         }
@@ -78,49 +85,49 @@ Campo::Validador validadorDelCampo(std::function<void(Alumno&, const std::string
 
 } // namespace
 
-CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
+CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositorio,
                                               ServicioTurnos& servicioTurnos) {
-    CrudPersonas<Alumno>::Config config;
+    CrudPersonas<Paciente>::Config config;
 
     config.singular = "alumno";
     config.plural = "alumnos";
 
     config.cabeceras = {"id", "nombre", "apellido", "email", "telefono", "matricula", "estado"};
-    config.fila = [](const Alumno& alumno) { return filaDe(alumno); };
+    config.fila = [](const Paciente& paciente) { return filaDe(paciente); };
 
     // EL FORMULARIO
     //
     // El nombre de cada campo es el nombre de su columna: asi el formulario
     // de modificar se carga con los valores de la entidad que se edita.
     config.campos = {
-        {"nombre", "", validadorDelCampo([](Alumno& alumno, const std::string& texto) {
-             alumno.setNombre(texto);
+        {"nombre", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setNombre(texto);
          })},
-        {"apellido", "", validadorDelCampo([](Alumno& alumno, const std::string& texto) {
-             alumno.setApellido(texto);
+        {"apellido", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setApellido(texto);
          })},
-        {"email", "", validadorDelCampo([](Alumno& alumno, const std::string& texto) {
-             alumno.setEmail(texto);
+        {"email", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setEmail(texto);
          })},
-        {"telefono", "", validadorDelCampo([](Alumno& alumno, const std::string& texto) {
-             alumno.setTelefono(texto);
+        {"telefono", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setTelefono(texto);
          })},
-        {"matricula", "", validadorDelCampo([](Alumno& alumno, const std::string& texto) {
-             alumno.setMatricula(texto);
+        {"matricula", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setDni(texto);
          })}};
 
     // EL CONSTRUCTOR DE LA ENTIDAD
     //
     // El vector que llega es [id, nombre, apellido, email, telefono,
-    // matricula]: el id va adelante porque lo PROPONE el repositorio (o es el
+    // dni]: el id va adelante porque lo PROPONE el repositorio (o es el
     // id de la entidad que se esta modificando) y nunca lo escribe el
     // usuario.
     config.construir = [](const std::vector<std::string>& valores) {
-        return Alumno(std::stoi(valores[0]), valores[1], valores[2], valores[3], valores[4],
+        return Paciente(std::stoi(valores[0]), valores[1], valores[2], valores[3], valores[4],
                       valores[5]);
     };
 
-    config.esActivo = [](const Alumno& alumno) { return alumno.esActivo(); };
+    config.esActivo = [](const Paciente& paciente) { return paciente.esActivo(); };
 
     // LOS CRITERIOS DE BUSQUEDA
     //
@@ -130,9 +137,9 @@ CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
     // LAS REGLAS SON LAS DEL REPOSITORIO
     //
     // La pantalla NO tiene reglas de busqueda propias: las pregunta al
-    // repositorio, que es quien tiene el conjunto de los alumnos. El "nombre
+    // repositorio, que es quien tiene el conjunto de los pacientes. El "nombre
     // o apellido" usa `buscarPorNombre` (coincidencia PARCIAL e insensible a
-    // mayusculas) y la "matricula" usa `existeMatricula` (coincidencia EXACTA
+    // mayusculas) y la "matricula" usa `existeDni` (coincidencia EXACTA
     // e insensible a mayusculas, la misma con la que se verifica su
     // unicidad). Si la pantalla copiara la regla, habria DOS reglas que se
     // pueden desincronizar.
@@ -143,30 +150,30 @@ CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
              if (id < 0) {
                  return filas;
              }
-             Alumno alumno;
-             if (repositorio.buscarPorId(id, alumno)) {
-                 filas.push_back(filaDe(alumno));
+             Paciente paciente;
+             if (repositorio.buscarPorId(id, paciente)) {
+                 filas.push_back(filaDe(paciente));
              }
              return filas;
          }},
         {"nombre o apellido", [&repositorio](const std::string& valor) {
              std::vector<std::vector<std::string>> filas;
-             for (const Alumno& alumno : repositorio.buscarPorNombre(valor)) {
-                 filas.push_back(filaDe(alumno));
+             for (const Paciente& paciente : repositorio.buscarPorNombre(valor)) {
+                 filas.push_back(filaDe(paciente));
              }
              return filas;
          }},
         {"matricula", [&repositorio](const std::string& valor) {
              std::vector<std::vector<std::string>> filas;
-             // El repositorio devuelve el id del alumno que tiene la
-             // matricula: con ese id se arma la fila.
+             // El repositorio devuelve el id del paciente que tiene el
+             // dni: con ese id se arma la fila.
              int id = -1;
-             if (!repositorio.existeMatricula(valor, id)) {
+             if (!repositorio.existeDni(valor, id)) {
                  return filas;
              }
-             Alumno alumno;
-             if (repositorio.buscarPorId(id, alumno)) {
-                 filas.push_back(filaDe(alumno));
+             Paciente paciente;
+             if (repositorio.buscarPorId(id, paciente)) {
+                 filas.push_back(filaDe(paciente));
              }
              return filas;
          }}};
@@ -185,7 +192,7 @@ CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
     };
     config.turnos.historial = [&servicioTurnos](int id) {
         std::vector<std::vector<std::string>> filas;
-        for (const Turno& turno : servicioTurnos.turnosDeAlumno(id)) {
+        for (const Turno& turno : servicioTurnos.turnosDePaciente(id)) {
             filas.push_back(filaDeTurno(turno));
         }
         return filas;
@@ -194,17 +201,17 @@ CrudPersonas<Alumno>::Config configDeAlumnos(RepositorioAlumnos& repositorio,
     return config;
 }
 
-std::unique_ptr<Pantalla> crearPantallaAlumnos(Aplicacion& aplicacion,
-                                                RepositorioAlumnos& repositorio,
+std::unique_ptr<Pantalla> crearPantallaPacientes(Aplicacion& aplicacion,
+                                                RepositorioPacientes& repositorio,
                                                 ServicioTurnos& servicioTurnos) {
     // EL MISMO OBJETO CUMPLE LOS DOS PAPELES DEL MOTOR
     //
-    // El motor CRUD necesita el CRUD (`IRepositorio<Alumno>`) y la baja logica
-    // (`IRepositorioBajaLogica<Alumno>`). El repositorio concreto implementa
+    // El motor CRUD necesita el CRUD (`IRepositorio<Paciente>`) y la baja logica
+    // (`IRepositorioBajaLogica<Paciente>`). El repositorio concreto implementa
     // las dos interfaces, asi que se pasa UNA sola vez: el motor las recibe
     // por parametro y las verifica con la referencia al objeto concreto.
-    return std::make_unique<CrudPersonas<Alumno>>(
-        aplicacion, repositorio, repositorio, configDeAlumnos(repositorio, servicioTurnos));
+    return std::make_unique<CrudPersonas<Paciente>>(
+        aplicacion, repositorio, repositorio, configDePacientes(repositorio, servicioTurnos));
 }
 
 } // namespace Pantallas

@@ -1,8 +1,8 @@
 #include "test_framework.h"
 
-#include "domain/Materia.h"
-#include "entities/Alumno.h"
-#include "entities/Profesor.h"
+#include "domain/Especialidad.h"
+#include "entities/Paciente.h"
+#include "entities/Medico.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "persistence/ArchivoTexto.h"
@@ -179,22 +179,22 @@ std::string apellidoDePrueba(int indice) {
     return std::string(APELLIDOS[static_cast<std::size_t>(indice) % 20]);
 }
 
-Alumno alumnoDePrueba(int id) {
-    return Alumno(id, nombreDePrueba(id), apellidoDePrueba(id),
-                  "alumno" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
-                  "MAT-" + std::to_string(20000 + id));
+Paciente pacienteDePrueba(int id) {
+    return Paciente(id, nombreDePrueba(id), apellidoDePrueba(id),
+                  "paciente" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
+                  "20" + std::to_string(20000 + id));
 }
 
-Profesor profesorDePrueba(int id) {
-    return Profesor(id, nombreDePrueba(id + 3), apellidoDePrueba(id + 7),
-                    "profesor" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
-                    "LEG-" + std::to_string(1000 + id), "Algoritmos I");
+Medico medicoDePrueba(int id) {
+    return Medico(id, nombreDePrueba(id + 3), apellidoDePrueba(id + 7),
+                    "medico" + std::to_string(id) + "@unlp.edu.ar", "2214556677",
+                    "LEG-" + std::to_string(1000 + id), Especialidad::CARD);
 }
 
 Turno turnoDePrueba(int id) {
-    const std::vector<Materia>& materias = todasLasMaterias();
-    const Materia materia = materias[static_cast<std::size_t>(id - 1) % materias.size()];
-    return Turno(id, 1 + (id % 5), 1 + (id % 7), materia, Fecha(2026, 10, 8 + (id % 10)),
+    const std::vector<Especialidad>& especialidads = todasLasEspecialidades();
+    const Especialidad especialidad = especialidads[static_cast<std::size_t>(id - 1) % especialidads.size()];
+    return Turno(id, 1 + (id % 5), 1 + (id % 7), especialidad, Fecha(2026, 10, 8 + (id % 10)),
                  Hora(8 + (id % 10), (id % 2) * 30), 60, "A-" + std::to_string(1 + (id % 4)),
                  (id % 5 == 0) ? EstadoTurno::Cancelado : EstadoTurno::Activo,
                  (id % 7 == 0) ? 42 : -1);
@@ -317,17 +317,17 @@ unsigned long long numeroDeSecuencia(const std::string& nombreTemporal) {
 // ROUND TRIP
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el round trip del alumno conserva todos los campos", persistencia_round_trip_alumno) {
-    std::vector<Alumno> originales;
+TEST_CASE("el round trip del paciente conserva todos los campos", persistencia_round_trip_paciente) {
+    std::vector<Paciente> originales;
     for (int id = 1; id <= 100; ++id) {
-        originales.push_back(alumnoDePrueba(id));
+        originales.push_back(pacienteDePrueba(id));
     }
 
-    const std::string ruta = rutaDePrueba("alumnos.dat");
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    const std::string ruta = rutaDePrueba("pacientes.dat");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     archivo.guardar(originales);
 
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == originales.size());
 
     // Campo por campo: `operator==` compararia solo el id y el test pasaria
@@ -339,21 +339,21 @@ TEST_CASE("el round trip del alumno conserva todos los campos", persistencia_rou
         CHECK(cargados[i].getEmail() == originales[i].getEmail());
         CHECK(cargados[i].getTelefono() == originales[i].getTelefono());
         CHECK(cargados[i].esActivo() == originales[i].esActivo());
-        CHECK(cargados[i].getMatricula() == originales[i].getMatricula());
+        CHECK(cargados[i].getDni() == originales[i].getDni());
     }
 }
 
-TEST_CASE("el round trip del profesor conserva todos los campos", persistencia_round_trip_profesor) {
-    std::vector<Profesor> originales;
+TEST_CASE("el round trip del medico conserva todos los campos", persistencia_round_trip_medico) {
+    std::vector<Medico> originales;
     for (int id = 1; id <= 100; ++id) {
-        originales.push_back(profesorDePrueba(id));
+        originales.push_back(medicoDePrueba(id));
     }
 
-    const std::string ruta = rutaDePrueba("profesores.dat");
-    ArchivoTexto<Profesor> archivo(ruta, "PROFESORES");
+    const std::string ruta = rutaDePrueba("medicos.dat");
+    ArchivoTexto<Medico> archivo(ruta, "MEDICOS");
     archivo.guardar(originales);
 
-    const std::vector<Profesor> cargados = archivo.cargar();
+    const std::vector<Medico> cargados = archivo.cargar();
     CHECK(cargados.size() == originales.size());
 
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
@@ -383,13 +383,13 @@ TEST_CASE("el round trip del turno conserva todos los campos", persistencia_roun
 
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
         CHECK(cargados[i].getId() == originales[i].getId());
-        CHECK(cargados[i].getIdProfesor() == originales[i].getIdProfesor());
-        CHECK(cargados[i].getIdAlumno() == originales[i].getIdAlumno());
-        CHECK(cargados[i].getMateria() == originales[i].getMateria());
+        CHECK(cargados[i].getIdMedico() == originales[i].getIdMedico());
+        CHECK(cargados[i].getIdPaciente() == originales[i].getIdPaciente());
+        CHECK(cargados[i].getEspecialidad() == originales[i].getEspecialidad());
         CHECK(cargados[i].getFecha() == originales[i].getFecha());
         CHECK(cargados[i].getHora() == originales[i].getHora());
         CHECK(cargados[i].getDuracionMin() == originales[i].getDuracionMin());
-        CHECK(cargados[i].getAula() == originales[i].getAula());
+        CHECK(cargados[i].getConsultorio() == originales[i].getConsultorio());
         CHECK(cargados[i].getEstado() == originales[i].getEstado());
         CHECK(cargados[i].getIdTurnoReemplazante() == originales[i].getIdTurnoReemplazante());
     }
@@ -397,9 +397,9 @@ TEST_CASE("el round trip del turno conserva todos los campos", persistencia_roun
 
 TEST_CASE("el turno conserva el estado y el turno que reemplaza",
           persistencia_round_trip_estado_y_reemplazo) {
-    const Turno cancelado(1, 3, 7, Materia::ALG1, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3",
+    const Turno cancelado(1, 3, 7, Especialidad::CARD, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3",
                           EstadoTurno::Cancelado, -1);
-    const Turno reprogramado(2, 3, 7, Materia::ALG1, Fecha(2026, 10, 9), Hora(10, 0), 60, "A-3",
+    const Turno reprogramado(2, 3, 7, Especialidad::CARD, Fecha(2026, 10, 9), Hora(10, 0), 60, "A-3",
                              EstadoTurno::Reprogramado, 42);
 
     const std::string ruta = rutaDePrueba("estados.dat");
@@ -415,14 +415,14 @@ TEST_CASE("el turno conserva el estado y el turno que reemplaza",
 }
 
 TEST_CASE("la baja logica sobrevive al round trip", persistencia_round_trip_baja_logica) {
-    Alumno alumno = alumnoDePrueba(1);
-    alumno.setActivo(false);
+    Paciente paciente = pacienteDePrueba(1);
+    paciente.setActivo(false);
 
     const std::string ruta = rutaDePrueba("baja.dat");
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumno});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({paciente});
 
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == 1);
     CHECK(!cargados[0].esActivo());
 
@@ -432,16 +432,16 @@ TEST_CASE("la baja logica sobrevive al round trip", persistencia_round_trip_baja
     CHECK(Utils::separar(lineas[2], '|')[5] == "0");
 }
 
-TEST_CASE("las 12 materias viajan por codigo y vuelven por codigo",
-          persistencia_materias_por_codigo) {
+TEST_CASE("las 12 especialidads viajan por codigo y vuelven por codigo",
+          persistencia_especialidads_por_codigo) {
     std::vector<Turno> originales;
-    for (std::size_t i = 0; i < todasLasMaterias().size(); ++i) {
-        const Materia materia = todasLasMaterias()[i];
-        originales.push_back(Turno(static_cast<int>(i) + 1, 1, 1, materia, Fecha(2026, 10, 8),
+    for (std::size_t i = 0; i < todasLasEspecialidades().size(); ++i) {
+        const Especialidad especialidad = todasLasEspecialidades()[i];
+        originales.push_back(Turno(static_cast<int>(i) + 1, 1, 1, especialidad, Fecha(2026, 10, 8),
                                    Hora(9, 0), 60, "A-3"));
     }
 
-    const std::string ruta = rutaDePrueba("materias.dat");
+    const std::string ruta = rutaDePrueba("especialidads.dat");
     ArchivoTexto<Turno> archivo(ruta, "TURNOS");
     archivo.guardar(originales);
 
@@ -450,15 +450,15 @@ TEST_CASE("las 12 materias viajan por codigo y vuelven por codigo",
 
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
         // El codigo del archivo es el del catalogo, no el indice del enum.
-        CHECK(codigoDe(cargados[i].getMateria()) == codigoDe(originales[i].getMateria()));
-        CHECK(materiaDesdeCodigo(codigoDe(cargados[i].getMateria())) == originales[i].getMateria());
+        CHECK(codigoDe(cargados[i].getEspecialidad()) == codigoDe(originales[i].getEspecialidad()));
+        CHECK(especialidadDesdeCodigo(codigoDe(cargados[i].getEspecialidad())) == originales[i].getEspecialidad());
     }
 
-    // El archivo escribe el CODIGO de la materia.
+    // El archivo escribe el CODIGO de la especialidad.
     const std::vector<std::string> lineas = leerLineas(ruta);
-    CHECK(Utils::separar(lineas[2], '|')[3] == "ALG1");
-    CHECK(Utils::separar(lineas[3], '|')[3] == "ALG2");
-    CHECK(Utils::separar(lineas[13], '|')[3] == "ARQUITECTURA");
+    CHECK(Utils::separar(lineas[2], '|')[3] == "CARD");
+    CHECK(Utils::separar(lineas[3], '|')[3] == "MEDG");
+    CHECK(Utils::separar(lineas[13], '|')[3] == "NEUM");
 }
 
 // ---------------------------------------------------------------------------
@@ -468,41 +468,41 @@ TEST_CASE("las 12 materias viajan por codigo y vuelven por codigo",
 TEST_CASE("el archivo arranca con el header y la linea de esquema",
           persistencia_header_y_esquema) {
     const std::string ruta = rutaDePrueba("header.dat");
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2), alumnoDePrueba(3)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2), pacienteDePrueba(3)});
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 5);
-    CHECK(lineas[0] == "#ALUMNOS|1|3");
-    CHECK(lineas[1] == Alumno::esquema());
-    CHECK(lineas[2] == "1|Beto|Perez|alumno1@unlp.edu.ar|2214556677|1|MAT-20001");
+    CHECK(lineas[0] == "#PACIENTES|1|3");
+    CHECK(lineas[1] == Paciente::esquema());
+    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001");
 }
 
 TEST_CASE("el encabezado declara la cantidad de registros",
           persistencia_header_cantidad) {
     const std::string ruta = rutaDePrueba("cantidad.dat");
-    ArchivoTexto<Profesor> archivo(ruta, "PROFESORES");
+    ArchivoTexto<Medico> archivo(ruta, "MEDICOS");
 
     archivo.guardar({});
-    CHECK(leerLineas(ruta)[0] == "#PROFESORES|1|0");
+    CHECK(leerLineas(ruta)[0] == "#MEDICOS|1|0");
 
-    archivo.guardar({profesorDePrueba(1)});
-    CHECK(leerLineas(ruta)[0] == "#PROFESORES|1|1");
+    archivo.guardar({medicoDePrueba(1)});
+    CHECK(leerLineas(ruta)[0] == "#MEDICOS|1|1");
 }
 
 TEST_CASE("los registros salen ordenados por id", persistencia_orden_por_id) {
     // El orden lo aporta el `inOrder()` del BST (que es lo que va a usar el
     // repositorio de la Fase 5), no la capa de archivo: esta escribe lo que
     // le dan, en el orden en que lo recibe.
-    ArbolBST<Alumno> arbol;
-    CHECK(arbol.insertar(alumnoDePrueba(5)));
-    CHECK(arbol.insertar(alumnoDePrueba(1)));
-    CHECK(arbol.insertar(alumnoDePrueba(9)));
-    CHECK(arbol.insertar(alumnoDePrueba(3)));
-    CHECK(arbol.insertar(alumnoDePrueba(7)));
+    ArbolBST<Paciente> arbol;
+    CHECK(arbol.insertar(pacienteDePrueba(5)));
+    CHECK(arbol.insertar(pacienteDePrueba(1)));
+    CHECK(arbol.insertar(pacienteDePrueba(9)));
+    CHECK(arbol.insertar(pacienteDePrueba(3)));
+    CHECK(arbol.insertar(pacienteDePrueba(7)));
 
     const std::string ruta = rutaDePrueba("orden.dat");
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     archivo.guardar(arbol.inOrder());
 
     const std::vector<std::string> lineas = leerLineas(ruta);
@@ -540,11 +540,11 @@ TEST_CASE("el archivo esta en UTF-8 y no tiene BOM", persistencia_utf8_sin_bom) 
     const std::string ruta = rutaDePrueba("utf8.dat");
     // Un nombre con tilde: tiene que quedar en UTF-8 (dos bytes por letra
     // acentuada) y el archivo NO tiene que arrancar con el BOM.
-    const Alumno alumno(1, "Jos\xc3\xa9", "Mu\xc3\xb1oz", "jose@unlp.edu.ar", "2214556677",
-                        "MAT-20001");
+    const Paciente paciente(1, "Jos\xc3\xa9", "Mu\xc3\xb1oz", "jose@unlp.edu.ar", "2214556677",
+                        "2020001");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumno});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({paciente});
 
     const std::string contenido = leerArchivo(ruta);
     CHECK(contenido.size() > 3);
@@ -567,18 +567,18 @@ TEST_CASE("los nombres con tilde y enye sobreviven al round trip",
                                                           "Mu\xc3\xb1oz",       // Muñoz
                                                           "Gonz\xc3\xa1lez",    // González
                                                           "Mart\xc3\xadnez"};  // Martínez
-    std::vector<Alumno> originales;
+    std::vector<Paciente> originales;
     for (std::size_t i = 0; i < NOMBRES_ESPECIALES.size(); ++i) {
-        originales.push_back(Alumno(static_cast<int>(i) + 1, NOMBRES_ESPECIALES[i], "Perez",
+        originales.push_back(Paciente(static_cast<int>(i) + 1, NOMBRES_ESPECIALES[i], "Perez",
                                     "acent" + std::to_string(i + 1) + "@unlp.edu.ar", "2214556677",
-                                    "MAT-3000" + std::to_string(i + 1)));
+                                    "203000" + std::to_string(i + 1)));
     }
 
     const std::string ruta = rutaDePrueba("tildes.dat");
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     archivo.guardar(originales);
 
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == originales.size());
     for (std::size_t i = 0; i < cargados.size() && i < originales.size(); ++i) {
         CHECK(cargados[i].getNombre() == originales[i].getNombre());
@@ -594,22 +594,22 @@ TEST_CASE("los nombres con tilde y enye sobreviven al round trip",
 
 TEST_CASE("un archivo con finales CRLF carga igual que uno con LF",
           persistencia_fin_de_linea) {
-    const std::string esquema = Alumno::esquema();
-    const std::string registro = "1|Jos\xc3\xa9|Perez|jose@unlp.edu.ar|2214556677|1|MAT-30001";
-    const std::string cuerpo = "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|MAT-20001";
+    const std::string esquema = Paciente::esquema();
+    const std::string registro = "1|Jos\xc3\xa9|Perez|jose@unlp.edu.ar|2214556677|1|2030001";
+    const std::string cuerpo = "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|2020001";
 
     const std::string rutaCrlf = rutaDePrueba("crlf.dat");
-    escribirBytes(rutaCrlf, "#ALUMNOS|1|2\r\n" + esquema + "\r\n" + registro + "\r\n" + cuerpo
+    escribirBytes(rutaCrlf, "#PACIENTES|1|2\r\n" + esquema + "\r\n" + registro + "\r\n" + cuerpo
                                    + "\r\n");
 
     const std::string rutaLf = rutaDePrueba("lf.dat");
-    escribirBytes(rutaLf, "#ALUMNOS|1|2\n" + esquema + "\n" + registro + "\n" + cuerpo + "\n");
+    escribirBytes(rutaLf, "#PACIENTES|1|2\n" + esquema + "\n" + registro + "\n" + cuerpo + "\n");
 
-    ArchivoTexto<Alumno> archivoCrlf(rutaCrlf, "ALUMNOS");
-    ArchivoTexto<Alumno> archivoLf(rutaLf, "ALUMNOS");
+    ArchivoTexto<Paciente> archivoCrlf(rutaCrlf, "PACIENTES");
+    ArchivoTexto<Paciente> archivoLf(rutaLf, "PACIENTES");
 
-    const std::vector<Alumno> cargadosCrlf = archivoCrlf.cargar();
-    const std::vector<Alumno> cargadosLf = archivoLf.cargar();
+    const std::vector<Paciente> cargadosCrlf = archivoCrlf.cargar();
+    const std::vector<Paciente> cargadosLf = archivoLf.cargar();
 
     CHECK(cargadosCrlf.size() == 2);
     CHECK(cargadosLf.size() == 2);
@@ -620,7 +620,7 @@ TEST_CASE("un archivo con finales CRLF carga igual que uno con LF",
         CHECK(cargadosCrlf[i].getNombre() == cargadosLf[i].getNombre());
         CHECK(cargadosCrlf[i].getApellido() == cargadosLf[i].getApellido());
         CHECK(cargadosCrlf[i].getEmail() == cargadosLf[i].getEmail());
-        CHECK(cargadosCrlf[i].getMatricula() == cargadosLf[i].getMatricula());
+        CHECK(cargadosCrlf[i].getDni() == cargadosLf[i].getDni());
     }
 
     // El nombre con tilde llego bien en los dos casos.
@@ -636,7 +636,7 @@ TEST_CASE("cargar un archivo inexistente lanza ArchivoNoEncontradoException",
     const std::string ruta = rutaDePrueba("no_existe.dat");
     std::filesystem::remove(ruta);
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<ArchivoNoEncontradoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     CHECK(fallo.mensaje.find("no_existe.dat") != std::string::npos);
@@ -645,9 +645,9 @@ TEST_CASE("cargar un archivo inexistente lanza ArchivoNoEncontradoException",
 TEST_CASE("un archivo sin header lanza FormatoDesconocidoException",
           persistencia_error_sin_header) {
     const std::string ruta = rutaDePrueba("sin_header.dat");
-    escribirBytes(ruta, "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|MAT-20001\n");
+    escribirBytes(ruta, "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|2020001\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     CHECK(fallo.mensaje.find("header") != std::string::npos);
@@ -658,20 +658,20 @@ TEST_CASE("un archivo de otra entidad lanza FormatoDesconocidoException",
     const std::string ruta = rutaDePrueba("otra_entidad.dat");
     escribirBytes(ruta, "#TURNOS|1|0\n" + Turno::esquema() + "\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     // El mensaje dice las DOS entidades: la del archivo y la esperada.
     CHECK(fallo.mensaje.find("TURNOS") != std::string::npos);
-    CHECK(fallo.mensaje.find("ALUMNOS") != std::string::npos);
+    CHECK(fallo.mensaje.find("PACIENTES") != std::string::npos);
 }
 
 TEST_CASE("una version distinta lanza FormatoDesconocidoException",
           persistencia_error_version) {
     const std::string ruta = rutaDePrueba("version.dat");
-    escribirBytes(ruta, "#ALUMNOS|3|0\n" + Alumno::esquema() + "\n");
+    escribirBytes(ruta, "#PACIENTES|3|0\n" + Paciente::esquema() + "\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     // El mensaje menciona la version del archivo y la que lee el codigo.
@@ -682,9 +682,9 @@ TEST_CASE("una version distinta lanza FormatoDesconocidoException",
 TEST_CASE("un esquema distinto lanza FormatoDesconocidoException",
           persistencia_error_esquema) {
     const std::string ruta = rutaDePrueba("esquema.dat");
-    escribirBytes(ruta, "#ALUMNOS|1|0\nid|nombre|apellido|email|telefono|activo|matricula|extra\n");
+    escribirBytes(ruta, "#PACIENTES|1|0\nid|nombre|apellido|email|telefono|activo|dni|extra\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     CHECK(fallo.mensaje.find("extra") != std::string::npos);
@@ -706,9 +706,9 @@ TEST_CASE("una linea con pocos campos lanza DatoInvalidoException con el numero 
     CHECK(fallo.mensaje.find("10") != std::string::npos);
 }
 
-TEST_CASE("una materia inexistente lanza DatoInvalidoException con archivo y linea",
-          persistencia_error_materia) {
-    const std::string ruta = rutaDePrueba("materia_mala.dat");
+TEST_CASE("una especialidad inexistente lanza DatoInvalidoException con archivo y linea",
+          persistencia_error_especialidad) {
+    const std::string ruta = rutaDePrueba("especialidad_mala.dat");
     escribirBytes(ruta,
                   "#TURNOS|1|1\n" + Turno::esquema()
                       + "\n1|3|7|XXX|2026-10-08|09:00|60|A-3|Activo|-1\n");
@@ -717,14 +717,14 @@ TEST_CASE("una materia inexistente lanza DatoInvalidoException con archivo y lin
 
     // El campo que fallo se conserva: la capa de archivo agrega el archivo y
     // la linea, pero no borra el diagnostico del dominio.
-    CHECK(lanzaConCampo([&] { archivo.cargar(); }, "materia"));
+    CHECK(lanzaConCampo([&] { archivo.cargar(); }, "especialidad"));
 
     const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
-    CHECK(fallo.mensaje.find("materia_mala.dat") != std::string::npos);
+    CHECK(fallo.mensaje.find("especialidad_mala.dat") != std::string::npos);
     CHECK(fallo.mensaje.find("3") != std::string::npos);
     // El motivo del dominio se conserva (y no se duplica el mensaje entero).
-    CHECK(fallo.mensaje.find("codigo de materia desconocido") != std::string::npos);
+    CHECK(fallo.mensaje.find("codigo de especialidad desconocido") != std::string::npos);
 
     // "Dato invalido" aparece UNA sola vez: el re-lanzamiento no repite el
     // mensaje que ya venia armado.
@@ -741,12 +741,12 @@ TEST_CASE("un header que declara mas registros de los que hay lanza DatoInvalido
           persistencia_error_truncado) {
     const std::string ruta = rutaDePrueba("truncado.dat");
     escribirBytes(ruta,
-                  "#ALUMNOS|1|5\n" + Alumno::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|MAT-20002\n"
-                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|MAT-20003\n");
+                  "#PACIENTES|1|5\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n"
+                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     CHECK(fallo.mensaje.find("truncado") != std::string::npos);
@@ -758,12 +758,12 @@ TEST_CASE("un header que declara menos registros de los que hay no dice truncado
     // El header declara 2, pero el archivo tiene 3 registros: NO esta
     // truncado, le SOBRAN registros. Decir "truncado" seria mentir.
     escribirBytes(ruta,
-                  "#ALUMNOS|1|2\n" + Alumno::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|MAT-20002\n"
-                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|MAT-20003\n");
+                  "#PACIENTES|1|2\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n"
+                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
     // La palabra "truncado" NO puede aparecer: el archivo no esta truncado.
@@ -778,10 +778,10 @@ TEST_CASE("un id que no entra en un int lanza DatoInvalidoException con archivo 
     const std::string ruta = rutaDePrueba("desborde.dat");
     // El id es un numero valido como TEXTO, pero no entra en un `int`.
     escribirBytes(ruta,
-                  "#ALUMNOS|1|1\n" + Alumno::esquema()
-                      + "\n99999999999|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n");
+                  "#PACIENTES|1|1\n" + Paciente::esquema()
+                      + "\n99999999999|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
 
     // El campo que fallo se conserva: el dominio lo diagnostico bien.
     CHECK(lanzaConCampo([&] { archivo.cargar(); }, "id"));
@@ -805,13 +805,13 @@ TEST_CASE("un id que no entra en un int lanza DatoInvalidoException con archivo 
 TEST_CASE("una linea en blanco intercalada se ignora", persistencia_linea_en_blanco) {
     const std::string ruta = rutaDePrueba("linea_blanca.dat");
     escribirBytes(ruta,
-                  "#ALUMNOS|1|2\n" + Alumno::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|MAT-20001\n"
+                  "#PACIENTES|1|2\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
                         "\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|MAT-20002\n");
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    const std::vector<Alumno> cargados = archivo.cargar();
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == 2);
     CHECK(cargados[0].getId() == 1);
     CHECK(cargados[1].getId() == 2);
@@ -821,7 +821,7 @@ TEST_CASE("un archivo vacio lanza FormatoDesconocidoException", persistencia_arc
     const std::string ruta = rutaDePrueba("vacio.dat");
     escribirBytes(ruta, "");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
 }
@@ -868,8 +868,8 @@ TEST_CASE("si la serializacion falla el archivo original queda intacto",
     const std::string ruta = rutaDePrueba("atomico.dat");
 
     // Primero se escribe un archivo valido.
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
     const std::string contenidoOriginal = leerArchivo(ruta);
     CHECK(!contenidoOriginal.empty());
 
@@ -880,7 +880,7 @@ TEST_CASE("si la serializacion falla el archivo original queda intacto",
     registros.push_back(RegistroQueFalla{2, "dos"});
     registros.push_back(RegistroQueFalla{3, "tres"});
 
-    ArchivoTexto<RegistroQueFalla> archivoRoto(ruta, "ALUMNOS");
+    ArchivoTexto<RegistroQueFalla> archivoRoto(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivoRoto.guardar(registros); });
     CHECK(fallo.lanzo);
 
@@ -893,7 +893,7 @@ TEST_CASE("si la serializacion falla el archivo original queda intacto",
     CHECK(temporalesEnElDirectorio().empty());
 
     // El archivo sigue siendo valido: se puede cargar.
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == 2);
 }
 
@@ -918,16 +918,16 @@ TEST_CASE("si el temporal no se puede abrir se lanza ExcepcionSistema y el desti
 
     // Primero se escribe un archivo valido, para tener un destino que
     // preserve.
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
     const std::string contenidoOriginal = leerArchivo(ruta);
     CHECK(!contenidoOriginal.empty());
 
     // Ahora se apunta a un destino dentro de un directorio inexistente.
     const std::string rutaImposible =
         (directorioDePruebas() / "directorio_inexistente" / "destino.dat").string();
-    ArchivoTexto<Alumno> archivoImposible(rutaImposible, "ALUMNOS");
-    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivoImposible.guardar({alumnoDePrueba(1)}); });
+    ArchivoTexto<Paciente> archivoImposible(rutaImposible, "PACIENTES");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivoImposible.guardar({pacienteDePrueba(1)}); });
     CHECK(fallo.lanzo);
     // El mensaje dice que archivo fallo.
     CHECK(fallo.mensaje.find("destino.dat") != std::string::npos);
@@ -960,8 +960,8 @@ TEST_CASE("si el destino no se puede reemplazar se lanza ExcepcionSistema y no q
     std::filesystem::remove_all(destino, error);
     CHECK(std::filesystem::create_directories(destino, error));
 
-    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
-    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+    ArchivoTexto<Paciente> archivo(destino.string(), "PACIENTES");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
     CHECK(fallo.lanzo);
     // El mensaje dice que archivo no se pudo reemplazar.
     CHECK(fallo.mensaje.find("destino_es_directorio") != std::string::npos);
@@ -999,8 +999,8 @@ TEST_CASE("si el destino no se puede reemplazar queda intacto y sigue siendo car
     // Primero se escribe un archivo valido, para tener un destino que
     // preserve.
     {
-        ArchivoTexto<Alumno> archivoInicial(destino.string(), "ALUMNOS");
-        archivoInicial.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+        ArchivoTexto<Paciente> archivoInicial(destino.string(), "PACIENTES");
+        archivoInicial.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
     }
     const std::string contenidoOriginal = leerArchivo(destino.string());
     CHECK(!contenidoOriginal.empty());
@@ -1010,8 +1010,8 @@ TEST_CASE("si el destino no se puede reemplazar queda intacto y sigue siendo car
     std::filesystem::permissions(destino, std::filesystem::perms::owner_read,
                                  std::filesystem::perm_options::replace);
 
-    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
-    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(9)}); });
+    ArchivoTexto<Paciente> archivo(destino.string(), "PACIENTES");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(9)}); });
     CHECK(fallo.lanzo);
     // El mensaje dice que archivo no se pudo reemplazar.
     CHECK(fallo.mensaje.find("destino_solo_lectura.dat") != std::string::npos);
@@ -1026,7 +1026,7 @@ TEST_CASE("si el destino no se puede reemplazar queda intacto y sigue siendo car
     // antes (no con el registro nuevo que se queria escribir).
     std::filesystem::permissions(destino, std::filesystem::perms::owner_all,
                                  std::filesystem::perm_options::replace);
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.size() == 2);
     CHECK(cargados[0].getId() == 1);
     CHECK(cargados[1].getId() == 2);
@@ -1042,15 +1042,15 @@ TEST_CASE("si el destino no se puede reemplazar queda intacto y sigue siendo car
     std::filesystem::remove(destino, error);
 
     {
-        ArchivoTexto<Alumno> archivoInicial(destino.string(), "ALUMNOS");
-        archivoInicial.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+        ArchivoTexto<Paciente> archivoInicial(destino.string(), "PACIENTES");
+        archivoInicial.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
     }
 
     std::filesystem::permissions(destino, std::filesystem::perms::owner_read,
                                  std::filesystem::perm_options::replace);
 
-    ArchivoTexto<Alumno> archivo(destino.string(), "ALUMNOS");
-    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(9)}); });
+    ArchivoTexto<Paciente> archivo(destino.string(), "PACIENTES");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(9)}); });
 
     // No quedo ningun `.tmp` tirado, pase lo que pase con el rename.
     CHECK(temporalesEnElDirectorio().empty());
@@ -1069,8 +1069,8 @@ TEST_CASE("el archivo escrito usa solo LF y es identico en cualquier plataforma"
           persistencia_sin_cr) {
     const std::string ruta = rutaDePrueba("sin_cr.dat");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
 
     // El modo BINARIO de escritura garantiza que los bytes sean los mismos
     // en Windows y en Linux: sin ningun '\r' (CRLF).
@@ -1082,18 +1082,18 @@ TEST_CASE("el archivo escrito usa solo LF y es identico en cualquier plataforma"
     // donde tienen que estar).
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 4);
-    CHECK(lineas[0] == "#ALUMNOS|1|2");
-    CHECK(lineas[1] == Alumno::esquema());
+    CHECK(lineas[0] == "#PACIENTES|1|2");
+    CHECK(lineas[1] == Paciente::esquema());
 }
 
 TEST_CASE("un guardado exitoso no deja ningun .tmp", persistencia_sin_tmp) {
     const std::string ruta = rutaDePrueba("sin_tmp.dat");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1)});
     CHECK(temporalesEnElDirectorio().empty());
 
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2)});
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2)});
     CHECK(temporalesEnElDirectorio().empty());
 
     // Y en el directorio no hay ningun `.tmp` con otra extension.
@@ -1118,8 +1118,8 @@ TEST_CASE("el archivo temporal tiene un nombre unico por escritura", persistenci
 
     std::vector<std::string> nombresTemporales;
     for (int i = 0; i < 5; ++i) {
-        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
         CHECK(fallo.lanzo);
 
         // El mensaje trae el nombre del temporal: se lo extrae.
@@ -1173,8 +1173,8 @@ TEST_CASE("el nombre del temporal tiene un largo acotado", persistencia_tmp_larg
 
     std::string nombreTemporal;
     {
-        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
         CHECK(fallo.lanzo);
 
         const std::size_t inicio = fallo.mensaje.find('\'');
@@ -1206,8 +1206,8 @@ TEST_CASE("el nombre del temporal tiene un largo acotado", persistencia_tmp_larg
     // largo no pueden compartirlo.
     std::string nombreTemporal2;
     {
-        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
         CHECK(fallo.lanzo);
         const std::size_t inicio = fallo.mensaje.find('\'');
         const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
@@ -1260,8 +1260,8 @@ TEST_CASE("un destino con nombre largo se puede guardar igual", persistencia_des
     // El destino entra en el limite del sistema de archivos.
     CHECK(ruta.size() <= 255);
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
 
     // ESTE es el punto del test: el destino con nombre largo se guarda SIN
     // error. Si el temporal se pasara del limite de ruta, `guardar()`
@@ -1301,11 +1301,11 @@ TEST_CASE("un directorio tan largo que no queda presupuesto igual se comporta bi
 
     const std::string ruta = (directorio / "destino.dat").string();
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     bool lanzo = false;
     std::string mensaje;
     try {
-        archivo.guardar({alumnoDePrueba(1)});
+        archivo.guardar({pacienteDePrueba(1)});
     } catch (const ExcepcionSistema& e) {
         lanzo = true;
         mensaje = e.what();
@@ -1334,14 +1334,14 @@ TEST_CASE("el temporal es unico tambien entre tipos de entidad distintos",
           persistencia_tmp_unico_entre_tipos) {
     // El estado de unicidad (el contador atomico y el generador de entropia)
     // es COMPARTIDO por todas las instanciaciones del template. Si fuera
-    // por tipo de entidad, `ArchivoTexto<Alumno>` y `ArchivoTexto<Turno>`
+    // por tipo de entidad, `ArchivoTexto<Paciente>` y `ArchivoTexto<Turno>`
     // tendrian cada uno su propio contador empezando en 0, y podrian
     // derivar el mismo nombre de temporal.
     //
     // COMO SE COMPRUEBA, Y POR QUE NO BASTA COMPARAR DOS NOMBRES:
     //
-    // Comparar el temporal del alumno con el del turno NO alcanza: con el
-    // estado POR TIPO, el contador del alumno ya viene adelantado por otros
+    // Comparar el temporal del paciente con el del turno NO alcanza: con el
+    // estado POR TIPO, el contador del paciente ya viene adelantado por otros
     // tests y el del turno recien arranca, asi que los nombres DIFIEREN
     // igual y el test pasaria sin detectar nada.
     //
@@ -1357,11 +1357,11 @@ TEST_CASE("el temporal es unico tambien entre tipos de entidad distintos",
         directorioDePruebas() / "directorio_inexistente";
     const std::string ruta = (directorioImposible / "destino.dat").string();
 
-    // El temporal del ALUMNO (el tipo que ya se uso en otros tests).
-    std::string nombreAlumno;
+    // El temporal del PACIENTE (el tipo que ya se uso en otros tests).
+    std::string nombrePaciente;
     {
-        ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({alumnoDePrueba(1)}); });
+        ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+        const Fallo fallo = capturarTipo<ExcepcionSistema>([&] { archivo.guardar({pacienteDePrueba(1)}); });
         CHECK(fallo.lanzo);
         const std::size_t inicio = fallo.mensaje.find('\'');
         const std::size_t fin = fallo.mensaje.find('\'', inicio + 1);
@@ -1370,7 +1370,7 @@ TEST_CASE("el temporal es unico tambien entre tipos de entidad distintos",
         if (inicio == std::string::npos || fin == std::string::npos) {
             return;
         }
-        nombreAlumno = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
+        nombrePaciente = fallo.mensaje.substr(inicio + 1, fin - inicio - 1);
     }
 
     // El temporal de un tipo NUEVO, que no se uso en ningun otro test.
@@ -1391,32 +1391,32 @@ TEST_CASE("el temporal es unico tambien entre tipos de entidad distintos",
 
     // Los DOS temporales son DISTINTOS: son de tipos de entidad distintos y
     // no pueden compartir el nombre.
-    CHECK(nombreAlumno != nombreNuevo);
+    CHECK(nombrePaciente != nombreNuevo);
 
     // Y el numero de secuencia del tipo NUEVO es estrictamente MAYOR que el
-    // del alumno: eso solo puede pasar si el contador es UNO para todo el
+    // del paciente: eso solo puede pasar si el contador es UNO para todo el
     // programa. Con el estado por tipo, el tipo nuevo arrancaria en 1.
-    const unsigned long long numeroAlumno = numeroDeSecuencia(nombreAlumno);
+    const unsigned long long numeroPaciente = numeroDeSecuencia(nombrePaciente);
     const unsigned long long numeroNuevo = numeroDeSecuencia(nombreNuevo);
-    CHECK(numeroAlumno > 0);
+    CHECK(numeroPaciente > 0);
     CHECK(numeroNuevo > 0);
-    CHECK(numeroNuevo > numeroAlumno);
+    CHECK(numeroNuevo > numeroPaciente);
 }
 
 TEST_CASE("guardar reemplaza el archivo y no lo agrega al final",
           persistencia_reemplaza_archivo) {
     const std::string ruta = rutaDePrueba("reemplaza.dat");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1), alumnoDePrueba(2), alumnoDePrueba(3)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1), pacienteDePrueba(2), pacienteDePrueba(3)});
     CHECK(leerLineas(ruta).size() == 5);
 
     // Se guarda un solo registro: el archivo tiene que quedar con UN
     // registro, no con cuatro.
-    archivo.guardar({alumnoDePrueba(9)});
+    archivo.guardar({pacienteDePrueba(9)});
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#ALUMNOS|1|1");
+    CHECK(lineas[0] == "#PACIENTES|1|1");
     CHECK(Utils::separar(lineas[2], '|')[0] == "9");
 }
 
@@ -1424,14 +1424,14 @@ TEST_CASE("el contenido del archivo es exactamente el esperado",
           persistencia_contenido_exacto) {
     const std::string ruta = rutaDePrueba("exacto.dat");
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
-    archivo.guardar({alumnoDePrueba(1)});
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({pacienteDePrueba(1)});
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#ALUMNOS|1|1");
-    CHECK(lineas[1] == "id|nombre|apellido|email|telefono|activo|matricula");
-    CHECK(lineas[2] == "1|Beto|Perez|alumno1@unlp.edu.ar|2214556677|1|MAT-20001");
+    CHECK(lineas[0] == "#PACIENTES|1|1");
+    CHECK(lineas[1] == "id|nombre|apellido|email|telefono|activo|dni");
+    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001");
 }
 
 TEST_CASE("crearVacio crea el archivo y no pisa uno existente",
@@ -1439,21 +1439,21 @@ TEST_CASE("crearVacio crea el archivo y no pisa uno existente",
     const std::string ruta = rutaDePrueba("crear_vacio.dat");
     std::filesystem::remove(ruta);
 
-    ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     archivo.crearVacio();
 
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 2);
-    CHECK(lineas[0] == "#ALUMNOS|1|0");
-    CHECK(lineas[1] == Alumno::esquema());
+    CHECK(lineas[0] == "#PACIENTES|1|0");
+    CHECK(lineas[1] == Paciente::esquema());
 
     // El archivo recien creado se puede cargar: da cero registros.
-    const std::vector<Alumno> cargados = archivo.cargar();
+    const std::vector<Paciente> cargados = archivo.cargar();
     CHECK(cargados.empty());
 
     // `crearVacio` sobre un archivo que YA existe no lo destruye.
-    archivo.guardar({alumnoDePrueba(1)});
+    archivo.guardar({pacienteDePrueba(1)});
     archivo.crearVacio();
     CHECK(archivo.cargar().size() == 1);
 }
@@ -1462,11 +1462,11 @@ TEST_CASE("crearVacio crea el archivo y no pisa uno existente",
 // INTEGRACION
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el turno sigue siendo valido aunque se reordene el enum de materias",
+TEST_CASE("el turno sigue siendo valido aunque se reordene el enum de especialidads",
           persistencia_enum_reordenado) {
-    // El archivo guarda el CODIGO de la materia, asi que reordenar el enum no
+    // El archivo guarda el CODIGO de la especialidad, asi que reordenar el enum no
     // lo invalida: el codigo es el mismo.
-    const Turno turno(1, 3, 7, Materia::ARQUITECTURA, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
+    const Turno turno(1, 3, 7, Especialidad::NEUM, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
 
     const std::string ruta = rutaDePrueba("reorden.dat");
     ArchivoTexto<Turno> archivo(ruta, "TURNOS");
@@ -1474,11 +1474,11 @@ TEST_CASE("el turno sigue siendo valido aunque se reordene el enum de materias",
 
     const std::vector<Turno> cargados = archivo.cargar();
     CHECK(cargados.size() == 1);
-    CHECK(cargados[0].getMateria() == Materia::ARQUITECTURA);
-    CHECK(codigoDe(cargados[0].getMateria()) == "ARQUITECTURA");
+    CHECK(cargados[0].getEspecialidad() == Especialidad::NEUM);
+    CHECK(codigoDe(cargados[0].getEspecialidad()) == "NEUM");
 }
 
-TEST_CASE("los archivos de ejemplo se cargan y traen las 12 materias",
+TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad de su medico",
           persistencia_ejemplos) {
     const std::string rutaTurnos = rutaDeEjemplo("turnos.dat");
     CHECK(!rutaTurnos.empty());
@@ -1490,49 +1490,69 @@ TEST_CASE("los archivos de ejemplo se cargan y traen las 12 materias",
     const std::vector<Turno> turnos = archivoTurnos.cargar();
     CHECK(!turnos.empty());
 
-    // Las 12 materias del catalogo aparecen en los turnos de ejemplo.
-    constexpr std::size_t CANTIDAD_MATERIAS = static_cast<std::size_t>(Materia::ARQUITECTURA) + 1;
-    bool aparecen[CANTIDAD_MATERIAS] = {false};
-    for (const Turno& turno : turnos) {
-        aparecen[static_cast<std::size_t>(turno.getMateria())] = true;
-    }
-    for (std::size_t i = 0; i < todasLasMaterias().size(); ++i) {
-        CHECK(aparecen[static_cast<std::size_t>(todasLasMaterias()[i])]);
-    }
-
-    // Los otros dos archivos de ejemplo tambien cargan.
-    const std::string rutaAlumnos = rutaDeEjemplo("alumnos.dat");
-    const std::string rutaProfesores = rutaDeEjemplo("profesores.dat");
-    CHECK(!rutaAlumnos.empty());
-    CHECK(!rutaProfesores.empty());
-    if (rutaAlumnos.empty() || rutaProfesores.empty()) {
+    // LA SEMILLA ES COHERENTE CON LA REGLA 2b
+    //
+    // Un turno es de la especialidad de SU medico: si no lo fuera, el turno
+    // no se podria agendar (la regla del servicio lo rechaza). Los archivos
+    // de ejemplo tienen que cumplir la misma regla que la aplicacion.
+    const std::string rutaMedicos = rutaDeEjemplo("medicos.dat");
+    const std::string rutaPacientes = rutaDeEjemplo("pacientes.dat");
+    CHECK(!rutaMedicos.empty());
+    CHECK(!rutaPacientes.empty());
+    if (rutaMedicos.empty() || rutaPacientes.empty()) {
         return;
     }
 
-    ArchivoTexto<Alumno> archivoAlumnos(rutaAlumnos, "ALUMNOS");
-    ArchivoTexto<Profesor> archivoProfesores(rutaProfesores, "PROFESORES");
-    CHECK(!archivoAlumnos.cargar().empty());
-    CHECK(!archivoProfesores.cargar().empty());
+    ArchivoTexto<Medico> archivoMedicos(rutaMedicos, "MEDICOS");
+    ArchivoTexto<Paciente> archivoPacientes(rutaPacientes, "PACIENTES");
+    const std::vector<Medico> medicos = archivoMedicos.cargar();
+    const std::vector<Paciente> pacientes = archivoPacientes.cargar();
+    CHECK(!medicos.empty());
+    CHECK(!pacientes.empty());
+
+    for (const Turno& turno : turnos) {
+        const Medico* medico = nullptr;
+        for (const Medico& candidato : medicos) {
+            if (candidato.getId() == turno.getIdMedico()) {
+                medico = &candidato;
+                break;
+            }
+        }
+        CHECK(medico != nullptr);
+        if (medico != nullptr) {
+            CHECK(turno.getEspecialidad() == medico->getEspecialidad());
+        }
+
+        // Y el paciente del turno existe.
+        bool existe = false;
+        for (const Paciente& candidato : pacientes) {
+            if (candidato.getId() == turno.getIdPaciente()) {
+                existe = true;
+                break;
+            }
+        }
+        CHECK(existe);
+    }
 }
 
-TEST_CASE("el archivo de ejemplo de alumnos tiene el header esperado",
+TEST_CASE("el archivo de ejemplo de pacientes tiene el header esperado",
           persistencia_ejemplo_header) {
-    const std::string rutaAlumnos = rutaDeEjemplo("alumnos.dat");
-    CHECK(!rutaAlumnos.empty());
-    if (rutaAlumnos.empty()) {
+    const std::string rutaPacientes = rutaDeEjemplo("pacientes.dat");
+    CHECK(!rutaPacientes.empty());
+    if (rutaPacientes.empty()) {
         return;
     }
 
-    const std::vector<std::string> lineas = leerLineas(rutaAlumnos);
+    const std::vector<std::string> lineas = leerLineas(rutaPacientes);
     CHECK(lineas.size() >= 2);
-    CHECK(lineas[0].compare(0, 9, "#ALUMNOS|") == 0);
-    CHECK(lineas[1] == Alumno::esquema());
+    CHECK(lineas[0].compare(0, 11, "#PACIENTES|") == 0);
+    CHECK(lineas[1] == Paciente::esquema());
 }
 
 TEST_CASE("la API expone la ruta y el nombre de la entidad", persistencia_api) {
     const std::string ruta = rutaDePrueba("api.dat");
-    const ArchivoTexto<Alumno> archivo(ruta, "ALUMNOS");
+    const ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     CHECK(archivo.ruta() == ruta);
-    CHECK(archivo.nombreEntidad() == "ALUMNOS");
-    CHECK(ArchivoTexto<Alumno>::VERSION_FORMATO == 1);
+    CHECK(archivo.nombreEntidad() == "PACIENTES");
+    CHECK(ArchivoTexto<Paciente>::VERSION_FORMATO == 1);
 }

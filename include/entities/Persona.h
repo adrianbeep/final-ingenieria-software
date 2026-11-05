@@ -10,7 +10,7 @@
 #include <vector>
 
 // ---------------------------------------------------------------------------
-// Persona: la base compartida de `Profesor` y `Alumno`.
+// Persona: la base compartida de `Medico` y `Paciente`.
 //
 // POR QUE ES HEADER-ONLY (sin .cpp): es la clase base de dos librerias
 // distintas. Si tuviera su propio .cpp habria que meterla en un target
@@ -52,7 +52,7 @@ public:
     // debe tener destructor virtual.
     virtual ~Persona() = default;
 
-    // Tipo de la persona, en texto: "Profesor" / "Alumno".
+    // Tipo de la persona, en texto: "Medico" / "Paciente".
     virtual std::string getTipo() const = 0;
 
     // --- Getters ---
@@ -110,7 +110,7 @@ public:
 
     // --- Operadores ---
     // `operator==` compara el id Y el tipo: el id es unico POR ENTIDAD, no
-    // global, asi que `Profesor(5) == Alumno(5)` tiene que ser false.
+    // global, asi que `Medico(5) == Paciente(5)` tiene que ser false.
     // Comparar solo por el id romperia el "strict weak ordering" que necesita
     // el arbol de la Fase 3: si `a` no es menor que `b` ni al reves, `a`
     // tiene que ser igual a `b`.
@@ -134,7 +134,7 @@ public:
     static constexpr std::size_t TELEFONO_LONGITUD_MAXIMA = 20;
 
 protected:
-    // Cantidad de campos que comparten `Profesor` y `Alumno` en el formato
+    // Cantidad de campos que comparten `Medico` y `Paciente` en el formato
     // canonico: id|nombre|apellido|email|telefono|activo.
     static constexpr std::size_t CANTIDAD_CAMPOS_COMUNES = 6;
 
