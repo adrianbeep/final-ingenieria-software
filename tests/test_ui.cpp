@@ -20,6 +20,7 @@
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/Alumnos.h"
+#include "ui/Pantallas/Profesores.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
@@ -1522,3 +1523,89 @@ TEST_CASE("la busqueda por matricula es exacta e insensible a mayusculas",
     CHECK(motor.vista() == "Resultados");
     CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
   }
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE PROFESORES
+//
+// Es la hermana de la de alumnos: el motor es el mismo y lo unico que cambia
+// son los datos. Lo que se verifica aca es que el criterio del legajo usa la
+// MISMA regla del repositorio (coincidencia EXACTA e insensible a mayusculas).
+// ---------------------------------------------------------------------------
+namespace {
+
+// El escenario de las pruebas de la pantalla de profesores.
+struct EscenarioProfesores {
+    explicit EscenarioProfesores(const std::string& nombre)
+        : profesores(rutaNuevaDePrueba(nombre + "-profesores")),
+          alumnos(rutaNuevaDePrueba(nombre + "-alumnos")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(alumnos, profesores, turnos),
+          contexto(alumnos, profesores, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto motor = std::make_unique<ui::CrudPersonas<Profesor>>(
+            aplicacion, profesores, profesores,
+            ui::Pantallas::configDeProfesores(profesores, servicio));
+        puntero = motor.get();
+        aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
+    }
+
+    RepositorioProfesores profesores;
+    RepositorioAlumnos alumnos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::CrudPersonas<Profesor>* puntero = nullptr;
+};
+
+// Un profesor valido, para las pruebas que necesitan uno ya cargado.
+Profesor profesorDePrueba(int id, const std::string& nombre, const std::string& apellido,
+                          const std::string& legajo) {
+    return Profesor(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
+                    legajo, "Algebra");
+}
+
+} // namespace
+
+TEST_CASE("la busqueda por legajo es exacta e insensible a mayusculas",
+           crud_buscar_legajo_regla) {
+    EscenarioProfesores escenario("crud_buscar_legajo_regla");
+    escenario.profesores.alta(profesorDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Profesor>& motor = *escenario.puntero;
+
+    // El criterio de legajo es el TERCERO.
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "leg-1001");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Resultados");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("LEG-1001") != std::string::npos);
+    CHECK(texto.find("Gomez") != std::string::npos);
+
+    // Un fragmento NO alcanza: la coincidencia es EXACTA.
+    motor.manejar(eventoCaracter('0'));
+    motor.manejar(eventoCaracter('5'));
+    motor.manejar(eventoCaracter('3'));
+    escribir(motor, "LEG-100");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Resultados");
+    CHECK(motor.vistaTextoPlano().find("No hay coincidencias") != std::string::npos);
+}
+
+TEST_CASE("el menu de profesores muestra las seis opciones y el cero de volver",
+           crud_profesores_menu_inicial) {
+    EscenarioProfesores escenario("crud_profesores_menu_inicial");
+    ui::CrudPersonas<Profesor>& motor = *escenario.puntero;
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(motor.titulo() == "PROFESORES");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("1. Registrar") != std::string::npos);
+    CHECK(texto.find("5. Buscar") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+}

@@ -5,6 +5,7 @@
 #include "ui/Contexto.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/Alumnos.h"
+#include "ui/Pantallas/Profesores.h"
 
 #include <ftxui.hpp>
 
@@ -19,6 +20,7 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles (aca, "Salir").
     _menu.agregar('1', "Alumnos", [this]() { abrirAlumnos(); });
+    _menu.agregar('2', "Profesores", [this]() { abrirProfesores(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -37,6 +39,13 @@ void MenuPrincipal::abrirAlumnos() {
     _aplicacion.ir([](ui::Aplicacion& app) {
         return crearPantallaAlumnos(app, app.contexto().alumnos(),
                                     app.contexto().servicioTurnos());
+    });
+}
+
+void MenuPrincipal::abrirProfesores() {
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaProfesores(app, app.contexto().profesores(),
+                                       app.contexto().servicioTurnos());
     });
 }
 
