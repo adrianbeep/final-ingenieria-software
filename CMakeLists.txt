@@ -102,7 +102,17 @@ target_include_directories(ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # `ui` NECESITA FTXUI: el motor (`Terminal`, `Aplicacion`) y las pantallas
 # usan `ftxui::Element`. El link es PUBLIC para que los tests, que linkean
 # `ui`, reciban FTXUI (y `Threads::Threads`) transitivamente.
-target_link_libraries(ui PUBLIC core warnings ftxui Threads::Threads)
+#
+# `ui` tambien necesita los REPOSITORIOS (las interfaces que usan el
+# contexto y el motor CRUD) y los SERVICIOS (el motor CRUD arma la ficha con
+# los turnos del servicio de turnos). No hay ciclo: los servicios no
+# dependen de la interfaz.
+#
+# Y necesita los repositorios CONCRETOS: el contexto los expone y las
+# pantallas los consultan para aplicar las reglas de busqueda (que viven en
+# el repositorio y no en la pantalla). `repositorios_concretos` no depende de
+# `ui`, asi que tampoco hay ciclo.
+target_link_libraries(ui PUBLIC core warnings ftxui Threads::Threads repositorios repositorios_concretos servicios)
 
 # --- Entidades: profesor, alumno y turno ---
 # Son tres targets y no uno solo porque son modulos independientes: cada uno
@@ -192,9 +202,12 @@ target_include_directories(servicios PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include
 target_link_libraries(servicios PUBLIC core alumnos profesores turnos repositorios warnings)
 
 # --- Ejecutable principal. Sin logica de negocio (requisito 9 de la consigna). ---
+# Enlaza `repositorios_concretos` porque el `main` arma los tres
+# repositorios (son la composicion de la aplicacion) y `ui` porque las
+# pantallas y el motor viven ahi.
 add_executable(sistema_turnos src/main.cpp)
 target_include_directories(sistema_turnos PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(sistema_turnos PRIVATE ui warnings ftxui Threads::Threads)
+target_link_libraries(sistema_turnos PRIVATE ui warnings ftxui Threads::Threads repositorios_concretos)
 
 # ---------------------------------------------------------------------------
 # Tests. El objetivo existe desde la Fase 0 para que la Fase 1 solo AGREGUE

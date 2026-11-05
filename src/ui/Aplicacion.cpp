@@ -7,7 +7,12 @@
 
 namespace ui {
 
-Aplicacion::Aplicacion(std::string titulo) : _titulo(std::move(titulo)) {
+Aplicacion::Aplicacion(std::string titulo, Contexto& contexto)
+    : _titulo(std::move(titulo)), _contexto(contexto) {
+}
+
+Contexto& Aplicacion::contexto() const {
+    return _contexto;
 }
 
 void Aplicacion::ir(Fabrica fabrica) {
@@ -87,18 +92,37 @@ bool Aplicacion::manejarEvento(ftxui::Event evento) {
 
     const Evento propio = eventoDesde(evento);
 
-    // `Escape` lo maneja la APLICACION: es la clave de "volver" en todos los
-    // niveles, asi que se atiende antes que la pantalla. Si no hay una
-    // pantalla anterior, `volver()` termina el ciclo.
+    if (_pila.empty()) {
+        return false;
+    }
+
+    // LA PANTALLA PRIMERO
+    //
+    // El evento se le da primero a la pantalla de arriba de la pila: si ella
+    // lo consume, la aplicacion no lo toca. Asi una pantalla puede usar el
+    // `Escape` para SUBIR UN NIVEL dentro de su propia maquina de vistas (el
+    // motor CRUD vuelve de la vista del id a su menu) sin que la pantalla
+    // entera salga de la pila.
+    if (_pila.back()->manejar(propio)) {
+        return true;
+    }
+
+    // EL `Escape` QUE NADIE CONSUMIO
+    //
+    // Si la pantalla no sabe que hacer con el `Escape`, lo maneja la
+    // aplicacion: es la clave de "volver" en el NIVEL DE LA PILA, y el
+    // unico que le queda. Si no hay una pantalla anterior, `volver()`
+    // termina el ciclo.
+    //
+    // OJO: el `Escape` NO se intercepta antes de la pantalla (como hacia
+    // antes): interceptarlo ahi le robaba a la pantalla la posibilidad de
+    // consumirlo, y dejaba DOS caminos de vuelta con alcances distintos.
     if (propio.tipo == TipoTecla::Escape) {
         volver();
         return true;
     }
 
-    if (_pila.empty()) {
-        return false;
-    }
-    return _pila.back()->manejar(propio);
+    return false;
 }
 
 } // namespace ui

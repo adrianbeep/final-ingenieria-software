@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/Contexto.h"
 #include "ui/Pantalla.h"
 
 #include <ftxui.hpp>
@@ -20,10 +21,14 @@
 //
 // LAS TECLAS DE NAVEGACION
 //
-// `Escape` lo maneja la APLICACION, no la pantalla: es la clave de "volver"
-// en todos los niveles, asi que tiene que funcionar igual en todas las
-// pantallas. El caracter '0' lo maneja cada pantalla (es el atajo de
-// "Volver"), porque su significado depende de la pantalla.
+// La pantalla tiene la PRIMERA palabra: el evento se le da primero a la
+// pantalla de arriba de la pila, y solo si la pantalla NO lo consume la
+// aplicacion atiende el `Escape` (que es la clave de "volver" en el nivel de
+// la pila). Asi el motor CRUD puede usar el `Escape` para subir UN nivel
+// dentro de sus vistas, y el `Escape` del menu CRUD saca la pantalla entera.
+//
+// El caracter '0' lo maneja cada pantalla (es el atajo de "Volver"), porque
+// su significado depende de la pantalla.
 // ---------------------------------------------------------------------------
 namespace ui {
 
@@ -32,7 +37,16 @@ public:
     // La fabrica recibe la aplicacion para poder navegar (ir, volver, salir).
     using Fabrica = std::function<std::unique_ptr<Pantalla>(Aplicacion&)>;
 
-    explicit Aplicacion(std::string titulo);
+    // El CONTEXTO
+    //
+    // La aplicacion guarda el contexto (los repositorios y el servicio de
+    // turnos) y lo pasa a las pantallas: es el unico lugar donde se juntan
+    // los colaboradores, asi que las pantallas no los reciben por parametro
+    // uno por uno.
+    explicit Aplicacion(std::string titulo, Contexto& contexto);
+
+    // El contexto de la aplicacion.
+    Contexto& contexto() const;
 
     // Apila una pantalla nueva.
     void ir(Fabrica fabrica);
@@ -60,11 +74,12 @@ private:
     // El frame de la pantalla de arriba de la pila.
     ftxui::Element renderizar() const;
 
-    // Traduce el evento y lo despacha: `Escape` lo maneja la aplicacion,
-    // el resto lo maneja la pantalla.
+    // Traduce el evento y lo despacha: primero lo ve la pantalla de arriba y,
+    // si no lo consumio, la aplicacion atiende el `Escape`.
     bool manejarEvento(ftxui::Event evento);
 
     std::string _titulo;
+    Contexto& _contexto;
     std::vector<std::unique_ptr<Pantalla>> _pila;
     bool _salir = false;
 };
