@@ -72,7 +72,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 381 caso(s), 0 fallo(s)
+# 387 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -84,7 +84,14 @@ el fallo y sigue, para ver todos los problemas de una vez.
 ```
 include/    headers: domain, entities, structures, persistence,
                        repositories, exceptions, services, utils, ui
+  ui/Pantallas/  las pantallas: MenuPrincipal, Pacientes, Medicos
 src/        implementaciones .cpp, espejo de include/
+  domain/         el catalogo de especialidades
+  entities/       las entidades: Medico, Paciente, Persona y Turno
+  repositories/   un repositorio por entidad
+  services/       las reglas de negocio de los turnos
+  ui/             la TUI: el motor, el menu, la tabla, el campo de entrada
+  ui/Pantallas/   las pantallas: MenuPrincipal, Pacientes, Medicos
 tests/      arnes de tests propio (sin framework externo)
 data/       datos de trabajo: los archivos que usa la aplicacion
 data/ejemplo/  la semilla: los datos de ejemplo, para empezar de cero
