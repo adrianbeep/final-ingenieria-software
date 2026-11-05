@@ -1,4 +1,4 @@
-#TURNOS|1|13
+#TURNOS|2|13
 id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante
 1|1|1|CARD|2026-10-05|08:00|60|Consultorio 1|Activo|-1
 2|2|2|PEDI|2026-10-05|09:00|60|Consultorio 1|Activo|-1

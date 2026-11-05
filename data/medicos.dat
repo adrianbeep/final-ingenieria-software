@@ -1,4 +1,4 @@
-#MEDICOS|1|6
+#MEDICOS|2|6
 id|nombre|apellido|email|telefono|activo|legajo|especialidad
 1|Gómez|Laura|laura.gomez@unlp.edu.ar|2214556677|1|LEG-1001|CARD
 2|Fernández|Diego|diego.fernandez@unlp.edu.ar|2214556688|1|LEG-1002|PEDI

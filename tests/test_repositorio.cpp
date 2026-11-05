@@ -271,7 +271,7 @@ TEST_CASE("el alta persiste en el archivo", repositorio_alta_persiste) {
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#PACIENTES|1|1");
+    CHECK(lineas[0] == "#PACIENTES|2|1");
 }
 
 TEST_CASE("modificar un id que no existe lanza EntidadNoExisteException",
@@ -980,7 +980,7 @@ TEST_CASE("persistir deja el archivo con el header, el esquema y los registros o
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 6);
     // La linea 1 es el header y la 2 el esquema.
-    CHECK(lineas[0] == "#PACIENTES|1|4");
+    CHECK(lineas[0] == "#PACIENTES|2|4");
     CHECK(lineas[1] == Paciente::esquema());
 
     // Y los registros salen ordenados por id.
@@ -1007,7 +1007,7 @@ TEST_CASE("persistir deja el archivo del turno con su propio nombre de entidad",
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 4);
-    CHECK(lineas[0] == "#TURNOS|1|2");
+    CHECK(lineas[0] == "#TURNOS|2|2");
     CHECK(lineas[1] == Turno::esquema());
 }
 
@@ -1034,7 +1034,7 @@ TEST_CASE("cargar un archivo que no existe lo crea vacio y no falla",
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 2);
-    CHECK(lineas[0] == "#PACIENTES|1|0");
+    CHECK(lineas[0] == "#PACIENTES|2|0");
     CHECK(lineas[1] == Paciente::esquema());
 
     // Y el repositorio quedo vacio, listo para usarse.
