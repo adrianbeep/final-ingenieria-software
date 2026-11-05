@@ -94,7 +94,8 @@ test: $(TEST_TARGET)
 	$(TEST_TARGET)
 
 # El binario de tests NO linkea src/main.cpp: habria dos main().
-# Linkea UI_SRCS porque los tests de la Fase 1 ejercitan ui::Consola::leerEntero.
+# Linkea UI_SRCS porque los tests de la UI ejercitan la capa `ui` (la paleta,
+# el menu, las validaciones de `ui::Consola`, el campo de entrada, la tabla).
 # Linkea ENTITIES_SRCS porque los tests de la Fase 2 ejercitan las entidades.
 # Linkea REPOSITORIES_SRCS porque los tests de la Fase 5 ejercitan los
 # repositorios (el template `RepositorioCRUD` es header-only, pero los tres
