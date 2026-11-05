@@ -1,27 +1,38 @@
 #include "test_framework.h"
 
 #include "exceptions/ExcepcionesSistema.h"
+#include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
+#include "ui/Confirmacion.h"
+#include "ui/Consola.h"
 #include "ui/Evento.h"
 #include "ui/Menu.h"
+#include "ui/Mensaje.h"
+#include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
+#include "utils/Fecha.h"
 
 #include <ftxui.hpp>
 
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Tests de la capa de UI.
 //
 // Son tests de LOGICA PURA: no abren el ciclo de eventos de FTXUI ni
-// necesitan una terminal. Lo que se testea son las tres piezas que se
-// pueden testear sin terminal:
+// necesitan una terminal. Lo que se testea son las piezas que se pueden
+// testear sin terminal:
 //
 //   - la paleta (`ui::Theme`): dato y logica de `NO_COLOR`;
 //   - el menu (`ui::Menu`): seleccion, navegacion, atajos y hit-testing;
-//   - la traduccion de eventos (`ui::eventoDesde`): una funcion pura.
+//   - la traduccion de eventos (`ui::eventoDesde`): una funcion pura;
+//   - las validaciones (`ui::Consola`): funciones puras;
+//   - el campo de entrada (`ui::Campo`): acumula, valida y reintenta;
+//   - la confirmacion (`ui::Confirmacion`) y el mensaje (`ui::Mensaje`);
+//   - la tabla (`ui::Tabla`): el render se prueba sobre un `ftxui::Screen`.
 //
 // El resto (el ciclo de eventos, el alternate screen, el guard de terminal)
 // se verifica por ejecucion, no por test unitario.
@@ -67,6 +78,47 @@ ui::Evento eventoCaracter(char caracter) {
     evento.tipo = ui::TipoTecla::Caracter;
     evento.caracter = std::string(1, caracter);
     return evento;
+}
+
+// Un `ui::Evento` de una tecla que no es un caracter.
+ui::Evento eventoTecla(ui::TipoTecla tipo) {
+    ui::Evento evento;
+    evento.tipo = tipo;
+    return evento;
+}
+
+// Renderiza un elemento en un `ftxui::Screen` y devuelve las lineas.
+//
+// LOS NOMBRES EXACTOS DE FTXUI QUE SE USAN
+//
+//   - `ftxui::Screen::Create(ftxui::Dimension::Fixed(ancho),
+//                             ftxui::Dimension::Fixed(alto))`: crea el screen
+//     del tamano pedido (es lo que permite comparar el texto linea por
+//     linea).
+//   - `ftxui::Render(pantalla, elemento)`: dibuja el elemento en el screen.
+//   - `pantalla.ToString()`: devuelve el texto del screen, con las lineas
+//     separadas por "\r\n".
+std::vector<std::string> renderizarLineas(const ftxui::Element& elemento, int ancho,
+                                          int alto) {
+    ftxui::Screen pantalla = ftxui::Screen::Create(ftxui::Dimension::Fixed(ancho),
+                                                   ftxui::Dimension::Fixed(alto));
+    ftxui::Render(pantalla, elemento);
+
+    std::vector<std::string> lineas;
+    std::string actual;
+    for (const char caracter : pantalla.ToString()) {
+        if (caracter == '\r') {
+            continue;
+        }
+        if (caracter == '\n') {
+            lineas.push_back(actual);
+            actual.clear();
+            continue;
+        }
+        actual += caracter;
+    }
+    lineas.push_back(actual);
+    return lineas;
 }
 
 } // namespace
@@ -433,3 +485,389 @@ TEST_CASE("el chequeo de terminal no revienta", terminal_hay_terminal) {
     const bool hay = ui::Terminal::hayTerminal();
     CHECK(hay == true || hay == false);
 }
+
+// ---------------------------------------------------------------------------
+// Consola: las validaciones (funciones puras)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("validarEntero devuelve el entero cuando esta en rango",
+           consola_validar_entero_ok) {
+    CHECK(ui::Consola::validarEntero("42", 0, 120) == 42);
+    CHECK(ui::Consola::validarEntero("0", 0, 120) == 0);
+    CHECK(ui::Consola::validarEntero("120", 0, 120) == 120);
+    // Los espacios alrededor no son un error: el usuario los escribe.
+    CHECK(ui::Consola::validarEntero("  7  ", 0, 120) == 7);
+}
+
+TEST_CASE("validarEntero distingue la entrada vacia", consola_validar_entero_vacio) {
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarEntero("   ", 0, 120);
+    });
+
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "entrada");
+    // El mensaje dice la verdad: no se escribio NADA.
+    CHECK(error.mensaje.find("vacia") != std::string::npos);
+}
+
+TEST_CASE("validarEntero distingue la entrada no numerica",
+           consola_validar_entero_no_numerico) {
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarEntero("abc", 0, 120);
+    });
+
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "entrada");
+    CHECK(error.mensaje.find("Entrada invalida") != std::string::npos);
+    CHECK(error.mensaje.find("abc") != std::string::npos);
+}
+
+TEST_CASE("validarEntero distingue el valor demasiado grande",
+           consola_validar_entero_demasiado_grande) {
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarEntero("99999999999999999999", 0, 120);
+    });
+
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "entrada");
+    // El texto ES un numero: decir "ingrese un numero entero" seria
+    // mentiroso.
+    CHECK(error.mensaje.find("demasiado grande") != std::string::npos);
+}
+
+TEST_CASE("validarEntero distingue el valor fuera de rango",
+           consola_validar_entero_fuera_de_rango) {
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarEntero("999", 0, 120);
+    });
+
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "entrada");
+    CHECK(error.mensaje.find("entre 0 y 120") != std::string::npos);
+}
+
+TEST_CASE("validarFecha devuelve la fecha y falla con el campo fecha",
+           consola_validar_fecha) {
+    const Fecha fecha = ui::Consola::validarFecha("2026-04-01");
+    CHECK(fecha.anio == 2026);
+    CHECK(fecha.mes == 4);
+    CHECK(fecha.dia == 1);
+
+    // El 31 de febrero no existe en el calendario.
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarFecha("2026-02-31");
+    });
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "fecha");
+
+    // Y el formato tampoco vale.
+    const ErrorCapturado errorFormato = capturarError([]() {
+        (void)ui::Consola::validarFecha("01/04/2026");
+    });
+    CHECK(errorFormato.lanzo == true);
+    CHECK(errorFormato.campo == "fecha");
+}
+
+TEST_CASE("validarHora devuelve la hora y falla con el campo hora",
+           consola_validar_hora) {
+    const Hora hora = ui::Consola::validarHora("08:30");
+    CHECK(hora.hora == 8);
+    CHECK(hora.minuto == 30);
+
+    // Las 25:00 no son una hora.
+    const ErrorCapturado error = capturarError([]() {
+        (void)ui::Consola::validarHora("25:00");
+    });
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "hora");
+
+    // Y el formato tampoco vale.
+    const ErrorCapturado errorFormato = capturarError([]() {
+        (void)ui::Consola::validarHora("8h30");
+    });
+    CHECK(errorFormato.lanzo == true);
+    CHECK(errorFormato.campo == "hora");
+}
+
+// ---------------------------------------------------------------------------
+// Campo: el widget de entrada
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el campo acumula los caracteres que se escriben", campo_acumula) {
+    ui::Campo campo("Nombre", "", [](const std::string&) { return std::string(); });
+
+    campo.aplicarEvento(eventoCaracter('A'));
+    campo.aplicarEvento(eventoCaracter('n'));
+    campo.aplicarEvento(eventoCaracter('a'));
+
+    CHECK(campo.texto() == "Ana");
+    CHECK(campo.etiqueta() == "Nombre");
+}
+
+TEST_CASE("el campo inserta en la posicion del cursor", campo_inserta_en_el_medio) {
+    ui::Campo campo("Nombre", "", [](const std::string&) { return std::string(); });
+
+    campo.aplicarEvento(eventoCaracter('a'));
+    campo.aplicarEvento(eventoCaracter('c'));
+    // El cursor va para atras (entre la 'a' y la 'c').
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    campo.aplicarEvento(eventoCaracter('b'));
+
+    CHECK(campo.texto() == "abc");
+}
+
+TEST_CASE("las flechas mueven el cursor y no se pasan del texto",
+           campo_cursor) {
+    ui::Campo campo("Nombre", "", [](const std::string&) { return std::string(); });
+
+    campo.aplicarEvento(eventoCaracter('a'));
+    campo.aplicarEvento(eventoCaracter('b'));
+
+    // A la derecha del todo: el cursor queda al final.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(campo.textoEnPantalla() == "ab|");
+
+    // Una flecha a la derecha: no se pasa del final.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(campo.textoEnPantalla() == "ab|");
+
+    // Una flecha a la izquierda: el cursor queda antes de la 'b'.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    CHECK(campo.textoEnPantalla() == "a|b");
+
+    // Y hasta el principio.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    CHECK(campo.textoEnPantalla() == "|ab");
+}
+
+TEST_CASE("el retroceso borra el caracter que esta antes del cursor",
+           campo_retroceso) {
+    ui::Campo campo("Nombre", "", [](const std::string&) { return std::string(); });
+
+    campo.aplicarEvento(eventoCaracter('a'));
+    campo.aplicarEvento(eventoCaracter('b'));
+    campo.aplicarEvento(eventoCaracter('c'));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::Retroceso));
+
+    CHECK(campo.texto() == "ab");
+
+    // Con el cursor al principio, el retroceso no hace nada.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::Retroceso));
+    CHECK(campo.texto() == "ab");
+}
+
+TEST_CASE("el campo valida al presionar Enter y cuenta los intentos",
+           campo_validacion) {
+    ui::Campo campo("Edad", "", [](const std::string& texto) {
+        return texto == "42" ? std::string() : std::string("no es 42");
+    });
+
+    campo.aplicarEvento(eventoCaracter('a'));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(campo.intentos() == 1);
+    CHECK(campo.confirmado() == false);
+    CHECK(campo.error() == "no es 42");
+
+    // Un intento valido: el error se borra y el campo queda confirmado.
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::Retroceso));
+    campo.aplicarEvento(eventoCaracter('4'));
+    campo.aplicarEvento(eventoCaracter('2'));
+    campo.aplicarEvento(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(campo.intentos() == 1);
+    CHECK(campo.confirmado() == true);
+    CHECK(campo.error().empty() == true);
+    CHECK(campo.valor() == "42");
+}
+
+TEST_CASE("el campo lanza al agotar los intentos", campo_agota_intentos) {
+    ui::Campo campo("Edad", "", [](const std::string&) { return std::string("nope"); });
+
+    bool lanzo = false;
+    try {
+        for (int intento = 0; intento < ui::Consola::MAX_INTENTOS; ++intento) {
+            campo.aplicarEvento(eventoTecla(ui::TipoTecla::Enter));
+        }
+    } catch (const DatoInvalidoException& e) {
+        lanzo = true;
+        CHECK(e.campo() == "entrada");
+    }
+
+    CHECK(lanzo == true);
+    CHECK(campo.intentos() == ui::Consola::MAX_INTENTOS);
+}
+
+TEST_CASE("valor() antes de confirmar lanza", campo_valor_sin_confirmar) {
+    ui::Campo campo("Edad", "", [](const std::string&) { return std::string(); });
+
+    const ErrorCapturado error = capturarError([&campo]() {
+        (void)campo.valor();
+    });
+
+    CHECK(error.lanzo == true);
+    CHECK(error.campo == "entrada");
+}
+
+TEST_CASE("el campo no toma los clics del raton", campo_ignora_raton) {
+    ui::Campo campo("Nombre", "", [](const std::string&) { return std::string(); });
+
+    ui::Evento clic;
+    clic.boton = ui::BotonMouse::Izquierdo;
+    clic.x = 2;
+    clic.y = 1;
+
+    CHECK(campo.aplicarEvento(clic) == false);
+    CHECK(campo.texto().empty() == true);
+}
+
+// ---------------------------------------------------------------------------
+// Confirmacion
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la confirmacion responde Si", confirmacion_si) {
+    ui::Confirmacion confirmacion("Desea dar de baja al alumno?");
+
+    CHECK(confirmacion.respondida() == false);
+    CHECK(confirmacion.confirmo() == false);
+    CHECK(confirmacion.pregunta() == "Desea dar de baja al alumno?");
+
+    // El atajo '1' es "Si".
+    CHECK(confirmacion.aplicarEvento(eventoCaracter('1')) == true);
+
+    CHECK(confirmacion.respondida() == true);
+    CHECK(confirmacion.confirmo() == true);
+}
+
+TEST_CASE("la confirmacion responde No", confirmacion_no) {
+    ui::Confirmacion confirmacion("Desea dar de baja al alumno?");
+
+    // El atajo '2' es "No".
+    CHECK(confirmacion.aplicarEvento(eventoCaracter('2')) == true);
+
+    CHECK(confirmacion.respondida() == true);
+    CHECK(confirmacion.confirmo() == false);
+}
+
+TEST_CASE("el texto plano de la confirmacion tiene la pregunta y las opciones",
+           confirmacion_texto_plano) {
+    ui::Confirmacion confirmacion("Desea continuar?");
+
+    const std::string texto = confirmacion.textoPlano();
+    CHECK(texto.find("Desea continuar?") != std::string::npos);
+    CHECK(texto.find("1. ") != std::string::npos);
+    CHECK(texto.find("2. ") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Mensaje
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el mensaje de exito usa el formato OK", mensaje_exito) {
+    const ui::Mensaje mensaje = ui::Mensaje::exito("Alumno #7 registrado.");
+
+    CHECK(mensaje.texto() == "OK  Alumno #7 registrado.");
+    CHECK(mensaje.esExito() == true);
+    CHECK(mensaje.esError() == false);
+    CHECK(mensaje.esVacio() == false);
+}
+
+TEST_CASE("el mensaje de error usa el formato ERR", mensaje_error) {
+    const ui::Mensaje mensaje = ui::Mensaje::error("No existe la entidad #7");
+
+    CHECK(mensaje.texto() == "ERR No existe la entidad #7");
+    CHECK(mensaje.esError() == true);
+    CHECK(mensaje.esExito() == false);
+    CHECK(mensaje.esVacio() == false);
+}
+
+TEST_CASE("el mensaje de aviso tiene su propio formato", mensaje_aviso) {
+    const ui::Mensaje mensaje = ui::Mensaje::aviso("La matricula ya existe");
+
+    CHECK(mensaje.texto() == "AVISO La matricula ya existe");
+    CHECK(mensaje.esExito() == false);
+    CHECK(mensaje.esError() == false);
+    CHECK(mensaje.esVacio() == false);
+}
+
+TEST_CASE("el mensaje vacio no es exito ni error", mensaje_vacio) {
+    const ui::Mensaje mensaje = ui::Mensaje::vacio();
+
+    CHECK(mensaje.esVacio() == true);
+    CHECK(mensaje.esExito() == false);
+    CHECK(mensaje.esError() == false);
+    CHECK(mensaje.texto().empty() == true);
+}
+
+// ---------------------------------------------------------------------------
+// Tabla
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la tabla cuenta las filas de datos", tabla_cuenta_filas) {
+    ui::Tabla tabla({"ID", "Nombre"});
+
+    CHECK(tabla.filas() == 0);
+
+    tabla.agregarFila({"1", "Ana"});
+    tabla.agregarFila({"2", "Beto"});
+
+    CHECK(tabla.filas() == 2);
+}
+
+TEST_CASE("el ancho de las columnas sale del contenido mas largo",
+           tabla_ancho_de_columnas) {
+    // Los colores se apagan para poder COMPARAR el texto: con `NO_COLOR` la
+    // paleta no propone ningun color y el texto del screen sale limpio.
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    ui::Tabla tabla({"ID", "Nombre"});
+    tabla.agregarFila({"1", "Ana"});
+    tabla.agregarFila({"22", "Beto"});
+
+    // El ancho sale del contenido mas largo de cada columna: "ID" (2) y
+    // "Nombre" (6). El ancho TOTAL de la tabla sale de eso.
+    const std::vector<std::string> lineas = renderizarLineas(tabla.renderizar(), 15, 6);
+
+    CHECK(lineas.size() == 6);
+    if (lineas.size() == 6) {
+        CHECK(lineas[0] == "+----+--------+");
+        CHECK(lineas[1] == "| ID | Nombre |");
+        CHECK(lineas[2] == "+----+--------+");
+        CHECK(lineas[3] == "| 1  | Ana    |");
+        CHECK(lineas[4] == "| 22 | Beto   |");
+        CHECK(lineas[5] == "+----+--------+");
+    }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("el render de la tabla tiene las cabeceras y los datos",
+           tabla_render_contiene_los_datos) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    ui::Tabla tabla({"Materia", "Aula"});
+    tabla.agregarFila({"Algoritmos", "204"});
+    tabla.agregarFila({"Base de Datos", "301"});
+
+    const std::vector<std::string> lineas = renderizarLineas(tabla.renderizar(), 32, 5);
+
+    CHECK(lineas.size() == 5);
+    if (lineas.size() == 5) {
+        CHECK(lineas[1].find("Materia") != std::string::npos);
+        CHECK(lineas[1].find("Aula") != std::string::npos);
+        CHECK(lineas[3].find("Algoritmos") != std::string::npos);
+        CHECK(lineas[3].find("204") != std::string::npos);
+        CHECK(lineas[4].find("Base de Datos") != std::string::npos);
+        CHECK(lineas[4].find("301") != std::string::npos);
+    }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
