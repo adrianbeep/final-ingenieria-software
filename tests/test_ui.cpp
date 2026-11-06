@@ -1565,6 +1565,21 @@ Medico medicoDePrueba(int id, const std::string& nombre, const std::string& apel
                     legajo, Especialidad::GAST);
 }
 
+// La linea del selector donde esta la opcion ELEGIDA (la que tiene la marca
+// "(elegida)"), sin la marca.
+//
+// En texto plano no hay invertidas que digan cual es la elegida: por eso el
+// selector la marca, y por eso el test la busca por la marca.
+std::string lineaDeLaOpcionElegida(const std::string& texto) {
+    const std::size_t marca = texto.find("(elegida)");
+    if (marca == std::string::npos) {
+        return "";
+    }
+    const std::size_t salto = texto.rfind('\n', marca);
+    const std::size_t inicio = (salto == std::string::npos) ? 0 : salto + 1;
+    return texto.substr(inicio, marca - inicio);
+}
+
 } // namespace
 
 TEST_CASE("la busqueda por legajo es exacta e insensible a mayusculas",
@@ -1611,4 +1626,306 @@ TEST_CASE("el menu de medicos muestra las seis opciones y el cero de volver",
     // La ficha del medico muestra sus TURNOS, no su historial.
     CHECK(texto.find("6. Ver ficha + turnos") != std::string::npos);
     CHECK(texto.find("0. Volver") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL FORMULARIO DE MODIFICAR UN MEDICO
+//
+// QUE SE VERIFICA
+//
+// La especialidad NO es un campo de texto: se ELIGE de una lista de doce
+// (decision 1). El caso verifica el camino COMPLETO:
+//
+//   1. el formulario de modificar se abre con los datos del medico y SIN un
+//      campo de especialidad;
+//   2. al confirmar el formulario se abre el SELECTOR, con las doce
+//      opciones numeradas y con la especialidad del medico ya elegida;
+//   3. al elegir otra opcion y confirmar, el medico se modifica.
+//
+// El paso 3 es el que estaba roto: la especialidad llegaba al formulario
+// como texto (la DESCRIPCION de la fila del listado) y su propio validador
+// la rechazaba, asi que el medico NO se podia modificar y, al tercer Enter,
+// la excepcion mataba la aplicacion.
+// ---------------------------------------------------------------------------
+TEST_CASE("registrar un medico elige la especialidad de una lista",
+           crud_medicos_registrar_formulario) {
+    EscenarioMedicos escenario("crud_medicos_registrar_formulario");
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "Formulario");
+
+    escribir(motor, "Ana");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "ana.gomez@unlp.edu.ar");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "2214556677");
+    motor.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(motor, "LEG-1001");
+
+    // SE CONFIRMA EL FORMULARIO: SE ABRE EL SELECTOR.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    // AL REGISTRAR NO HAY ENTIDAD: EL SELECTOR ARRANCA CON LA PRIMERA.
+    CHECK(lineaDeLaOpcionElegida(motor.vistaTextoPlano()).find("1. Cardiolog")
+          != std::string::npos);
+
+    // SE ELIGE LA TERCERA (Pediatria) ESCRIBIENDO SU NUMERO.
+    motor.manejar(eventoCaracter('3'));
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Medico #1 registrado.");
+
+    Medico medico;
+    CHECK(escenario.medicos.buscarPorId(1, medico) == true);
+    CHECK(medico.getNombre() == "Ana");
+    CHECK(medico.getApellido() == "Gomez");
+    CHECK(medico.getLegajo() == "LEG-1001");
+    CHECK(medico.getEspecialidad() == Especialidad::PEDI);
+}
+
+TEST_CASE("modificar un medico elige la especialidad de una lista",
+           crud_medicos_modificar_formulario) {
+    EscenarioMedicos escenario("crud_medicos_modificar_formulario");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    // SE ABRE "MODIFICAR" Y SE ELIGE EL MEDICO #1.
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Id");
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL FORMULARIO SE ABRE CON LOS DATOS DEL MEDICO.
+    CHECK(motor.vista() == "Formulario");
+    const std::string formulario = motor.vistaTextoPlano();
+    CHECK(formulario.find("nombre: Ana|") != std::string::npos);
+    CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
+    CHECK(formulario.find("email: Ana.Gomez@unlp.edu.ar|") != std::string::npos);
+    CHECK(formulario.find("telefono: 2214556677|") != std::string::npos);
+    CHECK(formulario.find("legajo: LEG-1001|") != std::string::npos);
+
+    // LA ESPECIALIDAD YA NO ES UN CAMPO DE TEXTO: se elige de una lista.
+    CHECK(formulario.find("especialidad") == std::string::npos);
+
+    // SE CONFIRMA EL FORMULARIO: SE ABRE EL SELECTOR.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    // EL SELECTOR MUESTRA LAS DOCE OPCIONES, NUMERADAS.
+    const std::string selector = motor.vistaTextoPlano();
+    CHECK(selector.find("1. Cardiolog") != std::string::npos);
+    CHECK(selector.find("2. Medicina General") != std::string::npos);
+    CHECK(selector.find("10. Gastroenterolog") != std::string::npos);
+    CHECK(selector.find("11. Endocrinol") != std::string::npos);
+    CHECK(selector.find("12. Neumolog") != std::string::npos);
+
+    // LA ESPECIALIDAD DEL MEDICO (GAST, la decima) ARRANCA ELEGIDA.
+    CHECK(lineaDeLaOpcionElegida(selector).find("10. Gastroenterolog")
+          != std::string::npos);
+
+    // SE ELIGE OTRA ESPECIALIDAD CON LAS FLECHAS Y SE CONFIRMA.
+    //
+    // GAST es la decima: para llegar a CARD (la primera) hay que subir nueve
+    // veces. La navegacion NO da la vuelta.
+    for (int i = 0; i < 9; ++i) {
+        motor.manejar(eventoTecla(ui::TipoTecla::FlechaArriba));
+    }
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL MEDICO SE MODIFICO.
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Medico #1 modificado.");
+
+    Medico modificado;
+    CHECK(escenario.medicos.buscarPorId(1, modificado) == true);
+    CHECK(modificado.getNombre() == "Ana");
+    CHECK(modificado.getApellido() == "Gomez");
+    CHECK(modificado.getLegajo() == "LEG-1001");
+    // LA ESPECIALIDAD CAMBIO: la que se eligio en el selector.
+    CHECK(modificado.getEspecialidad() == Especialidad::CARD);
+}
+
+TEST_CASE("modificar un medico elige la especialidad escribiendo el numero",
+           crud_medicos_modificar_por_numero) {
+    EscenarioMedicos escenario("crud_medicos_modificar_por_numero");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Formulario");
+
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    // EL NUMERO COMPLETO: "12" elige la doceava especialidad (Neumologia).
+    //
+    // Es lo que un `Menu` no puede hacer: sus atajos son de un digito.
+    motor.manejar(eventoCaracter('1'));
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vistaTextoPlano().find("Numero: 12") != std::string::npos);
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(motor.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Medico #1 modificado.");
+
+    Medico modificado;
+    CHECK(escenario.medicos.buscarPorId(1, modificado) == true);
+    CHECK(modificado.getEspecialidad() == Especialidad::NEUM);
+}
+
+TEST_CASE("un numero de especialidad que no existe no guarda el medico",
+           crud_medicos_numero_invalido) {
+    EscenarioMedicos escenario("crud_medicos_numero_invalido");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    // "99" no es ninguna de las doce especialidades.
+    motor.manejar(eventoCaracter('9'));
+    motor.manejar(eventoCaracter('9'));
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL ERROR SE MUESTRA Y EL MEDICO NO SE MODIFICA.
+    CHECK(motor.vista() == "Selector");
+    CHECK(motor.vistaTextoPlano().find("opcion invalida") != std::string::npos);
+    Medico medico;
+    CHECK(escenario.medicos.buscarPorId(1, medico) == true);
+    CHECK(medico.getNombre() == "Ana");
+    CHECK(medico.getEspecialidad() == Especialidad::GAST);
+}
+
+TEST_CASE("el render del selector se puede dibujar en una pantalla de FTXUI",
+           crud_medicos_render_selector) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioMedicos escenario("crud_medicos_render_selector");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    const std::vector<std::string> lineas = renderizarLineas(motor.renderizar(), 60, 20);
+    CHECK(lineas.size() == 20);
+    if (lineas.size() == 20) {
+        // EL TITULO, EL NUMERO QUE SE ESTA ESCRIBIENDO Y LAS DOCE OPCIONES.
+        CHECK(lineas[2].find("especialidad") != std::string::npos);
+        CHECK(lineas[3].find("Numero:") != std::string::npos);
+        CHECK(lineas[4].find("1. Cardiolog") != std::string::npos);
+        CHECK(lineas[13].find("10. Gastroenterolog") != std::string::npos);
+        CHECK(lineas[15].find("12. Neumolog") != std::string::npos);
+    }
+
+    // UN CLIC EN LA FILA DE UNA OPCION LA ELIGE
+    //
+    // El hit-testing del raton necesita que la pantalla se haya DIBUJADO: el
+    // motor le avisa al selector en que fila arranca la lista cuando dibuja.
+    ui::Evento clic;
+    clic.boton = ui::BotonMouse::Izquierdo;
+    clic.x = 4;
+    clic.y = 4;
+    motor.manejar(clic);
+
+    CHECK(lineaDeLaOpcionElegida(motor.vistaTextoPlano()).find("1. Cardiolog")
+          != std::string::npos);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("el escape del selector vuelve al formulario con lo escrito",
+           crud_medicos_escape_vuelve_al_formulario) {
+    EscenarioMedicos escenario("crud_medicos_escape_vuelve_al_formulario");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Formulario");
+
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Selector");
+
+    motor.manejar(eventoTecla(ui::TipoTecla::Escape));
+
+    // VUELVE AL FORMULARIO Y LO QUE HABIA ESCRITO SIGUE AHI.
+    CHECK(motor.vista() == "Formulario");
+    const std::string formulario = motor.vistaTextoPlano();
+    CHECK(formulario.find("nombre: Ana|") != std::string::npos);
+    CHECK(formulario.find("legajo: LEG-1001|") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL FORMULARIO DE MODIFICAR SE PRECARGA CON LOS DATOS DE LA ENTIDAD
+//
+// POR QUE ESTE CASO EXISTE
+//
+// El motor precarga el formulario de modificar con la FILA de la entidad: el
+// campo se busca por su ETIQUETA, que es el nombre de la columna. Ese
+// acoplamiento es correcto, pero es FRAGIL: si una fila muestra una cosa y
+// el campo espera otra (la especialidad mostraba la DESCRIPCION y el
+// validador esperaba el CODIGO), el formulario arranca con un valor que su
+// propio validador rechaza y la pantalla se traba.
+//
+// Por eso se verifica CAMPO POR CAMPO, en las dos pantallas: cada campo de
+// texto tiene que arrancar con el valor REAL de la entidad.
+// ---------------------------------------------------------------------------
+TEST_CASE("el formulario de modificar se precarga con los datos de la entidad",
+           crud_formulario_modificar_precarga) {
+    // LOS PACIENTES
+    {
+        Escenario escenario("crud_formulario_modificar_precarga");
+        escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+        ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+        motor.manejar(eventoCaracter('2'));
+        escribir(motor, "1");
+        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+        CHECK(motor.vista() == "Formulario");
+
+        const std::string formulario = motor.vistaTextoPlano();
+        CHECK(formulario.find("nombre: Ana|") != std::string::npos);
+        CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
+        CHECK(formulario.find("email: Ana.Gomez@unlp.edu.ar|") != std::string::npos);
+        CHECK(formulario.find("telefono: 2214556677|") != std::string::npos);
+        CHECK(formulario.find("dni: 2020391|") != std::string::npos);
+    }
+
+    // LOS MEDICOS
+    {
+        EscenarioMedicos escenario("crud_formulario_modificar_precarga");
+        escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+        ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+        motor.manejar(eventoCaracter('2'));
+        escribir(motor, "1");
+        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+        CHECK(motor.vista() == "Formulario");
+
+        const std::string formulario = motor.vistaTextoPlano();
+        CHECK(formulario.find("nombre: Ana|") != std::string::npos);
+        CHECK(formulario.find("apellido: Gomez|") != std::string::npos);
+        CHECK(formulario.find("email: Ana.Gomez@unlp.edu.ar|") != std::string::npos);
+        CHECK(formulario.find("telefono: 2214556677|") != std::string::npos);
+        CHECK(formulario.find("legajo: LEG-1001|") != std::string::npos);
+        // LA ESPECIALIDAD NO ES UN CAMPO DE TEXTO: no se precarga, se elige.
+        CHECK(formulario.find("especialidad") == std::string::npos);
+    }
 }
