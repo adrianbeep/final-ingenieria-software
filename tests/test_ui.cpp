@@ -21,6 +21,7 @@
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
+#include "ui/Pantallas/Turnos.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
@@ -1928,4 +1929,602 @@ TEST_CASE("el formulario de modificar se precarga con los datos de la entidad",
         // LA ESPECIALIDAD NO ES UN CAMPO DE TEXTO: no se precarga, se elige.
         CHECK(formulario.find("especialidad") == std::string::npos);
     }
+}
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE TURNOS
+//
+// QUE SE VERIFICA ACa
+//
+//   - el menu del modulo y su atajo de volver;
+//   - las cuatro ACCIONES (agendar, cancelar, reprogramar y modificar),
+//     con el camino COMPLETO de cada una (formulario, selector,
+//     confirmacion);
+//   - que TODA regla de negocio venga del SERVICIO: la pantalla solo
+//     muestra el mensaje de la excepcion.
+//
+// QUE NO SE VERIFICA ACa
+//
+// Las reglas de negocio del servicio tienen sus propios tests, en
+// `tests/test_servicio.cpp`. Aca se verifica que la pantalla las USA.
+//
+// LOS ERRORES SON LOS DEL SERVICIO
+//
+// Cada caso de error compara el mensaje COMPLETO (el `what()` de la
+// excepcion del dominio), no una palabra suelta: asi el test falla si la
+// pantalla inventa su propio texto.
+// ---------------------------------------------------------------------------
+namespace {
+
+// El escenario de las pruebas de la pantalla de turnos.
+struct EscenarioTurnos {
+    explicit EscenarioTurnos(const std::string& nombre)
+        : pacientes(rutaNuevaDePrueba(nombre)),
+          medicos(rutaNuevaDePrueba(nombre + "-medicos")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
+            aplicacion, turnos, pacientes, medicos, servicio);
+        puntero = pantalla.get();
+        aplicacion.ir([&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+    }
+
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::Pantallas::PantallaTurnos* puntero = nullptr;
+};
+
+// Escribe un texto en la pantalla de turnos (un evento por caracter).
+void escribir(ui::Pantallas::PantallaTurnos& pantalla, const std::string& texto) {
+    for (const char caracter : texto) {
+        pantalla.manejar(eventoCaracter(caracter));
+    }
+}
+
+// Un medico valido con la especialidad que se le pide.
+//
+// El overload de cuatro argumentos (el de mas arriba) deja al medico con
+// GASTROENTEROLOGIA; este deja elegir la especialidad, que es lo que
+// necesita el test de la especialidad que no atiende el medico.
+Medico medicoConEspecialidad(int id, const std::string& nombre, const std::string& apellido,
+                              const std::string& legajo, Especialidad especialidad) {
+    return Medico(id, nombre, apellido, nombre + "." + apellido + "@unlp.edu.ar", "2214556677",
+                  legajo, especialidad);
+}
+
+// Un turno de RELLENO.
+//
+// No usa ningun paciente ni medico real (el repositorio no lo comprueba al
+// guardar): lo que importa es el id, para que el test pueda pedir un id
+// concreto.
+Turno turnoDeRelleno(int id) {
+    return Turno(id, 99, 99, Especialidad::CARD, fechaDesplazada(30), Hora(8, 0), 45, "A-1");
+}
+
+// Llena el formulario de AGENDAR con los datos de un turno valido.
+//
+// Los ids del paciente y del medico son parametros: hay tests en los que
+// el horario esta ocupado por OTRO turno, y para que el control de
+// solapamiento se dispare hay que apuntar al mismo paciente o al mismo
+// medico.
+//
+// Devuelve sin hacer nada: el llamador confirma el formulario.
+void llenarFormularioDeAgendar(ui::Pantallas::PantallaTurnos& pantalla, const std::string& idPaciente,
+                                const std::string& idMedico, const std::string& fecha,
+                                const std::string& hora, const std::string& duracion = "45") {
+    escribir(pantalla, idPaciente);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, idMedico);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, fecha);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, hora);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, duracion);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "A-2");
+}
+
+} // namespace
+
+TEST_CASE("el menu de turnos muestra las cuatro acciones y el cero de volver",
+           turnos_menu_inicial) {
+    EscenarioTurnos escenario("turnos_menu_inicial");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(pantalla.titulo() == "TURNOS");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("1. Agendar turno") != std::string::npos);
+    CHECK(texto.find("2. Cancelar turno") != std::string::npos);
+    CHECK(texto.find("3. Reprogramar turno") != std::string::npos);
+    CHECK(texto.find("4. Modificar turno") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+}
+
+TEST_CASE("el cero del menu de turnos vuelve a la pantalla anterior",
+           turnos_menu_cero_vuelve) {
+    EscenarioTurnos escenario("turnos_menu_cero_vuelve");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    pantalla.manejar(eventoCaracter('0'));
+
+    // La pantalla salio de la pila: la pantalla anterior quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+TEST_CASE("agendar un turno lo deja en el repositorio", turnos_agendar) {
+    EscenarioTurnos escenario("turnos_agendar");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    // Los treinta turnos que ya estan: el nuevo va a ser el #31.
+    for (int i = 1; i <= 30; ++i) {
+        escenario.turnos.alta(turnoDeRelleno(i));
+    }
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Formulario");
+
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+
+    // EL FORMULARIO SE CONFIRMA: SE ABRE EL SELECTOR DE LA ESPECIALIDAD.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+
+    // LA ESPECIALIDAD SE ELIGE DE UNA LISTA NUMERADA
+    //
+    // La primera opcion es Cardiologia, que es la del medico.
+    CHECK(pantalla.vistaTextoPlano().find("1. Cardiolog") != std::string::npos);
+    CHECK(pantalla.vistaTextoPlano().find("12. Neumolog") != std::string::npos);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Turno #31 agendado.");
+
+    // EL TURNO ESTA EN EL REPOSITORIO, CON TODOS LOS DATOS.
+    Turno agendado;
+    CHECK(escenario.turnos.buscarPorId(31, agendado) == true);
+    CHECK(agendado.getIdMedico() == 1);
+    CHECK(agendado.getIdPaciente() == 1);
+    CHECK(agendado.getEspecialidad() == Especialidad::CARD);
+    CHECK(agendado.getFecha() == fechaDesplazada(30));
+    CHECK(agendado.getHora() == Hora(10, 0));
+    CHECK(agendado.getDuracionMin() == 45);
+    CHECK(agendado.getConsultorio() == "A-2");
+    CHECK(agendado.getEstado() == EstadoTurno::Activo);
+}
+
+TEST_CASE("agendar con una especialidad que el medico no atiende muestra el error del servicio",
+           turnos_agendar_especialidad_incorrecta) {
+    EscenarioTurnos escenario("turnos_agendar_especialidad_incorrecta");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    // El medico atiende Gastroenterologia, no Cardiologia.
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::GAST));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+    // Se elige la PRIMERA especialidad (Cardiologia), que no es la del medico.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL ERROR ES EL DEL SERVICIO, CON SU FORMATO
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR Dato invalido en campo 'especialidad': 'CARD' "
+             "(el medico no atiende esa especialidad)");
+
+    // Y NO SE AGENDO NADA.
+    CHECK(escenario.turnos.listar().empty() == true);
+}
+
+TEST_CASE("agendar a un horario ocupado muestra el error del servicio",
+           turnos_agendar_ocupado) {
+    EscenarioTurnos escenario("turnos_agendar_ocupado");
+    escenario.pacientes.alta(pacienteDePrueba(8, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(3, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    // El turno #12 ya ocupa ese horario.
+    for (int i = 1; i <= 11; ++i) {
+        escenario.turnos.alta(turnoDeRelleno(i));
+    }
+    escenario.turnos.alta(
+        Turno(12, 3, 8, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // El turno nuevo es del MISMO paciente y del MISMO medico que el #12:
+    // es lo que hace que el horario este ocupado.
+    llenarFormularioDeAgendar(pantalla, "8", "3", fechaDesplazada(30).aTexto(), "10:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR El turno #12 ya ocupa ese horario (idMedico=3 idPaciente=8)");
+
+    // NO SE AGENDO NADA NUEVO.
+    CHECK(escenario.turnos.contar() == 12);
+}
+
+TEST_CASE("agendar con una fecha que ya paso muestra el error del servicio",
+           turnos_agendar_fecha_pasada) {
+    EscenarioTurnos escenario("turnos_agendar_fecha_pasada");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // La fecha EXISTE (la valida el campo), pero ya paso: esa regla la
+    // aplica el servicio.
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(-5).aTexto(), "10:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR Dato invalido en campo 'fecha': '" + fechaDesplazada(-5).aTexto()
+              + "' (la fecha del turno ya paso)");
+
+    CHECK(escenario.turnos.listar().empty() == true);
+}
+
+TEST_CASE("agendar con una hora fuera del horario de atencion muestra el error del dominio",
+           turnos_agendar_hora_fuera_del_horario) {
+    EscenarioTurnos escenario("turnos_agendar_hora_fuera_del_horario");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // Las 07:00 estan FUERA del horario de atencion (08:00 a 22:00).
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "07:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL ERROR ES EL DEL DOMINIO, CON SU FORMATO
+    //
+    // El campo del formulario solo valida la FORMA ("HH:MM"): el RANGO lo
+    // decide el turno, y el error sale como mensaje.
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR Dato invalido en campo 'hora': '07:00' (fuera del horario de atencion o con "
+             "minutos que no son multiplos de 30)");
+
+    CHECK(escenario.turnos.listar().empty() == true);
+}
+
+TEST_CASE("agendar con una duracion que no es multiplo de 15 muestra el error del dominio",
+           turnos_agendar_duracion_invalida) {
+    EscenarioTurnos escenario("turnos_agendar_duracion_invalida");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00", "7");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR Dato invalido en campo 'duracionMin': '7' (se esperaba una duracion positiva, "
+             "multiplo de 15 y de 240 minutos como maximo)");
+
+    CHECK(escenario.turnos.listar().empty() == true);
+}
+
+TEST_CASE("un campo de texto con la forma equivocada muestra el error debajo del campo",
+           turnos_agendar_forma_mal) {
+    EscenarioTurnos escenario("turnos_agendar_forma_mal");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "8:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA FORMA ESTA MAL: el error va DEBAJO del campo y la vista NO cambia.
+    CHECK(pantalla.vista() == "Formulario");
+    const std::string formulario = pantalla.vistaTextoPlano();
+    CHECK(formulario.find("se esperaba HH:MM") != std::string::npos);
+    // Y lo escrito NO se pierde: el usuario corrige, no vuelve a escribir.
+    CHECK(formulario.find("hora: 8:00|") != std::string::npos);
+}
+
+TEST_CASE("en el campo de la hora el cero es un dato y no un volver", turnos_cero_en_la_hora) {
+    EscenarioTurnos escenario("turnos_cero_en_la_hora");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Formulario");
+
+    // Se llega al campo de la hora y se escribe "09:00".
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, fechaDesplazada(30).aTexto());
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "09:00");
+
+    // El primer cero NO fue "volver": la hora SIEMPRE empieza con un cero.
+    CHECK(pantalla.vista() == "Formulario");
+    CHECK(pantalla.vistaTextoPlano().find("hora: 09:00|") != std::string::npos);
+}
+
+TEST_CASE("cancelar un turno pide confirmacion y sin confirmar no toca nada",
+           turnos_cancelar_sin_confirmar) {    EscenarioTurnos escenario("turnos_cancelar_sin_confirmar");
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Id");
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA CONFIRMACION DE DOS PASOS
+    CHECK(pantalla.vista() == "Confirmar");
+    CHECK(pantalla.vistaTextoPlano().find("Cancelar el turno #31?") != std::string::npos);
+
+    // "No": vuelve a la vista del id y NO toca nada.
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Id");
+
+    Turno turno;
+    CHECK(escenario.turnos.buscarPorId(31, turno) == true);
+    CHECK(turno.getEstado() == EstadoTurno::Activo);
+}
+
+TEST_CASE("cancelar un turno confirmado lo deja cancelado", turnos_cancelar) {
+    EscenarioTurnos escenario("turnos_cancelar");
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Confirmar");
+
+    // "Si": ahora si se cancela.
+    pantalla.manejar(eventoCaracter('1'));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Turno #31 cancelado.");
+
+    Turno turno;
+    CHECK(escenario.turnos.buscarPorId(31, turno) == true);
+    CHECK(turno.getEstado() == EstadoTurno::Cancelado);
+    // LA BAJA ES LOGICA: el turno NO se borra.
+    CHECK(escenario.turnos.contar() == 1);
+}
+
+TEST_CASE("reprogramar crea el turno nuevo y deja el viejo como Reprogramado",
+           turnos_reprogramar) {
+    EscenarioTurnos escenario("turnos_reprogramar");
+    // El paciente y el medico tienen que existir: la reprogramacion
+    // aplica las MISMAS reglas que el agendamiento.
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vista() == "Id");
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA FECHA Y LA HORA NUEVAS
+    CHECK(pantalla.vista() == "Formulario");
+    escribir(pantalla, fechaDesplazada(45).aTexto());
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "11:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto()
+          == "OK  Turno #31 reprogramado. Nuevo turno #32.");
+
+    // EL VIEJO QUEDA REPROGRAMADO Y APUNTA AL NUEVO.
+    Turno viejo;
+    CHECK(escenario.turnos.buscarPorId(31, viejo) == true);
+    CHECK(viejo.getEstado() == EstadoTurno::Reprogramado);
+    CHECK(viejo.getIdTurnoReemplazante() == 32);
+
+    // Y EL NUEVO TIENE SU PROPIA FECHA Y HORA.
+    Turno nuevo;
+    CHECK(escenario.turnos.buscarPorId(32, nuevo) == true);
+    CHECK(nuevo.getEstado() == EstadoTurno::Activo);
+    CHECK(nuevo.getIdTurnoReemplazante() == -1);
+    CHECK(nuevo.getFecha() == fechaDesplazada(45));
+    CHECK(nuevo.getHora() == Hora(11, 0));
+    CHECK(nuevo.getIdMedico() == viejo.getIdMedico());
+    CHECK(nuevo.getIdPaciente() == viejo.getIdPaciente());
+    CHECK(nuevo.getEspecialidad() == viejo.getEspecialidad());
+    CHECK(nuevo.getDuracionMin() == viejo.getDuracionMin());
+    CHECK(nuevo.getConsultorio() == viejo.getConsultorio());
+}
+
+TEST_CASE("modificar un turno cambia el consultorio, la duracion y la especialidad, y no la fecha ni la hora",
+           turnos_modificar) {
+    EscenarioTurnos escenario("turnos_modificar");
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('4'));
+    CHECK(pantalla.vista() == "Id");
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // EL FORMULARIO ARRANCA CON LOS DATOS VIEJOS
+    CHECK(pantalla.vista() == "Formulario");
+    const std::string formulario = pantalla.vistaTextoPlano();
+    CHECK(formulario.find("consultorio: A-1|") != std::string::npos);
+    CHECK(formulario.find("duracion: 45|") != std::string::npos);
+    // LA FECHA Y LA HORA NO SON CAMPOS: moverlas es REPROGRAMAR.
+    CHECK(formulario.find("fecha") == std::string::npos);
+    CHECK(formulario.find("hora") == std::string::npos);
+
+    // SE CAMBIA EL CONSULTORIO: tres retrocesos y "B-2".
+    for (int i = 0; i < 3; ++i) {
+        pantalla.manejar(eventoTecla(ui::TipoTecla::Retroceso));
+    }
+    escribir(pantalla, "B-2");
+
+    // SE CAMBIA LA DURACION: dos retrocesos y "60".
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    for (int i = 0; i < 2; ++i) {
+        pantalla.manejar(eventoTecla(ui::TipoTecla::Retroceso));
+    }
+    escribir(pantalla, "60");
+
+    // SE CONFIRMA EL FORMULARIO: SE ABRE EL SELECTOR DE LA ESPECIALIDAD.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Selector");
+
+    // LA ESPECIALIDAD DEL TURNO (Cardiologia) ARRANCA ELEGIDA.
+    CHECK(lineaDeLaOpcionElegida(pantalla.vistaTextoPlano()).find("1. Cardiolog")
+          != std::string::npos);
+
+    // SE ELIGE LA SEGUNDA (Medicina General).
+    pantalla.manejar(eventoCaracter('2'));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Turno #31 modificado.");
+
+    Turno modificado;
+    CHECK(escenario.turnos.buscarPorId(31, modificado) == true);
+    CHECK(modificado.getConsultorio() == "B-2");
+    CHECK(modificado.getDuracionMin() == 60);
+    CHECK(modificado.getEspecialidad() == Especialidad::MEDG);
+    // LA FECHA Y LA HORA NO CAMBIAN: eso es reprogramar.
+    CHECK(modificado.getFecha() == fechaDesplazada(30));
+    CHECK(modificado.getHora() == Hora(10, 0));
+    CHECK(modificado.getIdMedico() == 1);
+    CHECK(modificado.getIdPaciente() == 1);
+}
+
+TEST_CASE("un turno que no existe se rechaza con el error del dominio",
+           turnos_id_inexistente) {
+    EscenarioTurnos escenario("turnos_id_inexistente");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "99");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "ERR No existe la entidad #99 (Turno)");
+}
+
+TEST_CASE("en un campo de texto de turnos el cero es un dato si ya hay texto",
+           turnos_cero_es_dato) {
+    EscenarioTurnos escenario("turnos_cero_es_dato");
+    escenario.turnos.alta(
+        Turno(310, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "31");
+    escribir(pantalla, "0");
+
+    // El cero NO fue "volver": es parte del id.
+    CHECK(pantalla.vista() == "Id");
+    CHECK(pantalla.vistaTextoPlano().find("Id: 310|") != std::string::npos);
+}
+
+TEST_CASE("el cero de un campo de texto vacio de turnos vuelve al menu",
+           turnos_cero_vuelve) {
+    EscenarioTurnos escenario("turnos_cero_vuelve");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Id");
+
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+}
+
+TEST_CASE("el escape de los turnos sube un nivel y no sale de la pantalla",
+           turnos_escape_sube_un_nivel) {
+    EscenarioTurnos escenario("turnos_escape_sube_un_nivel");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Id");
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(pantalla.vista() == "Menu");
+
+    // La pantalla SIGUE en la pila: la pantalla de prueba no quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    // Y en el menu, el `Escape` NO lo consume: lo maneja la aplicacion.
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == false);
+}
+
+TEST_CASE("el render de la pantalla de turnos se puede dibujar en FTXUI",
+           turnos_render) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioTurnos escenario("turnos_render");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 60, 12);
+    CHECK(lineas.size() == 12);
+    if (lineas.size() == 12) {
+        CHECK(lineas[0].find("TURNOS") != std::string::npos);
+        CHECK(lineas[2].find("1. Agendar turno") != std::string::npos);
+        CHECK(lineas[6].find("0. Volver") != std::string::npos);
+    }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
 }

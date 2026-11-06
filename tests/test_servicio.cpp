@@ -203,55 +203,9 @@ Medico medicoDePrueba(int id) {
                     "2214556677", "LEG-1" + std::to_string(id), Especialidad::CARD);
 }
 
-// La fecha de HOY, segun el reloj del sistema. Es la misma referencia que
-// usa el servicio para la regla de la fecha vencida.
-Fecha hoyDelSistema() {
-    const std::time_t ahora = std::time(nullptr);
-    const std::tm* local = std::localtime(&ahora);
-    return Fecha(local->tm_year + 1900, local->tm_mon + 1, local->tm_mday);
-}
-
-// Una fecha `dias` dias a partir de hoy (negativo = antes).
-//
-// POR QUE NO UNA FECHA FIJA
-//
-// El servicio RECHAZA las fechas que ya pasaron. Una fecha fija dejaria de
-// servir el dia que se cumpliera, y el test pasaria a fallar solo. Derivar
-// la fecha del reloj hace que el test siga teniendo sentido siempre.
-Fecha fechaDesplazada(int dias) {
-    const Fecha hoy = hoyDelSistema();
-    int anio = hoy.anio;
-    int mes = hoy.mes;
-    int dia = hoy.dia;
-
-    while (dias > 0) {
-        ++dia;
-        if (dia > Fecha::diasDelMes(anio, mes)) {
-            dia = 1;
-            ++mes;
-            if (mes > 12) {
-                mes = 1;
-                ++anio;
-            }
-        }
-        --dias;
-    }
-
-    while (dias < 0) {
-        --dia;
-        if (dia < 1) {
-            --mes;
-            if (mes < 1) {
-                mes = 12;
-                --anio;
-            }
-            dia = Fecha::diasDelMes(anio, mes);
-        }
-        ++dias;
-    }
-
-    return Fecha(anio, mes, dia);
-}
+// La fecha de HOY y la fecha desplazada viven en el ARNES (`test_framework.h`):
+// las necesitan tambien los tests de la pantalla de turnos, que agendan
+// turnos con el mismo servicio.
 
 // Un turno valido, con la duracion por defecto (45 minutos).
 Turno turnoDePrueba(int id, int idMedico, int idPaciente, int hora, int minuto) {
