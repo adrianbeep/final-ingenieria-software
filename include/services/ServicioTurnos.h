@@ -57,7 +57,9 @@
 //
 // En cambio `reprogramar` SI crea un turno y por eso SI pide el id: usa
 // `proximoId()` del repositorio de turnos (decision #8 del proyecto: la
-// reprogramacion crea un turno NUEVO y el viejo queda `Reprogramado`).
+// reprogramacion crea un turno NUEVO y el viejo queda `Reprogramado`). Ese
+// id ademas lo DEVUELVE: es el que la pantalla necesita para avisar que
+// turno nuevo se creo.
 // ---------------------------------------------------------------------------
 class ServicioTurnos {
 public:
@@ -98,7 +100,20 @@ public:
     // Las reglas de `agendar` se aplican TAMBIEN al turno nuevo: no se
     // puede esquivar el control de solapamiento reprogramando. Si alguna
     // falla, NINGUNO de los dos turnos se modifica.
-    void reprogramar(int idTurno_, const Fecha& nuevaFecha_, const Hora& nuevaHora_);
+    //
+    // DEVUELVE EL ID DEL TURNO NUEVO
+    //
+    // La pantalla que reprograma tiene que avisar "Turno #31 reprogramado.
+    // Nuevo turno #32.": sin el id del turno nuevo, ese mensaje no se puede
+    // armar. El id lo propone el repositorio (`proximoId()`), asi que el
+    // servicio lo tiene a mano y lo devuelve.
+    //
+    // ES COMPATIBLE CON QUIEN IGNORA EL VALOR
+    //
+    // Los que llaman a `reprogramar` solo por su efecto (que el turno quede
+    // reprogramado) no cambian: una funcion que devuelve un `int` se puede
+    // llamar como antes, y el valor devuelto se puede ignorar.
+    int reprogramar(int idTurno_, const Fecha& nuevaFecha_, const Hora& nuevaHora_);
 
     // Los turnos VIGENTES (`Activo`) de un paciente.
     //

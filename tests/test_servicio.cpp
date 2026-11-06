@@ -809,6 +809,35 @@ TEST_CASE("reprogramar crea un turno NUEVO y deja el viejo como Reprogramado",
     CHECK(nuevo.getConsultorio() == original.getConsultorio());
 }
 
+TEST_CASE("reprogramar devuelve el id del turno NUEVO", servicio_reprogramar_devuelve_el_id) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Turno original = turnoDePrueba(1, 1, 1, 10, 0);
+    escenario.servicio.agendar(original);
+
+    // EL ID DEVUELTO ES EL DEL TURNO NUEVO
+    //
+    // La pantalla que reprograma lo necesita para armar el mensaje "Turno #1
+    // reprogramado. Nuevo turno #2.": sin ese id, el mensaje no se puede
+    // escribir.
+    const int idNuevo = escenario.servicio.reprogramar(1, fechaDesplazada(45), Hora(11, 0));
+
+    CHECK(idNuevo == 2);
+
+    // Y es el id del turno que quedo en el repositorio: no es un numero
+    // cualquiera, es el del turno que se creo.
+    Turno nuevo;
+    CHECK(escenario.turnos.buscarPorId(idNuevo, nuevo) == true);
+    CHECK(nuevo.getEstado() == EstadoTurno::Activo);
+    CHECK(nuevo.getHora() == Hora(11, 0));
+
+    // Y el viejo apunta al nuevo.
+    Turno viejo;
+    CHECK(escenario.turnos.buscarPorId(1, viejo) == true);
+    CHECK(viejo.getIdTurnoReemplazante() == idNuevo);
+}
+
 TEST_CASE("reprogramar a un horario libre funciona aunque el turno viejo siga en el repositorio",
           servicio_reprogramar_a_horario_libre) {
     Escenario escenario;

@@ -146,9 +146,9 @@ void ServicioTurnos::cancelar(int idTurno_) {
 // REPROGRAMAR
 // ---------------------------------------------------------------------------
 
-void ServicioTurnos::reprogramar(int idTurno_,
-                                  const Fecha& nuevaFecha_,
-                                  const Hora& nuevaHora_) {
+int ServicioTurnos::reprogramar(int idTurno_,
+                                 const Fecha& nuevaFecha_,
+                                 const Hora& nuevaHora_) {
     Turno original = buscarTurno(idTurno_);
 
     // Un turno cancelado NO se reprograma: `Cancelado` y `Reprogramado` son
@@ -192,6 +192,13 @@ void ServicioTurnos::reprogramar(int idTurno_,
     original.setEstado(EstadoTurno::Reprogramado);
     original.setIdTurnoReemplazante(idNuevo);
     _turnos.modificar(original);
+
+    // EL ID DEL TURNO NUEVO
+    //
+    // Lo devuelve el servicio porque es el que pide el id al repositorio:
+    // la pantalla que reprograma lo usa para avisar "Turno #31
+    // reprogramado. Nuevo turno #32." y no puede sacarlo de otro lado.
+    return idNuevo;
 }
 
 // ---------------------------------------------------------------------------
