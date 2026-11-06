@@ -104,15 +104,27 @@ private:
         Id,
         Formulario,
         Selector,
-        Confirmar
+        Confirmar,
+        Listado,
+        Criterio,
+        Valor,
+        Resultados,
+        Detalle
     };
 
-    // QUE SE HACE CON EL TURNO QUE SE ELIGE
+    // Que se hace con el turno que se elige
     //
     // El id es el PRIMER paso de cuatro de las acciones: el mismo campo
     // sirve para cancelar, reprogramar, modificar y ver el detalle, y lo
     // que cambia despues es lo que se hace con el turno encontrado.
-    enum class Accion { Agendar, Cancelar, Reprogramar, Modificar };
+    enum class Accion { Agendar, Cancelar, Reprogramar, Modificar, Detalle };
+
+    // LOS CRITERIOS DE BUSQUEDA
+    //
+    // Son seis: el id, el paciente, el medico, la especialidad, el
+    // consultorio y el estado. La busqueda es de DOS PASOS (decision 5):
+    // primero se elige el criterio y despues se escribe el valor.
+    enum class Criterio { Id, Paciente, Medico, Especialidad, Consultorio, Estado };
 
     // LOS DATOS QUE ESCRIBE EL FORMULARIO
     //
@@ -157,6 +169,8 @@ private:
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo,
                       const std::function<void()>& alConfirmar);
     bool manejarConfirmacion(const Evento& evento);
+    bool manejarMenuCriterios(const Evento& evento);
+    bool manejarLectura(const Evento& evento);
 
     // --- Las acciones ---
     void iniciarAgendar();
@@ -181,6 +195,15 @@ private:
     void modificarTurno(const DatosFormulario& datos);
     void ejecutarCancelacion();
 
+    // --- La busqueda ---
+    void abrirCriterio();
+    void iniciarBusqueda(Criterio criterio);
+    void confirmarValor();
+    std::vector<std::vector<std::string>> buscarPorCriterio(Criterio criterio,
+                                                              const std::string& valor) const;
+    std::string etiquetaDeCriterio(Criterio criterio) const;
+    Campo::Validador validadorDeCriterio(Criterio criterio) const;
+
     // --- Los mensajes ---
     void avisar(const std::string& texto);
     void avisarExito(const std::string& texto);
@@ -196,6 +219,11 @@ private:
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaFormulario() const;
     ftxui::Element lineaConfirmacion() const;
+    ftxui::Element lineaListado() const;
+    ftxui::Element lineaResultados() const;
+    ftxui::Element lineaDetalle() const;
+    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas) const;
+    std::string vacio(const std::string& queFalta) const;
     std::string ayuda() const;
 
     // --- El texto plano (lo que se ve sin terminal) ---
@@ -209,9 +237,14 @@ private:
     Theme _tema;
     std::string _titulo;
     Menu _menu;
+    Menu _menuCriterios;
 
     Vista _vista = Vista::Menu;
     Accion _accion = Accion::Agendar;
+
+    // El criterio de busqueda elegido y las filas del resultado.
+    Criterio _criterioElegido = Criterio::Id;
+    std::vector<std::vector<std::string>> _filasResultado;
 
     // Los campos del formulario y el que tiene el foco.
     std::vector<std::unique_ptr<Campo>> _campos;
@@ -234,6 +267,9 @@ private:
 
     // El campo del id.
     std::unique_ptr<Campo> _campoId;
+
+    // El campo del valor que se busca.
+    std::unique_ptr<Campo> _campoValor;
 
     // La confirmacion de la cancelacion.
     std::unique_ptr<Confirmacion> _confirmacion;

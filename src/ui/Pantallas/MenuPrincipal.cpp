@@ -6,6 +6,7 @@
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
+#include "ui/Pantallas/Turnos.h"
 
 #include <ftxui.hpp>
 
@@ -21,6 +22,7 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     // "Volver" en todos los niveles (aca, "Salir").
     _menu.agregar('1', "Pacientes", [this]() { abrirPacientes(); });
     _menu.agregar('2', "Medicos", [this]() { abrirMedicos(); });
+    _menu.agregar('3', "Turnos", [this]() { abrirTurnos(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -46,6 +48,18 @@ void MenuPrincipal::abrirMedicos() {
     _aplicacion.ir([](ui::Aplicacion& app) {
         return crearPantallaMedicos(app, app.contexto().medicos(),
                                        app.contexto().servicioTurnos());
+    });
+}
+
+void MenuPrincipal::abrirTurnos() {
+    // LA PANTALLA DE TURNOS NECESITA LOS TRES REPOSITORIOS
+    //
+    // El de turnos para listar y para leer, el de pacientes y el de medicos
+    // para resolver los NOMBRES de la tabla (el turno guarda los ids, no
+    // los nombres) y el servicio, que es donde estan las reglas.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaTurnos(app, app.contexto().turnos(), app.contexto().pacientes(),
+                                   app.contexto().medicos(), app.contexto().servicioTurnos());
     });
 }
 

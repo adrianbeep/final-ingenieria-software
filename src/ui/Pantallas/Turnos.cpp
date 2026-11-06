@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -200,6 +201,86 @@ int indiceDeEspecialidad(Especialidad especialidad) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// LAS COLUMNAS Y LAS FILAS DE UN TURNO
+//
+// LAS DIEZ COLUMNAS DE LA ESPECIFICACION
+//
+// id, paciente, medico, especialidad, fecha, dia, hora, duracion,
+// consultorio y estado. Son las mismas en el listado, en los resultados de
+// una busqueda y en la ficha: una fila de turno es UNA fila de turno.
+//
+// LA ESPECIALIDAD SE MUESTRA CON SU DESCRIPCION
+//
+// Es lo que el usuario lee ("Cardiologia"): el CODIGO ("CARD") es el dato
+// que viaja en el archivo.
+//
+// EL DIA DE LA SEMANA
+//
+// Es el nombre del dia ("miercoles"): la fecha sola no dice si es un dia
+// de trabajo.
+// ---------------------------------------------------------------------------
+const std::vector<std::string>& cabecerasDeTurno() {
+    static const std::vector<std::string> cabeceras = {"id",      "paciente", "medico",
+                                                        "especialidad", "fecha",   "dia",
+                                                        "hora",   "duracion", "consultorio",
+                                                        "estado"};
+    return cabeceras;
+}
+
+// EL NOMBRE DEL PACIENTE Y DEL MEDICO
+//
+// El turno guarda los IDS del paciente y del medico, no sus nombres: la
+// fila los resuelve con el repositorio. Es el mismo nombre que se ve en
+// las tablas de las otras pantallas.
+//
+// CUANDO NO EXISTEN
+//
+// Se muestra el id con un "#" adelante: un dato que falta tiene que
+// verse, no desaparecer.
+std::string nombreDelPaciente(int id, RepositorioPacientes& pacientes) {
+    Paciente paciente;
+    if (!pacientes.buscarPorId(id, paciente)) {
+        return "#" + std::to_string(id);
+    }
+    return paciente.getNombre() + " " + paciente.getApellido();
+}
+
+std::string nombreDelMedico(int id, RepositorioMedicos& medicos) {
+    Medico medico;
+    if (!medicos.buscarPorId(id, medico)) {
+        return "#" + std::to_string(id);
+    }
+    return medico.getNombre() + " " + medico.getApellido();
+}
+
+// LA FILA DE UN TURNO
+std::vector<std::string> filaDe(const Turno& turno, RepositorioPacientes& pacientes,
+                                RepositorioMedicos& medicos) {
+    return {std::to_string(turno.getId()),
+            nombreDelPaciente(turno.getIdPaciente(), pacientes),
+            nombreDelMedico(turno.getIdMedico(), medicos),
+            descripcionDe(turno.getEspecialidad()),
+            turno.getFecha().aTexto(),
+            Fecha::nombreDiaSemana(turno.getFecha().diaSemana()),
+            turno.getHora().aTexto(),
+            std::to_string(turno.getDuracionMin()),
+            turno.getConsultorio(),
+            estadoATexto(turno.getEstado())};
+}
+
+// EL RESUMEN DE UN TURNO
+//
+// Una linea con lo que hace falta para RECONOCERLO: el id, la fecha, la
+// hora, el estado y el consultorio. Es lo que se usa para nombrar al turno
+// que reemplaza a otro (y al que lo reemplaza) sin repetir la tabla
+// entera.
+std::string resumenDe(const Turno& turno) {
+    return "#" + std::to_string(turno.getId()) + " (" + turno.getFecha().aTexto() + " "
+        + turno.getHora().aTexto() + ", " + estadoATexto(turno.getEstado()) + ", "
+        + turno.getConsultorio() + ")";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -217,7 +298,8 @@ PantallaTurnos::PantallaTurnos(Aplicacion& aplicacion,
       _medicos(medicos),
       _servicioTurnos(servicioTurnos),
       _titulo("TURNOS"),
-      _menu("Turnos") {
+      _menu("Turnos"),
+      _menuCriterios("Buscar turnos") {
     // EL MENU DEL MODULO
     //
     // El atajo es el numero que se escribe (decision D28) y el '0' es
@@ -226,7 +308,25 @@ PantallaTurnos::PantallaTurnos(Aplicacion& aplicacion,
     _menu.agregar('2', "Cancelar turno", [this]() { iniciarConId(Accion::Cancelar); });
     _menu.agregar('3', "Reprogramar turno", [this]() { iniciarConId(Accion::Reprogramar); });
     _menu.agregar('4', "Modificar turno", [this]() { iniciarConId(Accion::Modificar); });
+    _menu.agregar('5', "Listar todos", [this]() { irA(Vista::Listado); });
+    _menu.agregar('6', "Buscar", [this]() { abrirCriterio(); });
+    _menu.agregar('7', "Ver detalle", [this]() { iniciarConId(Accion::Detalle); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
+
+    // EL MENU DE CRITERIOS
+    //
+    // La busqueda es de DOS PASOS (decision 5): primero se elige el
+    // criterio y despues se escribe el valor. Los criterios salen en el
+    // orden de la especificacion y su atajo es la posicion.
+    static const Criterio CRITERIOS[] = {Criterio::Id,           Criterio::Paciente,
+                                         Criterio::Medico,       Criterio::Especialidad,
+                                         Criterio::Consultorio,  Criterio::Estado};
+    for (std::size_t i = 0; i < std::size(CRITERIOS); ++i) {
+        _menuCriterios.agregar(static_cast<char>('1' + static_cast<int>(i)),
+                                etiquetaDeCriterio(CRITERIOS[i]),
+                                [this, criterio = CRITERIOS[i]]() { iniciarBusqueda(criterio); });
+    }
+    _menuCriterios.agregar('0', "Volver", [this]() { volverAtras(); });
 }
 
 std::string PantallaTurnos::titulo() const {
@@ -242,13 +342,15 @@ void PantallaTurnos::irA(Vista vista) {
 }
 
 void PantallaTurnos::volverAtras() {
-    // EL "VOLVER" TIENE TRES DESTINOS
+    // EL "VOLVER" SUBE UN NIVEL
     //
     //   - desde el menu de la pantalla, se sale de la pantalla (el menu
     //     principal esta en la pila de la aplicacion);
     //   - desde la confirmacion, se vuelve a la vista del id;
     //   - desde el selector, se vuelve al formulario (el selector es un
     //     paso del formulario, no un nivel del menu);
+    //   - desde el valor de la busqueda, se vuelve al menu de criterios
+    //     (la busqueda es de dos pasos: criterio y despues valor);
     //   - desde cualquier otra vista, se vuelve al menu.
     switch (_vista) {
         case Vista::Menu:
@@ -259,6 +361,9 @@ void PantallaTurnos::volverAtras() {
             return;
         case Vista::Selector:
             irA(Vista::Formulario);
+            return;
+        case Vista::Valor:
+            irA(Vista::Criterio);
             return;
         default:
             irA(Vista::Menu);
@@ -316,6 +421,14 @@ bool PantallaTurnos::manejar(const Evento& evento) {
             return manejarSelector(evento);
         case Vista::Confirmar:
             return manejarConfirmacion(evento);
+        case Vista::Criterio:
+            return manejarMenuCriterios(evento);
+        case Vista::Valor:
+            return manejarCampo(evento, _campoValor, [this]() { confirmarValor(); });
+        case Vista::Listado:
+        case Vista::Resultados:
+        case Vista::Detalle:
+            return manejarLectura(evento);
     }
     return false;
 }
@@ -507,6 +620,35 @@ bool PantallaTurnos::manejarConfirmacion(const Evento& evento) {
         irA(Vista::Id);
     }
     return true;
+}
+
+bool PantallaTurnos::manejarMenuCriterios(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    return _menuCriterios.aplicarEvento(evento);
+}
+
+bool PantallaTurnos::manejarLectura(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    // EL `Escape` VUELVE AL MENU DE LA PANTALLA
+    //
+    // Las vistas de solo lectura (el listado, los resultados y la ficha)
+    // no tienen ningun campo: el `Escape` sube un nivel, al menu.
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    // Las vistas de solo lectura no consumen nada mas.
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +864,14 @@ void PantallaTurnos::confirmarId() {
             return;
         }
 
+        case Accion::Detalle:
+            // LA FICHA DEL TURNO
+            //
+            // El turno ya esta cargado: la ficha lo muestra entero, con el
+            // turno que lo reemplazo y el turno al que reemplazo.
+            irA(Vista::Detalle);
+            return;
+
         case Accion::Agendar:
             // No deberia llegar aca: "agendar" no pasa por el id.
             irA(Vista::Menu);
@@ -748,6 +898,11 @@ void PantallaTurnos::ejecutarAccion(const DatosFormulario& datos) {
             case Accion::Cancelar:
                 // No deberia llegar aca: la cancelacion tiene su propio
                 // camino (la confirmacion).
+                irA(Vista::Menu);
+                return;
+            case Accion::Detalle:
+                // No deberia llegar aca: el detalle no pasa por el
+                // formulario.
                 irA(Vista::Menu);
                 return;
         }
@@ -828,6 +983,193 @@ void PantallaTurnos::ejecutarCancelacion() {
         avisar(error.what());
         irA(Vista::Id);
     }
+}
+
+// ---------------------------------------------------------------------------
+// La busqueda
+//
+// LA BUSQUEDA ES DE DOS PASOS
+//
+// Primero se elige el CRITERIO (el menu) y despues se escribe el VALOR (el
+// campo). Es la decision 5 del proyecto: un buscador multi-campo obliga a
+// decidir que campo se busca y es mas dificil de usar.
+//
+// LAS REGLAS SON LAS DEL DOMINIO
+//
+// La especialidad se busca por CODIGO ("CARD") y el estado por su texto
+// ("Activo"): los dos los valida el dominio (`especialidadDesdeCodigo` y
+// `estadoDesdeTexto`), asi que su error se muestra como el de cualquier
+// otro dato.
+//
+// El paciente y el medico se buscan por NOMBRE: la coincidencia es
+// PARCIAL e insensible a mayusculas, y es la del repositorio
+// (`buscarPorNombre`), no una regla nueva de la pantalla.
+// ---------------------------------------------------------------------------
+
+void PantallaTurnos::abrirCriterio() {
+    irA(Vista::Criterio);
+}
+
+std::string PantallaTurnos::etiquetaDeCriterio(Criterio criterio) const {
+    switch (criterio) {
+        case Criterio::Id:
+            return "id";
+        case Criterio::Paciente:
+            return "paciente";
+        case Criterio::Medico:
+            return "medico";
+        case Criterio::Especialidad:
+            return "especialidad";
+        case Criterio::Consultorio:
+            return "consultorio";
+        case Criterio::Estado:
+            return "estado";
+    }
+    return "";
+}
+
+Campo::Validador PantallaTurnos::validadorDeCriterio(Criterio criterio) const {
+    switch (criterio) {
+        case Criterio::Id:
+            return validadorDeId();
+
+        case Criterio::Especialidad:
+            // LA ESPECIALIDAD SE BUSCA POR CODIGO
+            //
+            // El codigo es el dato que viaja en el archivo, asi que es el
+            // que se escribe. El dominio dice si existe.
+            return [](const std::string& texto) -> std::string {
+                try {
+                    (void)especialidadDesdeCodigo(texto);
+                } catch (const DatoInvalidoException& error) {
+                    return error.motivo();
+                }
+                return "";
+            };
+
+        case Criterio::Estado:
+            // EL ESTADO SE BUSCA POR SU TEXTO
+            //
+            // El texto es el que ve el usuario ("Activo", "Cancelado",
+            // "Reprogramado"). El dominio dice si existe.
+            return [](const std::string& texto) -> std::string {
+                try {
+                    (void)estadoDesdeTexto(texto);
+                } catch (const DatoInvalidoException& error) {
+                    return error.motivo();
+                }
+                return "";
+            };
+
+        case Criterio::Paciente:
+        case Criterio::Medico:
+        case Criterio::Consultorio:
+        default:
+            // Un texto libre: lo que importa es que no este vacio.
+            return [](const std::string& texto) -> std::string {
+                if (!Utils::esNoVacio(texto)) {
+                    return "el valor a buscar no puede estar vacio";
+                }
+                return "";
+            };
+    }
+}
+
+void PantallaTurnos::iniciarBusqueda(Criterio criterio) {
+    _criterioElegido = criterio;
+    _campoValor = std::make_unique<Campo>("Valor a buscar", "", validadorDeCriterio(criterio));
+    irA(Vista::Valor);
+}
+
+void PantallaTurnos::confirmarValor() {
+    const std::string valor = _campoValor->valor();
+    try {
+        _filasResultado = buscarPorCriterio(_criterioElegido, valor);
+    } catch (const ExcepcionSistema& error) {
+        // EL VALOR NO ES VALIDO PARA EL CRITERIO
+        //
+        // El campo ya lo habia avisado (su validador pregunta al
+        // dominio), asi que esto es la red de contencion: el mensaje se
+        // muestra y el usuario vuelve a escribir el valor.
+        avisar(error.what());
+        irA(Vista::Valor);
+        return;
+    }
+    irA(Vista::Resultados);
+}
+
+std::vector<std::vector<std::string>> PantallaTurnos::buscarPorCriterio(Criterio criterio,
+                                                                         const std::string& valor) const {
+    std::vector<std::vector<std::string>> filas;
+
+    switch (criterio) {
+        case Criterio::Id: {
+            const int id = idDesdeTexto(valor);
+            if (id < 0) {
+                return filas;
+            }
+            Turno turno;
+            if (_turnos.buscarPorId(id, turno)) {
+                filas.push_back(filaDe(turno, _pacientes, _medicos));
+            }
+            return filas;
+        }
+
+        case Criterio::Paciente: {
+            // POR NOMBRE, CON LA REGLA DEL REPOSITORIO
+            //
+            // La coincidencia es parcial e insensible a mayusculas: la
+            // pregunta el repositorio, que es quien tiene el conjunto.
+            for (const Paciente& paciente : _pacientes.buscarPorNombre(valor)) {
+                for (const Turno& turno : _servicioTurnos.turnosDePaciente(paciente.getId())) {
+                    filas.push_back(filaDe(turno, _pacientes, _medicos));
+                }
+            }
+            return filas;
+        }
+
+        case Criterio::Medico: {
+            for (const Medico& medico : _medicos.buscarPorNombre(valor)) {
+                for (const Turno& turno : _servicioTurnos.turnosDeMedico(medico.getId())) {
+                    filas.push_back(filaDe(turno, _pacientes, _medicos));
+                }
+            }
+            return filas;
+        }
+
+        case Criterio::Especialidad: {
+            const Especialidad especialidad = especialidadDesdeCodigo(valor);
+            for (const Turno& turno : _servicioTurnos.turnosDeEspecialidad(especialidad)) {
+                filas.push_back(filaDe(turno, _pacientes, _medicos));
+            }
+            return filas;
+        }
+
+        case Criterio::Consultorio: {
+            // EL CONSULTORIO SE COMPARA EXACTO, IGNORANDO MAYUSCULAS
+            //
+            // El consultorio es un valor de campo ("A-1"), no un nombre: se
+            // busca el que es, no los que lo contienen.
+            const std::string buscado = Utils::aMinusculas(Utils::trim(valor));
+            for (const Turno& turno : _turnos.listar()) {
+                if (Utils::aMinusculas(turno.getConsultorio()) == buscado) {
+                    filas.push_back(filaDe(turno, _pacientes, _medicos));
+                }
+            }
+            return filas;
+        }
+
+        case Criterio::Estado: {
+            const EstadoTurno estado = estadoDesdeTexto(valor);
+            for (const Turno& turno : _turnos.listar()) {
+                if (turno.getEstado() == estado) {
+                    filas.push_back(filaDe(turno, _pacientes, _medicos));
+                }
+            }
+            return filas;
+        }
+    }
+    return filas;
 }
 
 // ---------------------------------------------------------------------------
@@ -951,6 +1293,80 @@ ftxui::Element PantallaTurnos::lineaConfirmacion() const {
     return ftxui::vbox(std::move(lineas));
 }
 
+ftxui::Element PantallaTurnos::tablaDe(const std::vector<std::vector<std::string>>& filas) const {
+    Tabla tabla(cabecerasDeTurno());
+    for (const std::vector<std::string>& fila : filas) {
+        tabla.agregarFila(fila);
+    }
+    return tabla.renderizar();
+}
+
+ftxui::Element PantallaTurnos::lineaListado() const {
+    std::vector<std::vector<std::string>> filas;
+    for (const Turno& turno : _turnos.listar()) {
+        filas.push_back(filaDe(turno, _pacientes, _medicos));
+    }
+    if (filas.empty()) {
+        return ftxui::text("  " + vacio("turnos"));
+    }
+    return tablaDe(filas);
+}
+
+ftxui::Element PantallaTurnos::lineaResultados() const {
+    if (_filasResultado.empty()) {
+        return ftxui::text("  No hay coincidencias. 0: volver al menu.");
+    }
+    return tablaDe(_filasResultado);
+}
+
+ftxui::Element PantallaTurnos::lineaDetalle() const {
+    ftxui::Elements lineas;
+
+    lineas.push_back(ftxui::text("  Ficha de turno #" + std::to_string(_turno.getId())));
+
+    // LA FILA DEL TURNO
+    //
+    // Todos los campos del turno, en las diez columnas de la
+    // especificacion.
+    std::vector<std::vector<std::string>> filas;
+    filas.push_back(filaDe(_turno, _pacientes, _medicos));
+    lineas.push_back(tablaDe(filas));
+
+    // EL TURNO REEMPLAZANTE
+    //
+    // Un turno reprogramado apunta al turno que lo reemplazo: ese es el
+    // `idTurnoReemplazante`.
+    if (_turno.getIdTurnoReemplazante() != -1) {
+        lineas.push_back(
+            ftxui::text("  idTurnoReemplazante: "
+                        + std::to_string(_turno.getIdTurnoReemplazante())));
+        Turno reemplazo;
+        if (_turnos.buscarPorId(_turno.getIdTurnoReemplazante(), reemplazo)) {
+            lineas.push_back(ftxui::text("  Reemplazante: " + resumenDe(reemplazo)));
+        }
+    }
+
+    // EL TURNO QUE ESTE TURNO REEMPLAZO
+    //
+    // El turno NUEVO no guarda a quien reemplazo: el VIEJO es el que
+    // apunta. Por eso se busca al turno que apunta a este.
+    for (const Turno& otro : _turnos.listar()) {
+        if (otro.getIdTurnoReemplazante() == _turno.getId()) {
+            lineas.push_back(ftxui::text("  Reemplazado: " + resumenDe(otro)));
+        }
+    }
+
+    return ftxui::vbox(std::move(lineas));
+}
+
+std::string PantallaTurnos::vacio(const std::string& queFalta) const {
+    // EL ESTADO VACIO TIENE SALIDA
+    //
+    // Un mensaje que dice "no hay nada" y no dice como volver deja al
+    // usuario atrapado: el mensaje dice las dos cosas.
+    return "No hay " + queFalta + " para mostrar. 0: volver al menu.";
+}
+
 ftxui::Element PantallaTurnos::renderizar() {
     ftxui::Elements lineas;
 
@@ -993,6 +1409,27 @@ ftxui::Element PantallaTurnos::renderizar() {
         case Vista::Confirmar:
             lineas.push_back(lineaConfirmacion());
             break;
+        case Vista::Listado:
+            lineas.push_back(lineaListado());
+            break;
+        case Vista::Criterio:
+            // La opcion `i` del menu de criterios queda en la fila
+            // `filaInicial + i`: el hit-testing del raton lo necesita.
+            _menuCriterios.definirFilaInicial(static_cast<int>(lineas.size()));
+            for (int i = 0; i < _menuCriterios.cantidad(); ++i) {
+                lineas.push_back(lineaOpcion(_menuCriterios, i));
+            }
+            lineas.push_back(ftxui::separator());
+            break;
+        case Vista::Valor:
+            lineas.push_back(lineaCampo(*_campoValor, true));
+            break;
+        case Vista::Resultados:
+            lineas.push_back(lineaResultados());
+            break;
+        case Vista::Detalle:
+            lineas.push_back(lineaDetalle());
+            break;
     }
 
     if (!mensajeActual().esVacio()) {
@@ -1012,6 +1449,8 @@ std::string PantallaTurnos::ayuda() const {
     switch (_vista) {
         case Vista::Menu:
             return "Flechas: mover   Enter: elegir   0: volver   Esc: volver";
+        case Vista::Criterio:
+            return "Flechas: mover   Enter: elegir   0: volver   Esc: volver";
         case Vista::Formulario:
             return "Tab: siguiente campo   Enter: confirmar   0: volver (campo vacio)   "
                    "Esc: volver";
@@ -1019,9 +1458,14 @@ std::string PantallaTurnos::ayuda() const {
             return "Flechas: mover   Numero: elegir   Enter: confirmar   "
                    "Esc: volver al formulario";
         case Vista::Id:
+        case Vista::Valor:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Confirmar:
             return "1: Si   2: No   0: volver   Esc: volver";
+        case Vista::Listado:
+        case Vista::Resultados:
+        case Vista::Detalle:
+            return "0: volver   Esc: volver";
     }
     return "";
 }
@@ -1039,6 +1483,11 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
     static const std::string formulario = "Formulario";
     static const std::string selector = "Selector";
     static const std::string confirmar = "Confirmar";
+    static const std::string listado = "Listado";
+    static const std::string criterio = "Criterio";
+    static const std::string valor = "Valor";
+    static const std::string resultados = "Resultados";
+    static const std::string detalle = "Detalle";
 
     switch (vista) {
         case Vista::Menu:
@@ -1051,6 +1500,16 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
             return selector;
         case Vista::Confirmar:
             return confirmar;
+        case Vista::Listado:
+            return listado;
+        case Vista::Criterio:
+            return criterio;
+        case Vista::Valor:
+            return valor;
+        case Vista::Resultados:
+            return resultados;
+        case Vista::Detalle:
+            return detalle;
     }
     return menu;
 }
@@ -1067,6 +1526,13 @@ std::string PantallaTurnos::textoDeLaVista() const {
             for (int i = 0; i < _menu.cantidad(); ++i) {
                 salida += "  " + std::string(1, _menu.atajoDe(i)) + ". "
                     + _menu.etiquetas()[static_cast<std::size_t>(i)] + "\n";
+            }
+            return salida;
+        }
+        case Vista::Criterio: {
+            for (int i = 0; i < _menuCriterios.cantidad(); ++i) {
+                salida += "  " + std::string(1, _menuCriterios.atajoDe(i)) + ". "
+                    + _menuCriterios.etiquetas()[static_cast<std::size_t>(i)] + "\n";
             }
             return salida;
         }
@@ -1111,6 +1577,73 @@ std::string PantallaTurnos::textoDeLaVista() const {
                 salida += "  " + _confirmacion->pregunta() + "\n";
                 salida += "  1. Si\n";
                 salida += "  2. No\n";
+            }
+            return salida;
+        }
+        case Vista::Valor: {
+            if (!_campoValor) {
+                return salida;
+            }
+            salida += "  " + _campoValor->etiqueta() + ": " + _campoValor->textoEnPantalla() + "\n";
+            if (!_campoValor->error().empty()) {
+                salida += "      " + _campoValor->error() + "\n";
+            }
+            return salida;
+        }
+        case Vista::Listado: {
+            const std::vector<Turno> turnos = _turnos.listar();
+            for (const Turno& turno : turnos) {
+                const std::vector<std::string> fila = filaDe(turno, _pacientes, _medicos);
+                for (std::size_t i = 0; i < fila.size(); ++i) {
+                    if (i > 0) {
+                        salida += " | ";
+                    }
+                    salida += fila[i];
+                }
+                salida += "\n";
+            }
+            if (turnos.empty()) {
+                salida += "  " + vacio("turnos") + "\n";
+            }
+            return salida;
+        }
+        case Vista::Resultados: {
+            for (const std::vector<std::string>& fila : _filasResultado) {
+                for (std::size_t i = 0; i < fila.size(); ++i) {
+                    if (i > 0) {
+                        salida += " | ";
+                    }
+                    salida += fila[i];
+                }
+                salida += "\n";
+            }
+            if (_filasResultado.empty()) {
+                salida += "  No hay coincidencias. 0: volver al menu.\n";
+            }
+            return salida;
+        }
+        case Vista::Detalle: {
+            salida += "  Ficha de turno #" + std::to_string(_turno.getId()) + "\n";
+            const std::vector<std::string> fila = filaDe(_turno, _pacientes, _medicos);
+            for (std::size_t i = 0; i < fila.size(); ++i) {
+                if (i > 0) {
+                    salida += " | ";
+                }
+                salida += fila[i];
+            }
+            salida += "\n";
+            if (_turno.getIdTurnoReemplazante() != -1) {
+                salida += "  idTurnoReemplazante: "
+                    + std::to_string(_turno.getIdTurnoReemplazante()) + "\n";
+                Turno reemplazo;
+                if (_turnos.buscarPorId(_turno.getIdTurnoReemplazante(), reemplazo)) {
+                    salida += "  Reemplazante: " + resumenDe(reemplazo) + "\n";
+                }
+            }
+            for (const Turno& otro : _turnos.listar()) {
+                if (otro.getIdTurnoReemplazante() == _turno.getId()) {
+                    salida += "  Reemplazado: " + resumenDe(otro) + "\n";
+                }
             }
             return salida;
         }
