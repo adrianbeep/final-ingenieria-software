@@ -10,6 +10,6 @@ id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|est
 8|2|8|PEDI|2026-10-06|11:00|60|Consultorio 2|Activo|-1
 9|3|9|TRAU|2026-10-07|08:00|60|Consultorio 3|Activo|-1
 10|4|10|GAST|2026-10-07|09:00|60|Consultorio 3|Activo|-1
-11|5|11|OFTA|2026-10-07|10:00|60|Consultorio 3|Cancelado|-1
+11|5|11|OFTA|2026-10-07|10:00|60|Consultorio 3|Reprogramado|13
 12|6|12|ENDO|2026-10-07|11:00|60|Consultorio 4|Activo|-1
-13|5|11|OFTA|2026-10-09|14:00|60|Consultorio 2|Reprogramado|11
+13|5|11|OFTA|2026-10-09|14:00|60|Consultorio 2|Activo|-1

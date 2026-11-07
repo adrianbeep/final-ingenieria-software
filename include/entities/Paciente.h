@@ -7,7 +7,7 @@
 #include <string>
 
 // ---------------------------------------------------------------------------
-// Paciente: una Persona que attends consultas medicas.
+// Paciente: una Persona que atiende consultas medicas.
 //
 // `dni` es UNICA en el sistema: la unicidad la verifica
 // `RepositorioPacientes`, que es quien tiene el conjunto de las entidades
