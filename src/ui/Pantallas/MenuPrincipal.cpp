@@ -4,10 +4,12 @@
 #include "ui/ColorFtxui.h"
 #include "ui/Contexto.h"
 #include "ui/Mensaje.h"
+#include "ui/Pantallas/Calendario.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
 #include "ui/Pantallas/Reportes.h"
 #include "ui/Pantallas/Turnos.h"
+#include "ui/Reloj.h"
 
 #include <ftxui.hpp>
 
@@ -25,6 +27,7 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     _menu.agregar('2', "Medicos", [this]() { abrirMedicos(); });
     _menu.agregar('3', "Turnos", [this]() { abrirTurnos(); });
     _menu.agregar('4', "Reportes", [this]() { abrirReportes(); });
+    _menu.agregar('5', "Calendario", [this]() { abrirCalendario(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -74,6 +77,24 @@ void MenuPrincipal::abrirReportes() {
     _aplicacion.ir([](ui::Aplicacion& app) {
         return crearPantallaReportes(app, app.contexto().pacientes(), app.contexto().medicos(),
                                       app.contexto().servicioTurnos());
+    });
+}
+
+void MenuPrincipal::abrirCalendario() {
+    // LA PANTALLA DE CALENDARIO NECESITA LOS DOS REPOSITORIOS DE PERSONAS
+    //
+    // Los de pacientes y de medicos para resolver los NOMBRES de la tabla
+    // del detalle del dia (el turno guarda los ids, no los nombres) y el
+    // servicio, que es donde estan las consultas de los turnos.
+    //
+    // Y LA FECHA DE HOY
+    //
+    // La pantalla NO la consulta: la RECIBE. Aca se le pasa la del reloj
+    // del sistema (ver `ui/Reloj.h`), asi que la pantalla no tiene una regla
+    // que no sea la suya y los tests pueden fijarla.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaCalendario(app, app.contexto().pacientes(), app.contexto().medicos(),
+                                       app.contexto().servicioTurnos(), ui::hoyDelSistema());
     });
 }
 

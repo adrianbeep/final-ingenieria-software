@@ -17,8 +17,11 @@
 #include "ui/Contexto.h"
 #include "ui/CrudPersonas.h"
 #include "ui/Evento.h"
+#include "ui/MapaCalor.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
+#include "ui/Mes.h"
+#include "ui/Pantallas/Calendario.h"
 #include "ui/Pantallas/MenuPrincipal.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
@@ -68,9 +71,16 @@ namespace {
 // En Windows `_putenv_s(nombre, "")` borra la variable; en POSIX eso seria
 // "definida pero vacia", que segun la especificacion de NO_COLOR NO apaga
 // los colores. En los dos casos el resultado es "no hay NO_COLOR".
+//
+// OJO CON EL CASO DE BORRAR EN WINDOWS
+//
+// `_putenv_s(nombre, nullptr)` NO borra la variable en todas las
+// implementaciones de la CRT (con MinGW la deja como estaba). La forma que
+// si la borra en todas es la cadena vacia: `getenv` devuelve NULL y la
+// variable deja de existir.
 void definirNoColor(const char* valor) {
 #if defined(_WIN32)
-    _putenv_s("NO_COLOR", valor);
+    _putenv_s("NO_COLOR", valor == nullptr ? "" : valor);
 #else
     if (valor == nullptr) {
         unsetenv("NO_COLOR");
@@ -3910,6 +3920,718 @@ TEST_CASE("el render de la pantalla de reportes se puede dibujar en FTXUI",
     borrarNoColor();
     ui::Theme::recargarEntorno();
 }
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE CALENDARIO
+//
+// QUE SE VERIFICA ACa
+//
+//   - el menu del modulo y su atajo de volver;
+//   - la grilla del mes: los dias de la semana, los dias del mes, los huecos
+//     y la cantidad de turnos de cada dia;
+//   - el MAPA DE CALOR: los umbrales, el color de cada celda y la leyenda
+//     (con colores y con `NO_COLOR`);
+//   - el recorrido con las flechas (el mes anterior y el siguiente, con el
+//     anio dando la vuelta);
+//   - la RED DE LAS 80 COLUMNAS de la grilla.
+//
+// LA FECHA DE HOY SE INYECTA
+//
+// La pantalla recibe la fecha de HOY por parametro: los tests le pasan una
+// FIJA, asi que ningun test depende del dia en que se corre.
+//
+// LOS NOMBRES DE LOS DIAS LOS TIENE EL DOMINIO
+//
+// El test no escribe "miercoles" (con tilde): pide el nombre al dominio
+// (`Fecha::nombreDiaSemana`), que es de donde sale.
+// ---------------------------------------------------------------------------
+namespace {
+
+// El escenario de las pruebas de la pantalla de calendario.
+//
+// Es el mismo esquema que el de reportes: los repositorios de verdad (en un
+// directorio temporal), el servicio de verdad y la pantalla en la pila de la
+// aplicacion, con una pantalla de prueba DEBAJO.
+struct EscenarioCalendario {
+    EscenarioCalendario(const std::string& nombre, const Fecha& hoy)
+        : pacientes(rutaNuevaDePrueba(nombre)),
+          medicos(rutaNuevaDePrueba(nombre + "-medicos")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaCalendario>(
+            aplicacion, pacientes, medicos, servicio, hoy);
+        puntero = pantalla.get();
+        aplicacion.ir([&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+    }
+
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::Pantallas::PantallaCalendario* puntero = nullptr;
+};
+
+// Escribe un texto en la pantalla de calendario (un evento por caracter).
+void escribir(ui::Pantallas::PantallaCalendario& pantalla, const std::string& texto) {
+    for (const char caracter : texto) {
+        pantalla.manejar(eventoCaracter(caracter));
+    }
+}
+
+// ABRE LA GRILLA DEL MES
+//
+// El mes se pide en dos pasos: el anio y el mes. La funcion hace los dos.
+void abrirMes(ui::Pantallas::PantallaCalendario& pantalla, const std::string& anio,
+               const std::string& mes) {
+    pantalla.manejar(eventoCaracter('1'));
+    escribir(pantalla, anio);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    escribir(pantalla, mes);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+}
+
+// ABRE EL DETALLE DE UN DIA
+void abrirDetalle(ui::Pantallas::PantallaCalendario& pantalla, const std::string& dia) {
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, dia);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+}
+
+// LAS CELDAS DE UNA FILA DE LA GRILLA
+//
+// La fila del texto plano de la grilla es "|    1    |    2    |...": se
+// parte por el separador vertical y se saca el texto de cada celda (con los
+// espacios que la centran).
+std::vector<std::string> celdasDeLaFila(const std::string& fila) {
+    std::vector<std::string> celdas;
+
+    std::size_t inicio = fila.find('|');
+    while (inicio != std::string::npos) {
+        const std::size_t fin = fila.find('|', inicio + 1);
+        if (fin == std::string::npos) {
+            break;
+        }
+        celdas.push_back(fila.substr(inicio + 1, fin - inicio - 1));
+        inicio = fin;
+    }
+
+    return celdas;
+}
+
+// LA CELDA SIN LOS ESPACIOS QUE LA CENTRAN
+std::string celdaSinEspacios(const std::string& celda) {
+    const std::size_t inicio = celda.find_first_not_of(' ');
+    if (inicio == std::string::npos) {
+        return "";
+    }
+    const std::size_t fin = celda.find_last_not_of(' ');
+    return celda.substr(inicio, fin - inicio + 1);
+}
+
+} // namespace
+
+TEST_CASE("el menu de calendario muestra las tres acciones y el cero de volver",
+           calendario_menu_inicial) {
+    EscenarioCalendario escenario("calendario_menu_inicial", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(pantalla.titulo() == "CALENDARIO");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("1. Ver mes") != std::string::npos);
+    CHECK(texto.find("2. Ver detalle del dia") != std::string::npos);
+    CHECK(texto.find("3. Agenda") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+}
+
+TEST_CASE("el cero del menu de calendario vuelve a la pantalla anterior",
+           calendario_menu_cero_vuelve) {
+    EscenarioCalendario escenario("calendario_menu_cero_vuelve", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    pantalla.manejar(eventoCaracter('0'));
+
+    // La pantalla salio de la pila: la pantalla anterior quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+TEST_CASE("la grilla del mes muestra los dias de la semana y los turnos de cada dia",
+           calendario_grilla_muestra_el_mes) {
+    EscenarioCalendario escenario("calendario_grilla_muestra_el_mes", Fecha(2027, 3, 10));
+    // DOS TURNOS EL DIEZ DE MARZO Y UNO EL VEINTE.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 30, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(9, 0), 30, "A-1"));
+    escenario.turnos.alta(
+        Turno(33, 1, 1, Especialidad::CARD, Fecha(2027, 3, 20), Hora(8, 0), 30, "A-1"));
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    CHECK(pantalla.vista() == "Grilla");
+    CHECK(pantalla.anio() == 2027);
+    CHECK(pantalla.mes() == 3);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // LA CABECERA: LOS SIETE DIAS DE LA SEMANA
+    //
+    // Los nombres los tiene el dominio: el test los pide ahi.
+    CHECK(texto.find(Fecha::nombreDiaSemana(0)) != std::string::npos);
+    CHECK(texto.find(Fecha::nombreDiaSemana(2)) != std::string::npos);
+    CHECK(texto.find(Fecha::nombreDiaSemana(6)) != std::string::npos);
+
+    // EL MES QUE SE ESTA VIENDO
+    CHECK(texto.find("2027-03") != std::string::npos);
+
+    // LA CANTIDAD DE TURNOS DE CADA DIA
+    //
+    // El dia 10 tiene dos turnos y el dia 20 tiene uno: los numeros van
+    // entre parentesis, debajo del numero del dia.
+    CHECK(texto.find("(2)") != std::string::npos);
+    CHECK(texto.find("(1)") != std::string::npos);
+    CHECK(texto.find("(0)") != std::string::npos);
+}
+
+TEST_CASE("la grilla pone los dias en la columna de su dia de la semana",
+           calendario_grilla_las_columnas) {
+    EscenarioCalendario escenario("calendario_grilla_las_columnas", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    // LA PRIMERA SEMANA: DEL LUNES 1 AL DOMINGO 7
+    //
+    // El 1 de marzo del 2027 es un LUNES: la primera celda de la grilla es
+    // el dia 1 y no hay huecos al principio.
+    const std::string primera = lineaQueEmpiezaCon(pantalla.vistaTextoPlano(), "  |");
+    const std::vector<std::string> celdas = celdasDeLaFila(primera);
+    CHECK(celdas.size() == 7);
+    if (celdas.size() == 7) {
+        CHECK(celdaSinEspacios(celdas[0]) == "1");
+        CHECK(celdaSinEspacios(celdas[6]) == "7");
+    }
+
+    // Y LA ULTIMA SEMANA: DEL LUNES 29 AL MIERCOLES 31, CON CUATRO HUECOS
+    //
+    // Los huecos son las celdas de los dias que NO son del mes: existen (la
+    // grilla es un rectangulo) pero no dicen nada.
+    const std::string ultima = lineaQueEmpiezaCon(pantalla.vistaTextoPlano(), "  |   29");
+    const std::vector<std::string> celdasUltima = celdasDeLaFila(ultima);
+    CHECK(celdasUltima.size() == 7);
+    if (celdasUltima.size() == 7) {
+        CHECK(celdaSinEspacios(celdasUltima[0]) == "29");
+        CHECK(celdaSinEspacios(celdasUltima[2]) == "31");
+        CHECK(celdaSinEspacios(celdasUltima[3]) == "");
+        CHECK(celdaSinEspacios(celdasUltima[6]) == "");
+    }
+}
+
+TEST_CASE("la grilla del mes se recorre con las flechas", calendario_grilla_las_flechas) {
+    EscenarioCalendario escenario("calendario_grilla_las_flechas", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    CHECK(pantalla.anio() == 2027);
+    CHECK(pantalla.mes() == 3);
+
+    // LA FLECHA DERECHA: EL MES SIGUIENTE
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(pantalla.anio() == 2027);
+    CHECK(pantalla.mes() == 4);
+    CHECK(pantalla.vistaTextoPlano().find("2027-04") != std::string::npos);
+
+    // LA FLECHA IZQUIERDA: EL MES ANTERIOR
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    CHECK(pantalla.anio() == 2027);
+    CHECK(pantalla.mes() == 2);
+
+    // EL ANIO DA LA VUELTA
+    //
+    // De diciembre a enero del ano siguiente, y de enero a diciembre del
+    // anterior.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    CHECK(pantalla.anio() == 2026);
+    CHECK(pantalla.mes() == 12);
+
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(pantalla.anio() == 2027);
+    CHECK(pantalla.mes() == 2);
+}
+
+TEST_CASE("el cero y el escape de la grilla vuelven al menu del modulo",
+           calendario_grilla_vuelve) {
+    EscenarioCalendario escenario("calendario_grilla_vuelve", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+
+    abrirMes(pantalla, "2027", "3");
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(pantalla.vista() == "Menu");
+
+    // Y LA PANTALLA SIGUE EN LA PILA (el `Escape` del menu NO lo consume).
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == false);
+}
+
+TEST_CASE("un anio que no existe muestra el error debajo del campo",
+           calendario_anio_invalido) {
+    EscenarioCalendario escenario("calendario_anio_invalido", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Anio");
+
+    escribir(pantalla, "1800");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA VISTA NO CAMBIA: el usuario corrige el anio.
+    CHECK(pantalla.vista() == "Anio");
+    CHECK(pantalla.vistaTextoPlano().find("el anio tiene que ser un numero entre 2000 y 2100")
+          != std::string::npos);
+}
+
+TEST_CASE("en el campo del anio el cero es un dato si ya hay texto",
+           calendario_cero_es_dato) {
+    EscenarioCalendario escenario("calendario_cero_es_dato", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    escribir(pantalla, "2");
+    escribir(pantalla, "0");
+
+    // El cero NO fue "volver": es parte del anio.
+    CHECK(pantalla.vista() == "Anio");
+    CHECK(pantalla.vistaTextoPlano().find("Anio: 20|") != std::string::npos);
+}
+
+TEST_CASE("el cero de un campo vacio del calendario vuelve al menu", calendario_cero_vuelve) {
+    EscenarioCalendario escenario("calendario_cero_vuelve", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Anio");
+
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+}
+
+// ---------------------------------------------------------------------------
+// EL MAPA DE CALOR
+//
+// QUE SE VERIFICA ACa
+//
+//   - los UMBRALES: la cantidad de turnos decide el nivel, y los niveles
+//     tienen umbrales ABSOLUTOS (1-2, 3-4, 5-6, 7 o mas);
+//   - el COLOR de la celda: es el del nivel del dia;
+//   - la LEYENDA: con colores muestra las muestras, y sin colores es de
+//     texto (los rangos y lo que significan).
+// ---------------------------------------------------------------------------
+TEST_CASE("los umbrales del mapa de calor son absolutos", calendario_mapa_calor_umbrales) {
+    // EL "0 TURNOS" NO TIENE COLOR DE CALOR
+    CHECK(ui::nivelDeCalor(0) == ui::NivelCalor::Ninguno);
+    CHECK(ui::nivelDeCalor(-1) == ui::NivelCalor::Ninguno);
+
+    // 1-2: BAJO
+    CHECK(ui::nivelDeCalor(1) == ui::NivelCalor::Bajo);
+    CHECK(ui::nivelDeCalor(2) == ui::NivelCalor::Bajo);
+
+    // 3-4: MEDIO
+    CHECK(ui::nivelDeCalor(3) == ui::NivelCalor::Medio);
+    CHECK(ui::nivelDeCalor(4) == ui::NivelCalor::Medio);
+
+    // 5-6: ALTO
+    CHECK(ui::nivelDeCalor(5) == ui::NivelCalor::Alto);
+    CHECK(ui::nivelDeCalor(6) == ui::NivelCalor::Alto);
+
+    // 7 O MAS: MAXIMO
+    CHECK(ui::nivelDeCalor(7) == ui::NivelCalor::Maximo);
+    CHECK(ui::nivelDeCalor(20) == ui::NivelCalor::Maximo);
+
+    // Y LOS RANGOS DE LA LEYENDA
+    CHECK(ui::rangoDeCalor(ui::NivelCalor::Bajo) == "1-2");
+    CHECK(ui::rangoDeCalor(ui::NivelCalor::Medio) == "3-4");
+    CHECK(ui::rangoDeCalor(ui::NivelCalor::Alto) == "5-6");
+    CHECK(ui::rangoDeCalor(ui::NivelCalor::Maximo) == "7+");
+}
+
+TEST_CASE("la celda de un dia se pinta con el color de su nivel de calor",
+           calendario_mapa_calor_color) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    EscenarioCalendario escenario("calendario_mapa_calor_color", Fecha(2027, 3, 10));
+
+    // SIETE TURNOS EL PRIMERO DEL MES: EL NIVEL MAXIMO.
+    //
+    // El 1 de marzo del 2027 es un LUNES, asi que el dia 1 es la primera
+    // celda de la grilla (columna 0, primera semana).
+    for (int i = 0; i < 7; ++i) {
+        escenario.turnos.alta(Turno(30 + i, 1, 1, Especialidad::CARD, Fecha(2027, 3, 1),
+                                    Hora(8, 0), 30, "A-1"));
+    }
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    ftxui::Screen lienzo =
+        ftxui::Screen::Create(ftxui::Dimension::Fixed(80), ftxui::Dimension::Fixed(30));
+    ftxui::Render(lienzo, pantalla.renderizar());
+
+    // LA POSICION DEL NUMERO DEL DIA
+    //
+    // La grilla arranca en la linea 5 (despues del encabezado, del
+    // separador, del titulo del mes, de la cabecera de los dias y del borde
+    // de arriba) y la columna 0 arranca en la posicion 3 (la sangria y el
+    // separador vertical). El numero esta CENTRADO en la celda.
+    const ui::Theme tema;
+    CHECK(lienzo.PixelAt(7, 5).foreground_color == ui::aFtxui(tema.calorMaximo()));
+
+    // Y UN DIA SIN TURNOS NO TIENE COLOR DE CALOR
+    //
+    // El dia 2 (la segunda celda de la primera semana) no tiene turnos: se
+    // pinta con el color normal de una celda.
+    CHECK(lienzo.PixelAt(17, 5).foreground_color == ui::aFtxui(tema.tablaCelda()));
+}
+
+TEST_CASE("la leyenda del mapa de calor muestra las muestras cuando hay colores",
+           calendario_leyenda_con_color) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    EscenarioCalendario escenario("calendario_leyenda_con_color", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // LA MUESTRA DE CADA NIVEL
+    CHECK(texto.find("\u2588\u2588\u2588 1-2") != std::string::npos);
+    CHECK(texto.find("\u2588\u2588\u2588 3-4") != std::string::npos);
+    CHECK(texto.find("\u2588\u2588\u2588 5-6") != std::string::npos);
+    CHECK(texto.find("\u2588\u2588\u2588 7+") != std::string::npos);
+    // Y EL CASO SIN TURNOS
+    CHECK(texto.find("0 = sin turnos") != std::string::npos);
+}
+
+TEST_CASE("sin NO_COLOR la leyenda del mapa de calor es de texto",
+           calendario_leyenda_sin_color) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioCalendario escenario("calendario_leyenda_sin_color", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // LOS RANGOS Y LO QUE SIGNIFICAN
+    CHECK(texto.find("1-2 = baja") != std::string::npos);
+    CHECK(texto.find("3-4 = media") != std::string::npos);
+    CHECK(texto.find("5-6 = alta") != std::string::npos);
+    CHECK(texto.find("7+ = maxima") != std::string::npos);
+    CHECK(texto.find("0 = sin turnos") != std::string::npos);
+
+    // Y NO HAY MUESTRAS DE COLOR
+    CHECK(texto.find("\u2588\u2588\u2588") == std::string::npos);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// LA RED DE LAS 80 COLUMNAS
+//
+// LA GRILLA TIENE QUE ENTRAR EN UNA TERMINAL DE 80 COLUMNAS
+//
+// La grilla no scrollea ni trunca: si es mas ancha que la terminal, la
+// parte de la derecha no se ve. Eso hay que VERIFICARLO, no suponerlo.
+// ---------------------------------------------------------------------------
+TEST_CASE("la grilla del mes entra en 80 columnas", calendario_grilla_entra_en_80) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioCalendario escenario("calendario_grilla_entra_en_80", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+    abrirMes(pantalla, "2027", "3");
+
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("el menu principal ofrece la opcion de calendario", menu_principal_calendario) {
+    EscenarioCalendario escenario("menu_principal_calendario", Fecha(2027, 3, 10));
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    const std::string texto = menu.textoPlano();
+    CHECK(texto.find("1. Pacientes") != std::string::npos);
+    CHECK(texto.find("2. Medicos") != std::string::npos);
+    CHECK(texto.find("3. Turnos") != std::string::npos);
+    CHECK(texto.find("4. Reportes") != std::string::npos);
+    CHECK(texto.find("5. Calendario") != std::string::npos);
+    CHECK(texto.find("0. Salir") != std::string::npos);
+
+    // Y EL ATAJO ABRE LA PANTALLA DE CALENDARIO.
+    menu.manejar(eventoCaracter('5'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("CALENDARIO") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL DETALLE DEL DIA Y LA AGENDA
+//
+// QUE SE VERIFICA ACa
+//
+//   - la tabla del detalle del dia (las seis columnas de la lista de turnos);
+//   - que el detalle se vea en el MES QUE SE ESTA VIENDO;
+//   - la agenda: la hora de inicio, la de fin (DERIVADA de la duracion), la
+//     duracion, la especialidad, el consultorio y el estado, en orden
+//     CRONOLOGICO;
+//   - que la agenda arranque en el dia de HOY que recibe la pantalla y que
+//     las flechas lo cambien;
+//   - el estado vacio de las dos, con su salida;
+//   - la RED DE LAS 80 COLUMNAS de las dos tablas.
+// ---------------------------------------------------------------------------
+TEST_CASE("el detalle del dia muestra la tabla de los turnos de ese dia",
+           calendario_detalle_del_dia) {
+    EscenarioCalendario escenario("calendario_detalle_del_dia", Fecha(2027, 3, 10));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // UN TURNO EL DIEZ Y OTRO EL ONCE
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2"));
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Dia");
+    escribir(pantalla, "10");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Detalle");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  1 turno(s) el 2027-03-10.");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("31") != std::string::npos);
+    CHECK(texto.find("2027-03-10") != std::string::npos);
+    CHECK(texto.find("08:00") != std::string::npos);
+    CHECK(texto.find("Ana Gomez") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    CHECK(texto.find("Activo") != std::string::npos);
+
+    // EL TURNO DEL OTRO DIA NO ESTA: el detalle es de ESE dia.
+    CHECK(texto.find("32") == std::string::npos);
+}
+
+TEST_CASE("el detalle del dia se ve en el mes que se esta viendo",
+           calendario_detalle_en_el_mes_que_se_esta_viendo) {
+    EscenarioCalendario escenario("calendario_detalle_en_el_mes_que_se_esta_viendo",
+                                  Fecha(2027, 3, 10));
+    // UN TURNO EN ABRIL
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 4, 5), Hora(8, 0), 60, "A-1"));
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    // SE RECORRE EL MES HASTA ABRIL
+    abrirMes(pantalla, "2027", "3");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(pantalla.mes() == 4);
+
+    // Y EL DETALLE MUESTRA EL DIA DE ABRIL (no el de marzo)
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+    abrirDetalle(pantalla, "5");
+
+    CHECK(pantalla.vista() == "Detalle");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  1 turno(s) el 2027-04-05.");
+}
+
+TEST_CASE("un dia sin turnos dice que no hay y como volver", calendario_detalle_sin_turnos) {
+    EscenarioCalendario escenario("calendario_detalle_sin_turnos", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    abrirDetalle(pantalla, "10");
+
+    CHECK(pantalla.vista() == "Detalle");
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("No hay turnos ese dia") != std::string::npos);
+    CHECK(texto.find("0: volver al menu") != std::string::npos);
+}
+
+TEST_CASE("un dia que no existe en el mes muestra el error", calendario_dia_invalido) {
+    EscenarioCalendario escenario("calendario_dia_invalido", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    // EL MES DE FEBRERO DEL 2027 TIENE 28 DIAS
+    abrirMes(pantalla, "2027", "2");
+    // (desde la grilla hay que volver al menu del modulo)
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Dia");
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA VISTA NO CAMBIA: el usuario corrige el dia.
+    CHECK(pantalla.vista() == "Dia");
+    CHECK(pantalla.vistaTextoPlano().find("el dia tiene que ser un numero entre 1 y 28")
+          != std::string::npos);
+}
+
+TEST_CASE("la agenda muestra el dia en orden cronologico", calendario_agenda) {
+    EscenarioCalendario escenario("calendario_agenda", Fecha(2027, 3, 10));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // DOS TURNOS DEL DIA: UNO A LAS DIEZ Y OTRO A LAS OCHO
+    //
+    // El de las diez tiene el id MENOR: si la agenda no los ordenara por
+    // hora, el orden seria el del id.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(10, 0), 30, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::PEDI, Fecha(2027, 3, 10), Hora(8, 0), 45, "Consultorio 2"));
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vista() == "Agenda");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s) el 2027-03-10.");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // LAS COLUMNAS DE LA AGENDA
+    //
+    // La hora de INICIO, la de FIN (derivada de la duracion), la duracion,
+    // la especialidad, el consultorio y el estado.
+    CHECK(texto.find("08:00 | 08:45 | 45 min | " + descripcionDe(Especialidad::PEDI)
+                     + " | Consultorio 2 | Activo")
+          != std::string::npos);
+    CHECK(texto.find("10:00 | 10:30 | 30 min | " + descripcionDe(Especialidad::CARD)
+                     + " | A-1 | Activo")
+          != std::string::npos);
+
+    // Y EL ORDEN ES CRONOLOGICO
+    CHECK(texto.find("08:00") < texto.find("10:00"));
+}
+
+TEST_CASE("la agenda arranca en el dia de hoy que recibe la pantalla",
+           calendario_agenda_hoy) {
+    EscenarioCalendario escenario("calendario_agenda_hoy", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+
+    CHECK(pantalla.vista() == "Agenda");
+    CHECK(pantalla.diaDeLaAgenda() == 10);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("2027-03-10") != std::string::npos);
+
+    // EL DIA DE LA SEMANA LO DICE EL DOMINIO
+    //
+    // `Fecha::diaSemana()` es determinista: el nombre sale de ahi, no del
+    // reloj del sistema.
+    CHECK(texto.find(Fecha::nombreDiaSemana(Fecha(2027, 3, 10).diaSemana())) != std::string::npos);
+}
+
+TEST_CASE("las flechas de la agenda cambian de dia", calendario_agenda_las_flechas) {
+    EscenarioCalendario escenario("calendario_agenda_las_flechas", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.diaDeLaAgenda() == 10);
+
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaDerecha));
+    CHECK(pantalla.diaDeLaAgenda() == 11);
+    CHECK(pantalla.vistaTextoPlano().find("2027-03-11") != std::string::npos);
+
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaIzquierda));
+    CHECK(pantalla.diaDeLaAgenda() == 9);
+    CHECK(pantalla.vistaTextoPlano().find("2027-03-09") != std::string::npos);
+}
+
+TEST_CASE("una agenda sin turnos dice que no hay y como volver", calendario_agenda_sin_turnos) {
+    EscenarioCalendario escenario("calendario_agenda_sin_turnos", Fecha(2027, 3, 10));
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+
+    CHECK(pantalla.vista() == "Agenda");
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("No hay turnos ese dia") != std::string::npos);
+    CHECK(texto.find("0: volver al menu") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// LA RED DE LAS 80 COLUMNAS
+//
+// LAS DOS TABLAS DEL CALENDARIO TIENEN QUE ENTRAR EN UNA TERMINAL DE 80
+//
+// `ui::Tabla` no scrollea ni trunca: si la tabla es mas ancha que la
+// terminal, la parte de la derecha no se ve. Eso hay que VERIFICARLO, no
+// suponerlo.
+//
+// LOS DATOS SON LOS MAS LARGOS
+//
+// Los nombres mas largos de la semilla ("Valentina Ibarra" y "Diego
+// Fernandez"), la especialidad mas larga del catalogo (Gastroenterologia) y
+// el estado mas largo ("Reprogramado").
+// ---------------------------------------------------------------------------
+TEST_CASE("las tablas del calendario entran en 80 columnas",
+           calendario_las_tablas_entran_en_80) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioCalendario escenario("calendario_las_tablas_entran_en_80", Fecha(2027, 3, 10));
+    escenario.pacientes.alta(pacienteDePrueba(1, "Valentina", "Ibarra", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Diego", "Fernandez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(Turno(31, 1, 1, Especialidad::GAST, Fecha(2027, 3, 10), Hora(8, 0), 60,
+                                "Consultorio 1", EstadoTurno::Reprogramado));
+
+    ui::Pantallas::PantallaCalendario& pantalla = *escenario.puntero;
+
+    // EL DETALLE DEL DIA
+    abrirDetalle(pantalla, "10");
+    CHECK(pantalla.vista() == "Detalle");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    // LA AGENDA
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vista() == "Agenda");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
 
 
 
