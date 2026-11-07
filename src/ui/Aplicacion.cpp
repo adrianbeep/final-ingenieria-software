@@ -41,6 +41,10 @@ void Aplicacion::salir() {
     }
 }
 
+bool Aplicacion::saliendo() const {
+    return _salir;
+}
+
 void Aplicacion::ejecutar(std::function<std::string()> respaldoSinTerminal) {
     // EL GUARD DE TERMINAL (decisiones D16 y D31)
     //

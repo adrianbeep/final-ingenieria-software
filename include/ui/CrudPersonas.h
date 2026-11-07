@@ -4,6 +4,7 @@
 #include "repositories/IRepositorioBajaLogica.h"
 #include "ui/Aplicacion.h"
 #include "ui/Campo.h"
+#include "ui/CargarEjemplo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
 #include "ui/Menu.h"
@@ -235,7 +236,8 @@ private:
         Criterio,
         Valor,
         Resultados,
-        Ficha
+        Ficha,
+        ConfirmarEjemplo
     };
 
     // Que hay que hacer cuando se confirme el id.
@@ -247,11 +249,10 @@ private:
     // La fila de la pantalla donde se dibuja la PRIMERA opcion de la
     // confirmacion (la del "Si").
     //
-    // La `ui::Confirmacion` NO expone la fila en la que se dibujan sus
-    // opciones, asi que su hit-testing no sirve: el motor dibuja las dos
-    // opciones en dos filas conocidas y traduce el clic al atajo
-    // correspondiente. Sin esto, un clic en el ENCABEZADO caeria en la
-    // primera opcion y confirmaria una baja sin querer.
+    // La pantalla dibuja las dos opciones en dos filas conocidas y se lo
+    // dice a la `ui::Confirmacion` (`definirFilaInicial`): sin esto, un clic
+    // en el ENCABEZADO caeria en la primera opcion y confirmaria una baja
+    // sin querer.
     static constexpr int FILA_INICIAL_CONFIRMACION = 3;
 
     static const std::string& nombreDeVista(Vista vista);
@@ -269,6 +270,8 @@ private:
     bool manejarSelector(const Evento& evento);
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo);
     bool manejarConfirmacion(const Evento& evento);
+    bool manejarConfirmacionEjemplo(const Evento& evento);
+    bool manejarListado(const Evento& evento);
     bool manejarMenuCriterios(const Evento& evento);
     bool manejarLectura(const Evento& evento);
 
@@ -301,6 +304,15 @@ private:
     std::string preguntaDeBaja(const T& entidad) const;
     void ejecutarBaja();
 
+    // --- El estado vacio con ACCION ---
+    //
+    // Un listado sin datos no es un mensaje: es un menu con dos opciones
+    // ("cargar ejemplo" y "volver"). La logica de la carga vive en el
+    // helper compartido (`ui::cargarDatosDeEjemplo`); el motor solo la pide
+    // y muestra el resultado.
+    void pedirCargaDeEjemplo();
+    void ejecutarCargaDeEjemplo();
+
     // --- La busqueda ---
     void abrirCriterio();
     void iniciarBusqueda(std::size_t indice);
@@ -322,7 +334,9 @@ private:
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaFormulario() const;
     ftxui::Element lineaConfirmacion() const;
+    ftxui::Element lineaConfirmacionEjemplo() const;
     ftxui::Element lineaListado() const;
+    ftxui::Element lineaMenuVacio() const;
     ftxui::Element lineaResultados() const;
     ftxui::Element lineaFicha() const;
     ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
@@ -355,6 +369,14 @@ private:
     Menu _menu;
     Menu _menuCriterios;
 
+    // EL MENU DEL ESTADO VACIO
+    //
+    // Es el menu de DOS opciones que aparece cuando el listado no tiene
+    // nada: "cargar ejemplo" y "volver". El atajo '1' es el que dispara la
+    // carga y el '2' el que vuelve (el '0' tambien vuelve, como en todos los
+    // niveles).
+    Menu _menuVacio;
+
     Vista _vista = Vista::Menu;
     ModoFormulario _modoFormulario = ModoFormulario::Registro;
     Accion _accion = Accion::Modificar;
@@ -377,6 +399,9 @@ private:
 
     // La confirmacion de la baja.
     std::unique_ptr<Confirmacion> _confirmacion;
+
+    // La confirmacion de la carga de datos de ejemplo.
+    std::unique_ptr<Confirmacion> _confirmacionEjemplo;
 
     // La entidad de la vista actual (la que se modifica, la que se da de
     // baja o la de la ficha).
@@ -401,7 +426,8 @@ CrudPersonas<T>::CrudPersonas(Aplicacion& app, IRepositorio<T>& repositorio,
       _config(std::move(config)),
       _titulo(aMayusculas(_config.plural)),
       _menu(_titulo),
-      _menuCriterios("Buscar " + _config.plural) {
+      _menuCriterios("Buscar " + _config.plural),
+      _menuVacio("No hay " + _config.plural) {
     // EL MENU CRUD
     //
     // El atajo es el numero que se escribe (decision D28) y el '0' es
@@ -432,6 +458,14 @@ CrudPersonas<T>::CrudPersonas(Aplicacion& app, IRepositorio<T>& repositorio,
                                 [this, i]() { iniciarBusqueda(i); });
     }
     _menuCriterios.agregar('0', "Volver", [this]() { volverAtras(); });
+
+    // EL MENU DEL ESTADO VACIO
+    //
+    // Es el menu de DOS opciones que aparece cuando el listado no tiene
+    // nada. El '1' carga el juego de ejemplo (pide confirmacion antes) y el
+    // '2' vuelve al menu del motor.
+    _menuVacio.agregar('1', "Cargar ejemplo", [this]() { pedirCargaDeEjemplo(); });
+    _menuVacio.agregar('2', "Volver", [this]() { volverAtras(); });
 }
 
 template <class T>
@@ -459,6 +493,7 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
     static const std::string valor = "Valor";
     static const std::string resultados = "Resultados";
     static const std::string ficha = "Ficha";
+    static const std::string confirmarEjemplo = "ConfirmarEjemplo";
 
     switch (vista) {
         case Vista::Menu:
@@ -481,6 +516,8 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
             return resultados;
         case Vista::Ficha:
             return ficha;
+        case Vista::ConfirmarEjemplo:
+            return confirmarEjemplo;
     }
     return menu;
 }
@@ -541,6 +578,9 @@ void CrudPersonas<T>::volverAtras() {
         case Vista::Confirmar:
             irA(Vista::Id);
             return;
+        case Vista::ConfirmarEjemplo:
+            irA(Vista::Listado);
+            return;
         default:
             irA(Vista::Menu);
             return;
@@ -564,11 +604,14 @@ bool CrudPersonas<T>::manejar(const Evento& evento) {
             return manejarCampo(evento, _campoId);
         case Vista::Confirmar:
             return manejarConfirmacion(evento);
+        case Vista::ConfirmarEjemplo:
+            return manejarConfirmacionEjemplo(evento);
         case Vista::Criterio:
             return manejarMenuCriterios(evento);
         case Vista::Valor:
             return manejarCampo(evento, _campoValor);
         case Vista::Listado:
+            return manejarListado(evento);
         case Vista::Resultados:
         case Vista::Ficha:
             return manejarLectura(evento);
@@ -779,29 +822,12 @@ bool CrudPersonas<T>::manejarConfirmacion(const Evento& evento) {
         return false;
     }
 
-    // EL RATON LO TRADUCE EL MOTOR
+    // EL RATON LO RESUELVE LA CONFIRMACION
     //
-    // La `ui::Confirmacion` no sabe en que fila se dibujan sus opciones (no
-    // expone su menu), asi que un clic caeria siempre en la primera: un
-    // clic en el encabezado confirmaria una baja sin querer. El motor sabe
-    // donde las dibuja, asi que el clic se traduce al atajo.
-    Evento efectivo = evento;
-    if (evento.esMouse()) {
-        if (!evento.esClic()) {
-            return false;
-        }
-        const int indice = evento.y - FILA_INICIAL_CONFIRMACION;
-        if (indice < 0 || indice > 1) {
-            // El clic cae fuera de las opciones: no se consume.
-            return false;
-        }
-        Evento atajo;
-        atajo.tipo = TipoTecla::Caracter;
-        atajo.caracter = indice == 0 ? "1" : "2";
-        efectivo = atajo;
-    }
-
-    if (!_confirmacion->aplicarEvento(efectivo)) {
+    // La `ui::Confirmacion` tiene su propio hit-testing: el motor le dijo en
+    // que fila se dibujan sus opciones (`definirFilaInicial`) y ella sabe
+    // que opcion se toco. Por eso el clic NO se traduce a mano aca.
+    if (!_confirmacion->aplicarEvento(evento)) {
         return false;
     }
 
@@ -830,6 +856,102 @@ bool CrudPersonas<T>::manejarLectura(const Evento& evento) {
     }
     // Las vistas de solo lectura no consumen nada mas.
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// El estado vacio CON ACCION
+//
+// Un listado sin datos no es un mensaje: es un MENU con dos opciones. La
+// primera carga el juego de ejemplo (pidiendo confirmacion antes) y la
+// segunda vuelve al menu del motor.
+//
+// El '0' y el `Escape` tambien vuelven (la regla de UX del proyecto), asi
+// que el usuario no queda atrapado en el estado vacio.
+// ---------------------------------------------------------------------------
+
+template <class T>
+bool CrudPersonas<T>::manejarListado(const Evento& evento) {
+    // EL ESTADO VACIO TIENE SU PROPIO MENU
+    //
+    // Solo cuando NO hay nada que mostrar: con datos, el listado es una
+    // tabla de solo lectura (como antes).
+    if (_repositorio.listar().empty()) {
+        if (esTeclaVolver(evento)) {
+            volverAtras();
+            return true;
+        }
+        if (esTeclaEscape(evento)) {
+            volverAtras();
+            return true;
+        }
+        return _menuVacio.aplicarEvento(evento);
+    }
+
+    return manejarLectura(evento);
+}
+
+template <class T>
+void CrudPersonas<T>::pedirCargaDeEjemplo() {
+    // LA CONFIRMACION DE DOS PASOS
+    //
+    // La carga pisa los datos de trabajo: no se puede deshacer, asi que se
+    // pregunta antes (decision D37: los atajos son '1' y '2', no '0').
+    _confirmacionEjemplo = std::make_unique<Confirmacion>(
+        "Cargar los datos de ejemplo? Se pisan los datos actuales.");
+    // La confirmacion se dibuja en unas filas conocidas: se lo dice para que
+    // su hit-testing del raton funcione.
+    _confirmacionEjemplo->definirFilaInicial(FILA_INICIAL_CONFIRMACION);
+    irA(Vista::ConfirmarEjemplo);
+}
+
+template <class T>
+void CrudPersonas<T>::ejecutarCargaDeEjemplo() {
+    // LA LOGICA DE LA COPIA Y LA RECARGA VIVE EN EL HELPER COMPARTIDO
+    //
+    // El motor no sabe de archivos: solo pide la carga y muestra el
+    // resultado. Asi el motor CRUD, la pantalla de turnos y la de
+    // configuracion hacen EXACTAMENTE lo mismo.
+    std::string error;
+    if (cargarDatosDeEjemplo(_aplicacion.contexto(), error)) {
+        avisarExito("Datos de ejemplo cargados.");
+    } else {
+        avisar(error);
+    }
+    // Se vuelve al listado: ahora muestra los datos nuevos (el listado se
+    // dibuja a partir del repositorio, que ya fue recargado).
+    irA(Vista::Listado);
+}
+
+template <class T>
+bool CrudPersonas<T>::manejarConfirmacionEjemplo(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    // EL `Escape` VUELVE AL LISTADO
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    if (!_confirmacionEjemplo) {
+        return false;
+    }
+
+    // EL RATON LO RESUELVE LA CONFIRMACION
+    //
+    // El motor le dijo en que fila se dibujan sus opciones
+    // (`definirFilaInicial`), asi que el clic NO se traduce a mano aca.
+    if (!_confirmacionEjemplo->aplicarEvento(evento)) {
+        return false;
+    }
+
+    if (_confirmacionEjemplo->confirmo()) {
+        ejecutarCargaDeEjemplo();
+    } else {
+        // Si NO confirma, se vuelve al listado sin hacer nada.
+        irA(Vista::Listado);
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1205,9 @@ void CrudPersonas<T>::confirmarId() {
         }
         case Accion::Baja:
             _confirmacion = std::make_unique<Confirmacion>(preguntaDeBaja(entidad));
+            // La confirmacion se dibuja en unas filas conocidas: se lo dice
+            // para que su hit-testing del raton funcione.
+            _confirmacion->definirFilaInicial(FILA_INICIAL_CONFIRMACION);
             irA(Vista::Confirmar);
             return;
         case Accion::Ficha:
@@ -1257,8 +1382,24 @@ ftxui::Element CrudPersonas<T>::renderizar() {
         case Vista::Confirmar:
             lineas.push_back(lineaConfirmacion());
             break;
+        case Vista::ConfirmarEjemplo:
+            lineas.push_back(lineaConfirmacionEjemplo());
+            break;
         case Vista::Listado:
-            lineas.push_back(lineaListado());
+            // EL ESTADO VACIO ES UN MENU
+            //
+            // Sin datos, el listado no es una tabla: es un mensaje ("no hay
+            // ...") mas un menu de DOS opciones ("cargar ejemplo" y "volver").
+            // Con datos, es la tabla de siempre.
+            if (_repositorio.listar().empty()) {
+                lineas.push_back(ftxui::text("  " + vacio(_config.plural)));
+                // La opcion `i` del menu vacio queda en la fila
+                // `filaInicial + i`: el hit-testing del raton lo necesita.
+                _menuVacio.definirFilaInicial(static_cast<int>(lineas.size()));
+                lineas.push_back(lineaMenuVacio());
+            } else {
+                lineas.push_back(lineaListado());
+            }
             break;
         case Vista::Resultados:
             lineas.push_back(lineaResultados());
@@ -1388,15 +1529,38 @@ ftxui::Element CrudPersonas<T>::lineaConfirmacion() const {
 }
 
 template <class T>
+ftxui::Element CrudPersonas<T>::lineaConfirmacionEjemplo() const {
+    ftxui::Elements lineas;
+    if (_confirmacionEjemplo) {
+        lineas.push_back(ftxui::text("  " + _confirmacionEjemplo->pregunta()));
+        // LAS DOS OPCIONES EN DOS FILAS (como en la confirmacion de la baja).
+        lineas.push_back(ftxui::text("  1. Si"));
+        lineas.push_back(ftxui::text("  2. No"));
+    }
+    return ftxui::vbox(std::move(lineas));
+}
+
+template <class T>
 ftxui::Element CrudPersonas<T>::lineaListado() const {
     std::vector<std::vector<std::string>> filas;
     for (const T& entidad : _repositorio.listar()) {
         filas.push_back(_config.fila(entidad));
     }
-    if (filas.empty()) {
-        return ftxui::text("  " + vacio(_config.plural));
-    }
     return tablaDe(filas, _config.cabeceras);
+}
+
+template <class T>
+ftxui::Element CrudPersonas<T>::lineaMenuVacio() const {
+    // EL ESTADO VACIO ES UN MENU, NO UN MENSAJE
+    //
+    // Un listado sin datos tiene una salida (cargar el ejemplo) y una
+    // vuelta (volver). El menu se dibuja con el MISMO formato que todos
+    // los otros menus de la aplicacion ("  N. Etiqueta").
+    ftxui::Elements lineas;
+    for (int i = 0; i < _menuVacio.cantidad(); ++i) {
+        lineas.push_back(lineaOpcion(_menuVacio, i));
+    }
+    return ftxui::vbox(std::move(lineas));
 }
 
 template <class T>
@@ -1491,7 +1655,15 @@ std::string CrudPersonas<T>::ayuda() const {
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Confirmar:
             return "1: Si   2: No   0: volver   Esc: volver";
+        case Vista::ConfirmarEjemplo:
+            return "1: Si   2: No   0: volver   Esc: volver";
         case Vista::Listado:
+            // En el listado VACIO las opciones son las del menu del estado
+            // vacio; con datos, el listado es de solo lectura.
+            if (_repositorio.listar().empty()) {
+                return "1: cargar ejemplo   2: volver   0: volver   Esc: volver";
+            }
+            return "0: volver   Esc: volver";
         case Vista::Resultados:
         case Vista::Ficha:
             return "0: volver   Esc: volver";
@@ -1505,7 +1677,10 @@ std::string CrudPersonas<T>::vacio(const std::string& queFalta) const {
     //
     // Un mensaje que dice "no hay nada" y no dice como volver deja al
     // usuario atrapado: el mensaje dice las dos cosas.
-    return "No hay " + queFalta + " para mostrar. 0: volver al menu.";
+    //
+    // La salida (cargar el ejemplo) y la vuelta (volver) son las dos
+    // opciones del menu del estado vacio.
+    return "No hay " + queFalta + " para mostrar.";
 }
 
 // ---------------------------------------------------------------------------
@@ -1605,13 +1780,29 @@ std::string CrudPersonas<T>::textoDeLaVista() const {
                 salida += "  2. No\n";
             }
             return salida;
+        case Vista::ConfirmarEjemplo:
+            if (_confirmacionEjemplo) {
+                salida += "  " + _confirmacionEjemplo->pregunta() + "\n";
+                salida += "  1. Si\n";
+                salida += "  2. No\n";
+            }
+            return salida;
         case Vista::Listado: {
             const std::vector<T> entidades = _repositorio.listar();
             for (const T& entidad : entidades) {
                 salida += "  " + unirFila(_config.fila(entidad)) + "\n";
             }
             if (entidades.empty()) {
+                // EL ESTADO VACIO ES UN MENU
+                //
+                // El texto plano conserva el formato del menu ("  N.
+                // Etiqueta"), asi que lo que se ve sin terminal es lo mismo
+                // que lo que se ve en la terminal.
                 salida += "  " + vacio(_config.plural) + "\n";
+                for (int i = 0; i < _menuVacio.cantidad(); ++i) {
+                    salida += "  " + std::string(1, _menuVacio.atajoDe(i)) + ". "
+                        + _menuVacio.etiquetas()[static_cast<std::size_t>(i)] + "\n";
+                }
             }
             return salida;
         }
