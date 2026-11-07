@@ -85,6 +85,24 @@ struct TurnosDePersona {
     std::vector<std::string> cabeceras;
     std::function<std::vector<std::vector<std::string>>(int)> vigentes;
     std::function<std::vector<std::vector<std::string>>(int)> historial;
+
+    // LA NOTA DE LOS TURNOS
+    //
+    // Es un TEXTO que se dibuja DEBAJO de las tablas de turnos, y sirve para
+    // explicar lo que hay marcado en ellas (por ejemplo, el "*" de los
+    // turnos que ya no son de la especialidad del medico).
+    //
+    // ES DATO, NO UNA REGLA DEL MOTOR
+    //
+    // El motor NO sabe que significa la nota: la dibuja y listo. La que
+    // sabe es la pantalla que arma la configuracion, y la pone ahi. Asi el
+    // motor sigue siendo generico sobre el tipo de la persona.
+    //
+    // ES UNA FUNCION DEL ID
+    //
+    // La nota depende de la persona: si no hay nada que explicar, no hay
+    // nota. Una leyenda que no explica nada es ruido.
+    std::function<std::string(int)> nota;
 };
 
 // Un criterio de busqueda: como se llama y que devuelve.
@@ -1427,6 +1445,17 @@ ftxui::Element CrudPersonas<T>::lineaFicha() const {
         }
     }
 
+    // LA NOTA DE LOS TURNOS
+    //
+    // Va DEBAJO de las tablas: es la leyenda de lo que hay marcado. El motor
+    // no sabe que dice: la dibuja y listo (la nota la pone la pantalla).
+    if (_config.turnos.nota) {
+        const std::string nota = _config.turnos.nota(_id);
+        if (!nota.empty()) {
+            lineas.push_back(ftxui::text("  " + nota));
+        }
+    }
+
     return ftxui::vbox(std::move(lineas));
 }
 
@@ -1611,6 +1640,12 @@ std::string CrudPersonas<T>::textoDeLaVista() const {
                 salida += "  Historial completo:\n";
                 for (const std::vector<std::string>& fila : _config.turnos.historial(_id)) {
                     salida += "    " + unirFila(fila) + "\n";
+                }
+            }
+            if (_config.turnos.nota) {
+                const std::string nota = _config.turnos.nota(_id);
+                if (!nota.empty()) {
+                    salida += "  " + nota + "\n";
                 }
             }
             return salida;

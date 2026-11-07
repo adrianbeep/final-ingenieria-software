@@ -339,6 +339,40 @@ std::string resumenDe(const Turno& turno) {
         + turno.getConsultorio() + ")";
 }
 
+// ---------------------------------------------------------------------------
+// EL AVISO DE LA ESPECIALIDAD
+//
+// LA ESPECIALIDAD DEL TURNO Y LA DEL MEDICO SON DOS COSAS
+//
+// La especialidad del TURNO es la que se AGENDO: es un hecho del pasado. La
+// del MEDICO es la que atiende HOY: gobierna las reservas nuevas.
+//
+// Cuando no son la misma, el turno se agendo con una especialidad que el
+// medico ya no atiende (el medico cambio, o el turno se migro a mano). No
+// es un error ni un dato roto: es un hecho historico. Pero si la pantalla
+// no lo dice, el usuario lo lee como un bug.
+//
+// QUE EL AVISO ESTE EN LOS DOS RENDERES
+//
+// El aviso va en el render de FTXUI y en el texto plano: son las dos formas
+// en que la pantalla se ve, y las dos tienen que decir lo mismo.
+//
+// CUANDO NO HAY AVISO
+//
+// Si el medico no esta en el repositorio, no hay especialidad actual con que
+// comparar: no hay nada que avisar.
+std::string avisoDeEspecialidad(const Turno& turno, RepositorioMedicos& medicos) {
+    Medico medico;
+    if (!medicos.buscarPorId(turno.getIdMedico(), medico)) {
+        return "";
+    }
+    if (medico.getEspecialidad() == turno.getEspecialidad()) {
+        return "";
+    }
+    return "  Aviso: el turno es de " + descripcionDe(turno.getEspecialidad()) + " y el medico "
+        + "atiende " + descripcionDe(medico.getEspecialidad()) + ": difieren.";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -1391,6 +1425,15 @@ ftxui::Element PantallaTurnos::lineaDetalle() const {
     filas.push_back(filaCompletaDe(_turno, _pacientes, _medicos));
     lineas.push_back(tablaDe(filas, cabecerasCompletasDeTurno()));
 
+    // EL AVISO DE LA ESPECIALIDAD
+    //
+    // Va DESPUES de la tabla: la tabla dice QUE especialidad tiene el turno,
+    // y el aviso dice que el medico que lo atiende hoy tiene otra.
+    const std::string aviso = avisoDeEspecialidad(_turno, _medicos);
+    if (!aviso.empty()) {
+        lineas.push_back(ftxui::text(aviso));
+    }
+
     // EL TURNO REEMPLAZANTE
     //
     // Un turno reprogramado apunta al turno que lo reemplazo: ese es el
@@ -1693,6 +1736,14 @@ std::string PantallaTurnos::textoDeLaVista() const {
                 salida += fila[i];
             }
             salida += "\n";
+            // EL AVISO DE LA ESPECIALIDAD
+            //
+            // El mismo aviso que se ve en el render de FTXUI: los dos
+            // renderes tienen que decir lo mismo.
+            const std::string aviso = avisoDeEspecialidad(_turno, _medicos);
+            if (!aviso.empty()) {
+                salida += aviso + "\n";
+            }
             if (_turno.getIdTurnoReemplazante() != -1) {
                 salida += "  idTurnoReemplazante: "
                     + std::to_string(_turno.getIdTurnoReemplazante()) + "\n";
