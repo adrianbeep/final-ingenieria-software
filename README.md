@@ -16,7 +16,7 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 | 3 | Estructuras de datos propias | [#6](https://github.com/adrianbeep/final-ingenieria-software/issues/6) | Completada |
 | 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Completada |
 | 5 | Repositorios y reglas de negocio | [#14](https://github.com/adrianbeep/final-ingenieria-software/issues/14) | Completada |
-| 6 | Interfaz de consola TUI: 38 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | En curso |
+| 6 | Interfaz de consola TUI: 38 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | Completada |
 | 7 | Extras y cierre tecnico | — | Pendiente |
 | 8 | Documentacion y defensa | — | Pendiente |
 
@@ -72,7 +72,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 387 caso(s), 0 fallo(s)
+# 525 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -84,19 +84,21 @@ el fallo y sigue, para ver todos los problemas de una vez.
 ```
 include/    headers: domain, entities, structures, persistence,
                        repositories, exceptions, services, utils, ui
-  ui/Pantallas/  las pantallas: MenuPrincipal, Pacientes, Medicos
+  ui/Pantallas/  las pantallas: MenuPrincipal, Pacientes, Medicos,
+                Turnos, Reportes, Calendario, Configuracion, AcercaDe
 src/        implementaciones .cpp, espejo de include/
   domain/         el catalogo de especialidades
   entities/       las entidades: Medico, Paciente, Persona y Turno
   repositories/   un repositorio por entidad
   services/       las reglas de negocio de los turnos
   ui/             la TUI: el motor, el menu, la tabla, el campo de entrada
-  ui/Pantallas/   las pantallas: MenuPrincipal, Pacientes, Medicos
+  ui/Pantallas/   las pantallas: MenuPrincipal, Pacientes, Medicos,
+                  Turnos, Reportes, Calendario, Configuracion, AcercaDe
 tests/      arnes de tests propio (sin framework externo)
 data/       datos de trabajo: los archivos que usa la aplicacion
 data/ejemplo/  la semilla: los datos de ejemplo, para empezar de cero
 third_party/  FTXUI, vendorizada (ver la decision 18)
-docs/       trazabilidad y decisiones de diseno
+docs/       decisiones de diseno (la trazabilidad llega en la Fase 8)
 ```
 
 Los TADs genericos (`ArbolBST`, `ListaEnlazada`, `ArchivoTexto`, `RepositorioCRUD`)
@@ -129,8 +131,11 @@ vendorizada en `third_party/ftxui/`:
 - **Sin terminal, no hay TUI.** El binario detecta que no hay terminal
   interactiva, imprime el menu en texto plano y sale con codigo 0. Es lo que
   permite que el CI lo ejecute sin colgarse.
-- **`NO_COLOR` respetado:** sin ese variable, la salida no tiene codigos de
-  color.
+- **`NO_COLOR` respetado:** con esa variable de entorno DEFINIDA (y no
+  vacia) la aplicacion arranca sin codigos de color. Es el **estado inicial**,
+  no un veto: desde la pantalla de Configuracion el usuario puede volver a
+  encender los colores, y el cambio se ve al instante en todas las
+  pantallas.
 
 ### Los archivos de datos de ejemplo
 
@@ -143,9 +148,31 @@ cual, sin conversion de fin de linea.
 
 En `data/` estan los archivos de **trabajo**: los que la aplicacion abre y
 modifica. En `data/ejemplo/` esta la **semilla**: el mismo juego de datos, en
-la version 2 del formato y sin tocar. La idea es que la pantalla de "cargar
-datos de ejemplo" copie la semilla sobre `data/` para empezar de cero (esa
-pantalla todavia no existe: es la Fase 6 / PR15).
+la version 2 del formato y sin tocar.
+
+### Cargar los datos de ejemplo
+
+La pantalla de **Configuracion** (opcion `6` del menu principal) tiene la
+accion "Cargar datos de ejemplo". Tambien aparece sola, como menu, cuando un
+listado esta vacio (pacientes, medicos o turnos): ahi el mensaje es "No hay
+... para mostrar." y las dos opciones son "1. Cargar ejemplo" y "2. Volver".
+
+Que hace, paso a paso:
+
+1. **Pide confirmacion de dos pasos** (la accion pisa los datos de trabajo, y
+   eso no se puede deshacer): `1` confirma y `2` cancela.
+2. **Copia la semilla sobre los archivos de trabajo**: `data/ejemplo/*.dat`
+   sobre `data/*.dat`. El destino se pisa (la copia es atomica para cada
+   archivo).
+3. **Recarga los repositorios en el lugar**: los mismos objetos que las
+   pantallas ya tienen abiertos, asi que los listados se ven al instante con
+   los datos nuevos, sin reiniciar la aplicacion.
+
+La **semilla no se toca**: la copia va de `data/ejemplo/` a `data/`, nunca al
+reves. Si la semilla no esta (o el destino no se puede escribir), la pantalla
+muestra el error (`ERR ...`) y la aplicacion sigue viva. Ojo: la copia es **por
+archivo**, asi que si uno de los tres falla, los otros dos ya quedaron
+reemplazados.
 
 La semilla tiene las MISMAS garantias de bytes: **LF**, **UTF-8 sin BOM** y
 `-text` en `.gitattributes`. Por eso la regla es explicita para los dos
