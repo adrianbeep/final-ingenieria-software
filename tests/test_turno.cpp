@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "domain/Materia.h"
+#include "domain/Especialidad.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "utils/Fecha.h"
@@ -11,11 +11,11 @@
 #include <utility>
 
 // ---------------------------------------------------------------------------
-// Tests de `Turno` y de `EstadoTurno`: la relacion entre un profesor y un
-// alumno, con sus reglas de validacion y sus operadores.
+// Tests de `Turno` y de `EstadoTurno`: la relacion entre un medico y un
+// paciente, con sus reglas de validacion y sus operadores.
 //
 // `Turno` NO hereda de `Persona`: no tiene nombre, ni email, ni telefono, y
-// heredar seria un "es-un" falso. Tiene-un un profesor y un alumno, pero
+// heredar seria un "es-un" falso. Tiene-un un medico y un paciente, pero
 // guarda solo sus ids.
 // ---------------------------------------------------------------------------
 
@@ -31,20 +31,20 @@ TEST_CASE("el turno por defecto tiene estado Activo y sin reemplazo", entidades_
     CHECK(turno.getEstado() == EstadoTurno::Activo);
     CHECK(turno.getIdTurnoReemplazante() == -1);
     CHECK(turno.getDuracionMin() == 0);
-    CHECK(turno.getAula().empty());
+    CHECK(turno.getConsultorio().empty());
     CHECK(!turno.esValido());
 }
 
 TEST_CASE("el constructor del turno guarda todos los datos", entidades_turno_constructor) {
-    const Turno turno(14, 3, 7, Materia::ING1, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
+    const Turno turno(14, 3, 7, Especialidad::TRAU, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
     CHECK(turno.getId() == 14);
-    CHECK(turno.getIdProfesor() == 3);
-    CHECK(turno.getIdAlumno() == 7);
-    CHECK(turno.getMateria() == Materia::ING1);
+    CHECK(turno.getIdMedico() == 3);
+    CHECK(turno.getIdPaciente() == 7);
+    CHECK(turno.getEspecialidad() == Especialidad::TRAU);
     CHECK(turno.getFecha() == Fecha(2026, 10, 8));
     CHECK(turno.getHora() == Hora(9, 0));
     CHECK(turno.getDuracionMin() == 60);
-    CHECK(turno.getAula() == "A-3");
+    CHECK(turno.getConsultorio() == "A-3");
     CHECK(turno.getEstado() == EstadoTurno::Activo);
     CHECK(turno.getIdTurnoReemplazante() == -1);
     CHECK(turno.esValido());
@@ -60,48 +60,48 @@ TEST_CASE("el setter de duracion rechaza un dato invalido", entidades_set_duraci
     CHECK(!lanzaConCampo([&] { turno.setDuracionMin(240); }, "duracionMin"));
 }
 
-TEST_CASE("el setter de aula rechaza un dato invalido", entidades_set_aula) {
+TEST_CASE("el setter de consultorio rechaza un dato invalido", entidades_set_consultorio) {
     Turno turno;
-    CHECK(lanzaConCampo([&] { turno.setAula(""); }, "aula"));
-    CHECK(lanzaConCampo([&] { turno.setAula("A-3|B"); }, "aula"));
-    CHECK(lanzaConCampo([&] { turno.setAula("123456789012345678901"); }, "aula"));
-    CHECK(!lanzaConCampo([&] { turno.setAula("A-3"); }, "aula"));
-    CHECK(!lanzaConCampo([&] { turno.setAula("Aula 3"); }, "aula"));
+    CHECK(lanzaConCampo([&] { turno.setConsultorio(""); }, "consultorio"));
+    CHECK(lanzaConCampo([&] { turno.setConsultorio("A-3|B"); }, "consultorio"));
+    CHECK(lanzaConCampo([&] { turno.setConsultorio("123456789012345678901"); }, "consultorio"));
+    CHECK(!lanzaConCampo([&] { turno.setConsultorio("A-3"); }, "consultorio"));
+    CHECK(!lanzaConCampo([&] { turno.setConsultorio("Sala 3"); }, "consultorio"));
 }
 
-TEST_CASE("el aula acepta letras acentuadas y las guarda intactas", entidades_aula_acentuada) {
+TEST_CASE("el consultorio acepta letras acentuadas y las guarda intactas", entidades_consultorio_acentuada) {
     Turno turno;
     // 'ñ' (U+00F1) son 0xC3 0xB1. El escape hexadecimal va en un literal
     // propio porque se extiende hasta el proximo caracter hexadecimal.
-    const std::string aulaAcentuada = "Sala A" "\xC3\xB1" "o";
-    CHECK(!lanzaConCampo([&] { turno.setAula(aulaAcentuada); }, "aula"));
+    const std::string consultorioAcentuada = "Sala A" "\xC3\xB1" "o";
+    CHECK(!lanzaConCampo([&] { turno.setConsultorio(consultorioAcentuada); }, "consultorio"));
     // El valor vuelve IDENTICO: la tilde no se convierte ni se pierde.
-    CHECK(turno.getAula() == aulaAcentuada);
-    CHECK(turno.getAula() == "Sala A" "\xC3\xB1" "o");
+    CHECK(turno.getConsultorio() == consultorioAcentuada);
+    CHECK(turno.getConsultorio() == "Sala A" "\xC3\xB1" "o");
     // Con 'ó' (U+00F3, 0xC3 0xB3) tambien.
-    CHECK(!lanzaConCampo([&] { turno.setAula("Sala A" "\xC3\xB3" "o"); }, "aula"));
-    CHECK(turno.getAula() == "Sala A" "\xC3\xB3" "o");
+    CHECK(!lanzaConCampo([&] { turno.setConsultorio("Sala A" "\xC3\xB3" "o"); }, "consultorio"));
+    CHECK(turno.getConsultorio() == "Sala A" "\xC3\xB3" "o");
 }
 
-TEST_CASE("el limite del aula se cuenta en caracteres y no en bytes", entidades_aula_longitud) {
+TEST_CASE("el limite del consultorio se cuenta en caracteres y no en bytes", entidades_consultorio_longitud) {
     Turno turno;
-    // Un aula de EXACTAMENTE 20 caracteres que incluye una tilde: son 21
+    // Un consultorio de EXACTAMENTE 20 caracteres que incluye una tilde: son 21
     // bytes, pero 20 caracteres, y el limite es de 20 CARACTERES. Si se
     // contaran bytes, este valor seria rechazado sin motivo.
-    const std::string aulaConTilde = "Sala A" "\xC3\xB1" "o";
-    std::string aulaAlLimite = aulaConTilde;
-    aulaAlLimite.append(20 - Utils::cantidadCaracteres(aulaConTilde), 'X');
-    CHECK(Utils::cantidadCaracteres(aulaAlLimite) == 20);  // 20 caracteres
-    CHECK(aulaAlLimite.size() == 21);                      // 21 bytes
-    CHECK(!lanzaConCampo([&] { turno.setAula(aulaAlLimite); }, "aula"));
-    CHECK(turno.getAula() == aulaAlLimite);
+    const std::string consultorioConTilde = "Sala A" "\xC3\xB1" "o";
+    std::string consultorioAlLimite = consultorioConTilde;
+    consultorioAlLimite.append(20 - Utils::cantidadCaracteres(consultorioConTilde), 'X');
+    CHECK(Utils::cantidadCaracteres(consultorioAlLimite) == 20);  // 20 caracteres
+    CHECK(consultorioAlLimite.size() == 21);                      // 21 bytes
+    CHECK(!lanzaConCampo([&] { turno.setConsultorio(consultorioAlLimite); }, "consultorio"));
+    CHECK(turno.getConsultorio() == consultorioAlLimite);
     // Un caracter mas (21 caracteres) SI se rechaza: el limite se cuenta en
     // caracteres, con o sin tildes.
-    const std::string aulaAlLimiteMasUno = aulaAlLimite + "X";
-    CHECK(Utils::cantidadCaracteres(aulaAlLimiteMasUno) == 21);
-    CHECK(lanzaConCampo([&] { turno.setAula(aulaAlLimiteMasUno); }, "aula"));
+    const std::string consultorioAlLimiteMasUno = consultorioAlLimite + "X";
+    CHECK(Utils::cantidadCaracteres(consultorioAlLimiteMasUno) == 21);
+    CHECK(lanzaConCampo([&] { turno.setConsultorio(consultorioAlLimiteMasUno); }, "consultorio"));
     // Vacio.
-    CHECK(lanzaConCampo([&] { turno.setAula(""); }, "aula"));
+    CHECK(lanzaConCampo([&] { turno.setConsultorio(""); }, "consultorio"));
 }
 
 TEST_CASE("el setter de idTurnoReemplazante rechaza un dato invalido", entidades_set_reemplazante) {
@@ -126,25 +126,25 @@ TEST_CASE("los setters de fecha y hora validan el valor", entidades_set_fecha_ho
 }
 
 TEST_CASE("Turno ordena y compara por id", entidades_turno_operadores) {
-    const Turno primero(14, 3, 7, Materia::ING1, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
-    const Turno segundo(15, 3, 9, Materia::ING1, Fecha(2026, 10, 9), Hora(10, 0), 60, "A-3",
+    const Turno primero(14, 3, 7, Especialidad::TRAU, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
+    const Turno segundo(15, 3, 9, Especialidad::TRAU, Fecha(2026, 10, 9), Hora(10, 0), 60, "A-3",
                         EstadoTurno::Activo, 14);
     CHECK(primero < segundo);
     CHECK(!(segundo < primero));
     CHECK(!(primero == segundo));
 
-    const Turno copia(14, 9, 9, Materia::ALG1, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
+    const Turno copia(14, 9, 9, Especialidad::CARD, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
     CHECK(primero == copia);
 }
 TEST_CASE("el constructor del turno tambien valida los datos", entidades_turno_constructor_valida) {
-    CHECK(lanzaConCampo([] { Turno(14, 3, 7, Materia::ING1, Fecha(2026, 10, 8), Hora(9, 0), 20,
+    CHECK(lanzaConCampo([] { Turno(14, 3, 7, Especialidad::TRAU, Fecha(2026, 10, 8), Hora(9, 0), 20,
                                    "A-3"); },
                         "duracionMin"));
 }
 
 TEST_CASE("el turno se copia (Regla de Cinco)", entidades_turno_regla_de_cinco) {
-    const Turno turno(14, 3, 7, Materia::ING1, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
+    const Turno turno(14, 3, 7, Especialidad::TRAU, Fecha(2026, 10, 8), Hora(9, 0), 60, "A-3");
     const Turno copia(turno);
     CHECK(copia.getId() == 14);
-    CHECK(copia.getMateria() == Materia::ING1);
+    CHECK(copia.getEspecialidad() == Especialidad::TRAU);
 }

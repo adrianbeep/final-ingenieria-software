@@ -16,6 +16,33 @@ std::string dosDigitos(int valor) {
     return std::to_string(valor);
 }
 
+// ---------------------------------------------------------------------------
+// La tabla del ALGORITMO DE SAKAMOTO.
+//
+// El indice es el mes MENOS UNO: la entrada 0 es enero y la entrada 11 es
+// diciembre.
+//
+// QUE SON ESTOS NUMEROS
+//
+// Sakamoto calcula el dia de la semana con una cuenta corta: el anio entra
+// dividido entre cuatro (con los ajustes de los siglos) y el mes aporta un
+// DESPLAZAMIENTO fijo. La tabla es esa lista de desplazamientos: los meses
+// que empiezan en un dia de la semana mas temprano (febrero, con 28 dias)
+// desplazan menos que los que empiezan mas tarde (agosto, con 31).
+//
+// POR QUE NO SE USA `time()` NI `localtime`
+//
+// El reloj daria la respuesta, pero la respuesta DEPENDERIA del momento y de
+// la zona horaria de la maquina: un test no podria fijar el resultado y dos
+// maquinas darian dos respuestas distintas para la misma fecha. Sakamoto es
+// aritmetica pura sobre (anio, mes, dia): la misma fecha da SIEMPRE el mismo
+// dia, en cualquier maquina y en cualquier momento.
+// ---------------------------------------------------------------------------
+constexpr int DESPLAZAMIENTO_SAKAMOTO[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+
+// Cantidad de dias de la semana: la convencion del dominio es lunes = 0.
+constexpr int DIAS_DE_LA_SEMANA = 7;
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -116,6 +143,55 @@ int Fecha::numeroDeDia() const {
     // Y por ultimo, los dias que ya pasaron del mes: el dia 1 no suma
     // nada (el primer dia del mes es el mismo dia del mes anterior).
     return dias + (dia - 1);
+}
+
+int Fecha::diaSemana() const {
+    // La fecha tiene que EXISTIR en el calendario: el dia de la semana de un
+    // 31 de febrero no es un dato, es un error. Es el mismo criterio que
+    // usa `Turno::setFecha` y el servicio de turnos.
+    if (!esValida(anio, mes, dia)) {
+        throw DatoInvalidoException("fecha", aTexto(), "fecha inexistente");
+    }
+
+    // EL ALGORITMO DE SAKAMOTO
+    //
+    // La cuenta es: el anio, ajustado por los siglos, mas un cuarto del anio,
+    // menos un centesima, mas un cuatrocentesima, mas el desplazamiento del
+    // mes, mas el dia. Todo modulo siete.
+    //
+    // OJO CON LOS PRIMERES DOS MESES: enero y febrero son los "meses 13 y 14"
+    // del ano anterior. Por eso, cuando el mes es menor que 3, el anio que
+    // entra en la cuenta es el ANTERIOR: el desplazamiento del mes esta
+    // calculado para esa convencion.
+    int anioAjustado = anio;
+    if (mes < 3) {
+        --anioAjustado;
+    }
+
+    const int sakamoto = (anioAjustado + anioAjustado / 4 - anioAjustado / 100
+                          + anioAjustado / 400 + DESPLAZAMIENTO_SAKAMOTO[mes - 1] + dia)
+        % DIAS_DE_LA_SEMANA;
+
+    // Sakamoto numera de 0 = domingo a 6 = sabado. El dominio usa la
+    // convencion INVERSA (lunes = 0 ... domingo = 6), asi que el resultado
+    // se SHIFTEA una posicion: el domingo (0) pasa a ser el 6 y el lunes (1)
+    // pasa a ser el 0.
+    return (sakamoto + DIAS_DE_LA_SEMANA - 1) % DIAS_DE_LA_SEMANA;
+}
+
+std::string Fecha::nombreDiaSemana(int indice) {
+    // Los nombres van CON TILDE: son los que se muestran en pantalla, asi que
+    // tienen que estar bien escritos.
+    static const char* const NOMBRES[] = {"lunes",   "martes", "miércoles",
+                                           "jueves", "viernes", "sábado",
+                                           "domingo"};
+
+    if (indice < 0 || indice >= DIAS_DE_LA_SEMANA) {
+        throw DatoInvalidoException("diaSemana", std::to_string(indice),
+                                    "se esperaba un indice de dia de la semana entre 0 y 6");
+    }
+
+    return NOMBRES[indice];
 }
 
 bool Fecha::operator<(const Fecha& otra) const {

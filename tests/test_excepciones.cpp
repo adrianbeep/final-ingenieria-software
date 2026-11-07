@@ -48,14 +48,14 @@ TEST_CASE("cada excepcion derivada se captura como ExcepcionSistema", excepcione
     bool turno = false;
 
     try {
-        throw ArchivoNoEncontradoException("data/alumnos.dat");
+        throw ArchivoNoEncontradoException("data/pacientes.dat");
     } catch (const ExcepcionSistema&) {
         archivo = true;
     } catch (...) {
     }
 
     try {
-        throw IdDuplicadoException(7, "Alumno");
+        throw IdDuplicadoException(7, "Paciente");
     } catch (const ExcepcionSistema&) {
         duplicado = true;
     } catch (...) {
@@ -69,14 +69,14 @@ TEST_CASE("cada excepcion derivada se captura como ExcepcionSistema", excepcione
     }
 
     try {
-        throw EntidadNoExisteException(7, "Alumno");
+        throw EntidadNoExisteException(7, "Paciente");
     } catch (const ExcepcionSistema&) {
         entidad = true;
     } catch (...) {
     }
 
     try {
-        throw TurnoOcupadoException(12, "idProfesor=3 idAlumno=7");
+        throw TurnoOcupadoException(12, "idMedico=3 idPaciente=7");
     } catch (const ExcepcionSistema&) {
         ocupado = true;
     } catch (...) {
@@ -100,11 +100,11 @@ TEST_CASE("cada excepcion derivada se captura como ExcepcionSistema", excepcione
 TEST_CASE("ninguna excepcion del sistema tiene el mensaje vacio", excepciones_mensaje_no_vacio) {
     const ExcepcionSistema excepciones[] = {
         ExcepcionSistema("prueba"),
-        ArchivoNoEncontradoException("data/alumnos.dat"),
-        IdDuplicadoException(7, "Alumno"),
+        ArchivoNoEncontradoException("data/pacientes.dat"),
+        IdDuplicadoException(7, "Paciente"),
         DatoInvalidoException("edad", "abc", "se esperaba un entero positivo"),
-        EntidadNoExisteException(7, "Alumno"),
-        TurnoOcupadoException(12, "idProfesor=3 idAlumno=7"),
+        EntidadNoExisteException(7, "Paciente"),
+        TurnoOcupadoException(12, "idMedico=3 idPaciente=7"),
         TurnoNoExisteException(42),
     };
 
@@ -116,11 +116,11 @@ TEST_CASE("ninguna excepcion del sistema tiene el mensaje vacio", excepciones_me
 TEST_CASE("el mensaje de ArchivoNoEncontradoException incluye la ruta", excepciones_archivo) {
     bool capturada = false;
     try {
-        throw ArchivoNoEncontradoException("data/alumnos.dat");
+        throw ArchivoNoEncontradoException("data/pacientes.dat");
     } catch (const ExcepcionSistema& e) {
         capturada = true;
-        CHECK(std::string(e.what()) == "No se encontro el archivo 'data/alumnos.dat'");
-        CHECK(std::string(e.what()).find("data/alumnos.dat") != std::string::npos);
+        CHECK(std::string(e.what()) == "No se encontro el archivo 'data/pacientes.dat'");
+        CHECK(std::string(e.what()).find("data/pacientes.dat") != std::string::npos);
     } catch (...) {
     }
     CHECK(capturada);
@@ -129,12 +129,12 @@ TEST_CASE("el mensaje de ArchivoNoEncontradoException incluye la ruta", excepcio
 TEST_CASE("el mensaje de IdDuplicadoException incluye el id y la entidad", excepciones_id_duplicado) {
     bool capturada = false;
     try {
-        throw IdDuplicadoException(7, "Alumno");
+        throw IdDuplicadoException(7, "Paciente");
     } catch (const ExcepcionSistema& e) {
         capturada = true;
-        CHECK(std::string(e.what()) == "Id duplicado: 7 (Alumno)");
+        CHECK(std::string(e.what()) == "Id duplicado: 7 (Paciente)");
         CHECK(std::string(e.what()).find("7") != std::string::npos);
-        CHECK(std::string(e.what()).find("Alumno") != std::string::npos);
+        CHECK(std::string(e.what()).find("Paciente") != std::string::npos);
     } catch (...) {
     }
     CHECK(capturada);
@@ -172,12 +172,12 @@ TEST_CASE("DatoInvalidoException expone el campo y el valor que fallaron", excep
 TEST_CASE("el mensaje de EntidadNoExisteException incluye el id y la entidad", excepciones_entidad) {
     bool capturada = false;
     try {
-        throw EntidadNoExisteException(7, "Alumno");
+        throw EntidadNoExisteException(7, "Paciente");
     } catch (const ExcepcionSistema& e) {
         capturada = true;
-        CHECK(std::string(e.what()) == "No existe la entidad #7 (Alumno)");
+        CHECK(std::string(e.what()) == "No existe la entidad #7 (Paciente)");
         CHECK(std::string(e.what()).find("7") != std::string::npos);
-        CHECK(std::string(e.what()).find("Alumno") != std::string::npos);
+        CHECK(std::string(e.what()).find("Paciente") != std::string::npos);
     } catch (...) {
     }
     CHECK(capturada);
@@ -186,13 +186,13 @@ TEST_CASE("el mensaje de EntidadNoExisteException incluye el id y la entidad", e
 TEST_CASE("el mensaje de TurnoOcupadoException incluye el turno y el detalle", excepciones_turno_ocupado) {
     bool capturada = false;
     try {
-        throw TurnoOcupadoException(12, "idProfesor=3 idAlumno=7");
+        throw TurnoOcupadoException(12, "idMedico=3 idPaciente=7");
     } catch (const ExcepcionSistema& e) {
         capturada = true;
         CHECK(std::string(e.what()) ==
-              "El turno #12 ya ocupa ese horario (idProfesor=3 idAlumno=7)");
+              "El turno #12 ya ocupa ese horario (idMedico=3 idPaciente=7)");
         CHECK(std::string(e.what()).find("12") != std::string::npos);
-        CHECK(std::string(e.what()).find("idProfesor=3 idAlumno=7") != std::string::npos);
+        CHECK(std::string(e.what()).find("idMedico=3 idPaciente=7") != std::string::npos);
     } catch (...) {
     }
     CHECK(capturada);

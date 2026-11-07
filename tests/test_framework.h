@@ -1,7 +1,9 @@
 #pragma once
 
 #include "exceptions/ExcepcionesSistema.h"
+#include "utils/Fecha.h"
 
+#include <ctime>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -78,6 +80,62 @@ template <typename F>
 bool lanzaConCampo(F funcion, const std::string& campoEsperado) {
     const ErrorCapturado error = capturarError(funcion);
     return error.lanzo && error.campo == campoEsperado;
+}
+
+// ---------------------------------------------------------------------------
+// LAS FECHAS DE PRUEBA
+//
+// La regla de la fecha vencida la aplica el SERVICIO de turnos: un turno
+// cuya fecha ya paso se rechaza. Un test que agenda tiene que usar una
+// fecha que NO haya pasado, y una fecha fija dejaria de servir el dia que
+// se cumpliera. Por eso la fecha se deriva del reloj del sistema.
+//
+// Estas helpers viven en el arnes (y no en un archivo de test) porque las
+// necesitan los tests del SERVICIO y los de la PANTALLA de turnos.
+// ---------------------------------------------------------------------------
+
+// La fecha de HOY, segun el reloj del sistema. Es la misma referencia que
+// usa el servicio para la regla de la fecha vencida.
+inline Fecha hoyDelSistema() {
+    const std::time_t ahora = std::time(nullptr);
+    const std::tm* local = std::localtime(&ahora);
+    return Fecha(local->tm_year + 1900, local->tm_mon + 1, local->tm_mday);
+}
+
+// Una fecha `dias` dias a partir de hoy (negativo = antes).
+inline Fecha fechaDesplazada(int dias) {
+    const Fecha hoy = hoyDelSistema();
+    int anio = hoy.anio;
+    int mes = hoy.mes;
+    int dia = hoy.dia;
+
+    while (dias > 0) {
+        ++dia;
+        if (dia > Fecha::diasDelMes(anio, mes)) {
+            dia = 1;
+            ++mes;
+            if (mes > 12) {
+                mes = 1;
+                ++anio;
+            }
+        }
+        --dias;
+    }
+
+    while (dias < 0) {
+        --dia;
+        if (dia < 1) {
+            --mes;
+            if (mes < 1) {
+                mes = 12;
+                --anio;
+            }
+            dia = Fecha::diasDelMes(anio, mes);
+        }
+        ++dias;
+    }
+
+    return Fecha(anio, mes, dia);
 }
 
 // TEST_CASE(descripcion, funcion)

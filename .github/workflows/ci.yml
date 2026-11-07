@@ -14,8 +14,14 @@ name: CI
 on:
   push:
     branches: [main]
+  # SIN FILTRO DE RAMAS A PROPOSITO.
+  #
+  # La Fase 6 se entrega en una CADENA de pull requests y NINGUNO de ellos
+  # apunta a `main`: cada porcion vive en su propia rama y el PR tracker es el
+  # unico que conecta con `main` (ver issue #16, seccion 7.2). Con un filtro
+  # `branches: [main]` el CI no se dispararia en ninguno de los PRs de la
+  # cadena.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -41,6 +47,19 @@ jobs:
         run: |
           if grep -rnE '\b(fstream|iostream|system[[:space:]]*\()' include/domain include/entities; then
             echo "::error::El dominio no puede incluir fstream, iostream ni system()."
+            exit 1
+          fi
+
+      # La UI es la UNICA capa que puede depender de FTXUI: el motor de
+      # terminal es un detalle de la presentacion y el dominio no tiene que
+      # saber que existe. Se verifica con un grep, igual que la regla de
+      # arriba.
+      - name: "El dominio no depende de FTXUI"
+        run: |
+          if grep -rni 'ftxui' include/domain include/entities include/utils \
+             include/repositories include/services include/persistence \
+             include/structures include/exceptions; then
+            echo "::error::La capa de dominio no puede depender de FTXUI."
             exit 1
           fi
 

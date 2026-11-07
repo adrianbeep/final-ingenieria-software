@@ -25,21 +25,28 @@
 // ArchivoTexto<T>: la CAPA DE PERSISTENCIA en archivos de texto.
 //
 // Esta clase sabe de archivos y de formatos. NO sabe de reglas de negocio, ni
-// de `ArbolBST`, ni de que es un alumno. Por eso el dominio (`Persona`,
-// `Profesor`, `Alumno`, `Turno`) no tiene una sola linea de `fstream`.
+// de `ArbolBST`, ni de que es un paciente. Por eso el dominio (`Persona`,
+// `Medico`, `Paciente`, `Turno`) no tiene una sola linea de `fstream`.
 //
 // ---------------------------------------------------------------------------
 // ANATOMIA DEL ARCHIVO
 //
 // Un archivo = 1 header + 1 linea de esquema + N lineas de registro:
 //
-//     #ALUMNOS|1|2
-//     id|nombre|apellido|email|telefono|activo|matricula
-//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|MAT-20391
-//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|MAT-20398
+//     #PACIENTES|2|2
+//     id|nombre|apellido|email|telefono|activo|dni
+//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391
+//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|2020398
 //
 // El header es POSICIONAL (la primera linea SIEMPRE es el header): es mas
 // simple y no depende de que ningun dato pueda parecerse a un header.
+//
+// El `2` del header es la VERSION DEL FORMATO (no la del programa). La
+// version 2 es la del esquema medico: el `dni` del paciente es NUMERICO
+// (en la version 1 era una matricula alfanumerica) y la especialidad se
+// guarda POR CODIGO ("CARD"), no por descripcion. Un archivo de version 1
+// se RECHAZA: el loader no adivina como migrarlo, dice que version es y
+// deja la decision al usuario.
 //
 // ---------------------------------------------------------------------------
 // POR QUE TEXTO DELIMITADO POR '|' Y NO BINARIO
@@ -109,8 +116,8 @@
 //     reaparecerian al reiniciar).
 //   - No valida reglas de negocio: que dos turnos se solapen es cosa del
 //     servicio (Fase 5). Esta capa valida FORMA, no SEMANTICA.
-//   - No deduce ni completa: un `idProfesor` que no exista en
-//     `profesores.dat` se carga igual.
+//   - No deduce ni completa: un `idMedico` que no exista en
+//     `medicos.dat` se carga igual.
 //
 // ---------------------------------------------------------------------------
 // CONVENCION DE NOMBRES
@@ -120,16 +127,16 @@
 // puede llamarse igual que una funcion de la misma clase. Es el mismo
 // criterio que usa `DatoInvalidoException` con `campo_` y `valor_`.
 //
-// EL NOMBRE DE LA ENTIDAD SE PASA EN MAYUSCULAS ("ALUMNOS", "PROFESORES",
+// EL NOMBRE DE LA ENTIDAD SE PASA EN MAYUSCULAS ("PACIENTES", "MEDICOS",
 // "TURNOS"): es el magic del header. NO es mecanico a partir de `getTipo()`:
-// `getTipo()` devuelve "Alumno" y "Profesor", y el plural no sale de ahi
-// ("Profesor" -> "Profesores", no "PROFESORS").
+// `getTipo()` devuelve "Paciente" y "Medico", y el plural no sale de ahi
+// ("Medico" -> "Medicos", no "MEDICOS").
 // ---------------------------------------------------------------------------
 // ESTADO COMPARTIDO DE LOS NOMBRES TEMPORALES
 //
 // `ArchivoTexto<T>` es un TEMPLATE, asi que si el estado de unicidad viviera
 // en un miembro del template, existiria UNA COPIA POR INSTANTIACION:
-// `ArchivoTexto<Alumno>`, `ArchivoTexto<Profesor>` y `ArchivoTexto<Turno>`
+// `ArchivoTexto<Paciente>`, `ArchivoTexto<Medico>` y `ArchivoTexto<Turno>`
 // tendrian cada una su propio contador (empezando en 0) y su propio
 // `std::random_device`. Dos escrituras de DISTINTOS tipos de entidad
 // podrian entonces derivar el mismo nombre de temporal.
@@ -230,7 +237,15 @@ public:
     // Version del FORMATO DE ARCHIVO (no la del programa). Vive en el
     // header: por eso el loader puede decir con precision que paso cuando
     // el archivo no se puede leer.
-    static constexpr int VERSION_FORMATO = 1;
+    //
+    // La version 2 es la del ESQUEMA MEDICO: el `dni` del `Paciente` es
+    // NUMERICO (en la version 1 era una matricula alfanumerica) y la
+    // especialidad se guarda POR CODIGO ("CARD"), no por descripcion.
+    //
+    // Un archivo de version 1 se RECHAZA con un error claro: el loader dice
+    // las DOS versiones (la del archivo y la que lee) en vez de adivinar
+    // como migrarlo.
+    static constexpr int VERSION_FORMATO = 2;
 
     explicit ArchivoTexto(std::string ruta_, std::string nombreEntidad_);
 
@@ -462,7 +477,7 @@ std::vector<T> ArchivoTexto<T>::cargar() {
     const std::string magicEsperado = "#" + _nombreEntidad;
     if (partes[0] != magicEsperado) {
         // El nombre de la entidad del archivo (sin el '#') se muestra en el
-        // mensaje: "es un archivo de TURNOS y se esperaba uno de ALUMNOS".
+        // mensaje: "es un archivo de TURNOS y se esperaba uno de PACIENTES".
         const std::string entidadDelArchivo =
             partes[0].size() > 1 ? partes[0].substr(1) : partes[0];
         throw FormatoDesconocidoException(_ruta + ": es un archivo de " + entidadDelArchivo

@@ -1,18 +1,55 @@
-#include "ui/Consola.h"
+#include "ui/Aplicacion.h"
+#include "ui/Contexto.h"
+#include "ui/Pantallas/MenuPrincipal.h"
 
 #include "exceptions/ExcepcionesSistema.h"
+#include "repositories/RepositorioPacientes.h"
+#include "repositories/RepositorioMedicos.h"
+#include "repositories/RepositorioTurnos.h"
+#include "services/ServicioTurnos.h"
 
 #include <iostream>
+#include <memory>
 
-// Punto de entrada. No tiene logica de negocio (requisito 9 de la consigna):
-// solo despacha. La Fase 1 demuestra el manejo de entrada segura: si el
-// usuario escribe algo que no es un numero, NO se rompe el programa.
+// Punto de entrada. NO tiene logica de negocio (requisito 9 de la consigna):
+// solo arma la aplicacion y la corre.
+//
+// El `try/catch` global vive ACA y no en la capa `ui`: la capa de interfaz
+// no decide como se le informa un error al usuario.
 int main() {
-    ui::Consola::limpiar();
-    ui::Consola::titulo("Sistema de Turnos");
     try {
-        const int edad = ui::Consola::leerEntero("Ingrese la edad: ", 0, 120);
-        std::cout << "Edad registrada: " << edad << "\n";
+        // LOS REPOSITORIOS
+        //
+        // Son los mismos objetos que implementan el CRUD y la baja logica:
+        // por eso el contexto los recibe una sola vez (el repositorio
+        // concreto cumple los dos papeles).
+        RepositorioPacientes pacientes("data/pacientes.dat");
+        RepositorioMedicos medicos("data/medicos.dat");
+        RepositorioTurnos turnos("data/turnos.dat");
+
+        // Los archivos de datos se cargan al arrancar. Si no existen, el
+        // repositorio los crea vacios: la aplicacion no puede romperse por
+        // un archivo faltante.
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        // EL SERVICIO DE REGLAS DE NEGOCIO
+        ServicioTurnos servicioTurnos(pacientes, medicos, turnos);
+
+        // EL CONTEXTO: lo que todas las pantallas necesitan.
+        ui::Contexto contexto(pacientes, medicos, turnos, servicioTurnos);
+
+        ui::Aplicacion aplicacion("Sistema de Turnos", contexto);
+
+        aplicacion.ir([](ui::Aplicacion& app) {
+            return std::make_unique<ui::Pantallas::MenuPrincipal>(app);
+        });
+
+        // Sin terminal interactiva se imprime el menu en texto plano y se
+        // sale con codigo 0 (decision D31). Con terminal, arranca el ciclo
+        // de eventos de FTXUI.
+        aplicacion.ejecutar([&aplicacion]() { return aplicacion.textoPlanoActual(); });
     } catch (const ExcepcionSistema& e) {
         std::cerr << "Error: " << e.what() << "\n";
     }

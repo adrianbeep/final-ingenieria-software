@@ -7,22 +7,47 @@
 
 CXX      := g++
 CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor -Woverloaded-virtual
-INCLUDES := -Iinclude
-LDFLAGS  :=
+
+# UNICODE/_UNICODE/NOMINMAX NO son opcionales en Windows: ftxui.hpp tiene dos
+# `#error` duros sin ellas. En Linux son inofensivas (FTXUI solo las exige bajo
+# _WIN32), asi que el Makefile las define SIEMPRE: el mismo Makefile tiene que
+# funcionar en las dos plataformas.
+DEFS := -DUNICODE -D_UNICODE -DNOMINMAX
+
+# El include del vendor va como `-isystem`: los headers de terceros no tienen
+# que ensuciar el build de nuestro codigo con los flags estrictos del proyecto.
+INCLUDES := -Iinclude -isystem third_party/ftxui
+
+# El vendor se compila APARTE, con `-w`. Si se compilara en el mismo comando
+# que nuestro codigo, el `-w` taparia NUESTROS warnings y el requisito de
+# "cero warnings" quedaria sin verificar.
+VENDOR_CXXFLAGS := -std=c++17 -w $(DEFS)
+VENDOR_INCLUDES := -Ithird_party/ftxui
+
+# -lpthread es obligatorio en Linux (FTXUI usa std::thread). En MinGW es
+# opcional, pero el Makefile tiene que funcionar en las dos plataformas.
+LDFLAGS := -lpthread
 
 BUILD_DIR := bin
+
+# OJO: `VENDOR_OBJ` se define ACA y no arriba, porque `:=` expande en el
+# momento de la asignacion: si se declarara antes de `BUILD_DIR`, el
+# prefijo quedaria vacio y el objeto se llamaria `/ftxui.o`.
+VENDOR_OBJ := $(BUILD_DIR)/ftxui.o
 
 # Por modulo, con wildcard: agregar un .cpp dentro de un modulo NO obliga a
 # tocar este archivo.
 CORE_SRCS := $(wildcard src/domain/*.cpp) $(wildcard src/utils/*.cpp) $(wildcard src/exceptions/*.cpp)
-UI_SRCS   := $(wildcard src/ui/*.cpp)
+# Los globs son PLANOS (no recursivos), asi que `src/ui/Pantallas/` va
+# aparte: sin esta linea, las pantallas no se compilarian.
+UI_SRCS   := $(wildcard src/ui/*.cpp) $(wildcard src/ui/Pantallas/*.cpp)
 ENTITIES_SRCS := $(wildcard src/entities/*.cpp)
 REPOSITORIES_SRCS := $(wildcard src/repositories/*.cpp)
 SERVICES_SRCS := $(wildcard src/services/*.cpp)
 MAIN_SRCS := $(wildcard src/*.cpp)
 TEST_SRCS := $(wildcard tests/*.cpp)
 
-ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(MAIN_SRCS)
+ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(MAIN_SRCS)
 
 ifeq ($(OS),Windows_NT)
   EXE := .exe
@@ -39,11 +64,11 @@ TEST_TARGET := $(BUILD_DIR)/tests$(EXE)
 # Por eso las rutas se convierten a barra invertida antes de borrarse.
 ifeq ($(OS),Windows_NT)
   MKDIR    := cmd /c mkdir
-  DEL_BINS := cmd /c del /q $(subst /,\,$(TARGET)) $(subst /,\,$(TEST_TARGET)) 2>nul
+  DEL_BINS := cmd /c del /q $(subst /,\,$(TARGET)) $(subst /,\,$(TEST_TARGET)) $(subst /,\,$(VENDOR_OBJ)) 2>nul
   DEL_DIR  := cmd /c rmdir /s /q $(subst /,\,$(BUILD_DIR))
 else
   MKDIR    := mkdir -p
-  DEL_BINS := rm -f $(TARGET) $(TEST_TARGET)
+  DEL_BINS := rm -f $(TARGET) $(TEST_TARGET) $(VENDOR_OBJ)
   DEL_DIR  := rm -rf $(BUILD_DIR)
 endif
 
@@ -54,8 +79,16 @@ all: $(TARGET)
 $(BUILD_DIR):
 	-$(MKDIR) $(BUILD_DIR)
 
-$(TARGET): $(ALL_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(ALL_SRCS) -o $@ $(LDFLAGS)
+# El objeto del vendor se compila SOLO, con `-w`: si compartiera comando con
+# nuestro codigo, el `-w` taparia nuestros propios warnings.
+$(VENDOR_OBJ): third_party/ftxui/ftxui.cpp | $(BUILD_DIR)
+	$(CXX) $(VENDOR_CXXFLAGS) $(VENDOR_INCLUDES) -c $< -o $@
+
+# El ejecutable linkea REPOSITORIES_SRCS y SERVICES_SRCS porque el `main` arma
+# el CONTEXTO: los tres repositorios (los objetos que implementan el CRUD y la
+# baja logica) y el servicio de turnos.
+$(TARGET): $(ALL_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(ALL_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 
 run: $(TARGET)
 	$(TARGET)
@@ -64,7 +97,8 @@ test: $(TEST_TARGET)
 	$(TEST_TARGET)
 
 # El binario de tests NO linkea src/main.cpp: habria dos main().
-# Linkea UI_SRCS porque los tests de la Fase 1 ejercitan ui::Consola::leerEntero.
+# Linkea UI_SRCS porque los tests de la UI ejercitan la capa `ui` (la paleta,
+# el menu, las validaciones de `ui::Consola`, el campo de entrada, la tabla).
 # Linkea ENTITIES_SRCS porque los tests de la Fase 2 ejercitan las entidades.
 # Linkea REPOSITORIES_SRCS porque los tests de la Fase 5 ejercitan los
 # repositorios (el template `RepositorioCRUD` es header-only, pero los tres
@@ -72,12 +106,20 @@ test: $(TEST_TARGET)
 # Linkea SERVICES_SRCS porque los tests de la Fase 5 ejercitan las reglas de
 # negocio del servicio de turnos (que, a diferencia de los demas modulos, si
 # tiene .cpp).
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) -o $@ $(LDFLAGS)
+# Linkea `$(VENDOR_OBJ)` porque `UI_SRCS` ya usa simbolos de FTXUI (el motor
+# y las pantallas), y `$(DEFS)` porque los headers de FTXUI tienen dos
+# `#error` duros en Windows sin `UNICODE`/`_UNICODE`/`NOMINMAX`.
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 
 # El prefijo `-` hace que make NO falle si el archivo no existe: `del` y
 # `rmdir` devuelven error cuando el destino no esta, y un `make clean` sobre
 # un arbol ya limpio tiene que terminar en 0 igual.
+#
+# `clean` borra tambien el objeto del vendor (`$(VENDOR_OBJ)`): si no lo
+# borrara, un `make clean && make` podria reusar un `.o` viejo y el criterio
+# "make clean && make && make run funciona en una maquina limpia" dejaria de
+# cumplirse sin que nadie se entere.
 clean:
 	-$(DEL_BINS)
 

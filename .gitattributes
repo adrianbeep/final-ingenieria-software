@@ -10,7 +10,23 @@
 
 # Los archivos de datos de ejemplo son parte de la entrega: se guardan tal
 # cual, sin conversion de fin de linea.
+#
+# OJO con el patron: en .gitattributes, un patron CON barra esta ANCLADO al
+# directorio del archivo de atributos y el `*` NO cruza la barra. Por eso
+# `data/*.dat` NO alcanza a `data/ejemplo/*.dat`: los `.dat` de la semilla
+# caerian en la regla `* text=auto eol=lf` de arriba y se convertiran a CRLF
+# en un checkout de Windows. Por eso la semilla tiene su propia regla.
 data/*.dat -text
+data/ejemplo/*.dat -text
 
 # Los scripts de shell (si los hay) necesitan LF o fallan en Linux.
 *.sh text eol=lf
+
+# El codigo de terceros se guarda tal cual viene del release, sin conversion
+# de fin de linea: asi los archivos del repo son byte a byte los del release.
+#
+# Esta regla tiene que ir DESPUES de `* text=auto eol=lf`: en .gitattributes,
+# la ultima regla que coincide gana. Sin esto, con core.autocrlf=true el
+# checkout en Windows convertiria el codigo del vendor a CRLF y dejaria de
+# coincidir con el hash de PROVENANCE.md.
+third_party/ftxui/* -text

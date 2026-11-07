@@ -71,6 +71,34 @@ struct Fecha {
     // horarios, asi que vive aqui y no en la capa de reglas de negocio.
     int numeroDeDia() const;
 
+    // El dia de la semana: 0 = lunes, 1 = martes, ... 6 = domingo.
+    //
+    // POR QUE LA CONVENCION ES "LUNES = 0"
+    //
+    // Es la convencion que usan los calendarios (la primera columna de una
+    // grilla semanal es el lunes) y la que hace que el indice sea
+    // `(numeroDeDia() + 5) % 7`: el 2000-01-01 (la primera fecha valida del
+    // dominio) fue un SABADO, que con esta convencion es el indice 5.
+    //
+    // Es DETERMINISTA: el resultado sale de aritmetica sobre (anio, mes,
+    // dia), no del reloj del sistema. Un test puede fijar el resultado y
+    // la misma fecha da SIEMPRE el mismo dia, en cualquier maquina.
+    //
+    // Lanza `DatoInvalidoException` si la fecha no existe en el calendario:
+    // el dia de la semana de un 31 de febrero no es un dato, es un error.
+    int diaSemana() const;
+
+    // El nombre del dia de la semana, con la convencion de `diaSemana()`:
+    // el indice 0 es el lunes y el 6 el domingo.
+    //
+    // Los nombres van en minusculas y CON TILDE ("miercoles" con e acentuada,
+    // "sabado" con o acentuada): son DATOS, no comentarios. Los comentarios
+    // del proyecto son ASCII, pero un string que se muestra en pantalla
+    // lleva la ortografia correcta.
+    //
+    // Lanza `DatoInvalidoException` si el indice no esta entre 0 y 6.
+    static std::string nombreDiaSemana(int indice);
+
     bool operator<(const Fecha& otra) const;
     bool operator==(const Fecha& otra) const;
 

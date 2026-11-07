@@ -1,6 +1,6 @@
 #include "entities/Turno.h"
 
-#include "domain/Materia.h"
+#include "domain/Especialidad.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "utils/Utils.h"
 
@@ -38,25 +38,25 @@ int enteroDesdeTexto(const std::string& texto, const std::string& campo) {
 } // namespace
 
 Turno::Turno(int id_,
-             int idProfesor_,
-             int idAlumno_,
-             Materia materia_,
+             int idMedico_,
+             int idPaciente_,
+             Especialidad especialidad_,
              const Fecha& fecha_,
              const Hora& hora_,
              int duracionMin_,
-             const std::string& aula_,
+             const std::string& consultorio_,
              EstadoTurno estado_,
              int idTurnoReemplazante_) {
     // Se valida a traves de los setters: el constructor no puede dejar un
     // turno invalido en pie.
     setId(id_);
-    setIdProfesor(idProfesor_);
-    setIdAlumno(idAlumno_);
-    setMateria(materia_);
+    setIdMedico(idMedico_);
+    setIdPaciente(idPaciente_);
+    setEspecialidad(especialidad_);
     setFecha(fecha_);
     setHora(hora_);
     setDuracionMin(duracionMin_);
-    setAula(aula_);
+    setConsultorio(consultorio_);
     setEstado(estado_);
     setIdTurnoReemplazante(idTurnoReemplazante_);
 }
@@ -86,13 +86,13 @@ void Turno::setDuracionMin(int duracionMin_) {
     duracionMin = duracionMin_;
 }
 
-void Turno::setAula(const std::string& v) {
-    if (!aulaValida(v)) {
-        throw DatoInvalidoException("aula", v,
-                                    "se esperaba un aula de 1 a 20 caracteres, con letras, digitos, "
-                                    "espacios, '-' y '.'");
+void Turno::setConsultorio(const std::string& v) {
+    if (!consultorioValido(v)) {
+        throw DatoInvalidoException("consultorio", v,
+                                    "se esperaba un consultorio de 1 a 20 caracteres, con letras, "
+                                    "digitos, espacios, '-' y '.'");
     }
-    aula = Utils::trim(v);
+    consultorio = Utils::trim(v);
 }
 
 void Turno::setIdTurnoReemplazante(int idTurnoReemplazante_) {
@@ -104,7 +104,7 @@ void Turno::setIdTurnoReemplazante(int idTurnoReemplazante_) {
 }
 
 bool Turno::esValido() const {
-    return duracionMinValido(duracionMin) && aulaValida(aula)
+    return duracionMinValido(duracionMin) && consultorioValido(consultorio)
         && Fecha::esValida(fecha.anio, fecha.mes, fecha.dia)
         && Hora::esValida(hora.hora, hora.minuto);
 }
@@ -119,12 +119,12 @@ bool Turno::duracionMinValido(int valor) {
     return valor <= DURACION_MAXIMA_MINUTOS;
 }
 
-bool Turno::aulaValida(const std::string& v) {
+bool Turno::consultorioValido(const std::string& v) {
     const std::string t = Utils::trim(v);
-    // El largo se mide en CARACTERES (codepoints), no en bytes: un aula con
-    // tilde es mas larga en bytes, pero ocupa los mismos caracteres.
+    // El largo se mide en CARACTERES (codepoints), no en bytes: un consultorio
+    // con tilde es mas largo en bytes, pero ocupa los mismos caracteres.
     const std::size_t largo = Utils::cantidadCaracteres(t);
-    if (largo < AULA_LONGITUD_MINIMA || largo > AULA_LONGITUD_MAXIMA) {
+    if (largo < CONSULTORIO_LONGITUD_MINIMA || largo > CONSULTORIO_LONGITUD_MAXIMA) {
         return false;
     }
     // ALFABETO CERRADO: el separador del formato canonico ('|') queda excluido
@@ -134,9 +134,9 @@ bool Turno::aulaValida(const std::string& v) {
 }
 
 std::ostream& operator<<(std::ostream& os, const Turno& turno) {
-    os << turno.id << '|' << turno.idProfesor << '|' << turno.idAlumno << '|'
-       << codigoDe(turno.materia) << '|' << turno.fecha.aTexto() << '|' << turno.hora.aTexto()
-       << '|' << turno.duracionMin << '|' << turno.aula << '|' << estadoATexto(turno.estado)
+    os << turno.id << '|' << turno.idMedico << '|' << turno.idPaciente << '|'
+       << codigoDe(turno.especialidad) << '|' << turno.fecha.aTexto() << '|' << turno.hora.aTexto()
+       << '|' << turno.duracionMin << '|' << turno.consultorio << '|' << estadoATexto(turno.estado)
        << '|' << turno.idTurnoReemplazante;
     return os;
 }
@@ -151,23 +151,23 @@ Turno Turno::fromRegistro(const std::string& linea) {
 
     Turno turno;
     turno.setId(enteroDesdeTexto(campos[0], "id"));
-    turno.setIdProfesor(enteroDesdeTexto(campos[1], "idProfesor"));
-    turno.setIdAlumno(enteroDesdeTexto(campos[2], "idAlumno"));
-    turno.setMateria(materiaDesdeCodigo(campos[3]));
+    turno.setIdMedico(enteroDesdeTexto(campos[1], "idMedico"));
+    turno.setIdPaciente(enteroDesdeTexto(campos[2], "idPaciente"));
+    turno.setEspecialidad(especialidadDesdeCodigo(campos[3]));
     turno.setFecha(Fecha::desdeTexto(campos[4]));
     turno.setHora(Hora::desdeTexto(campos[5]));
     turno.setDuracionMin(enteroDesdeTexto(campos[6], "duracionMin"));
-    turno.setAula(campos[7]);
+    turno.setConsultorio(campos[7]);
     turno.setEstado(estadoDesdeTexto(campos[8]));
     turno.setIdTurnoReemplazante(enteroDesdeTexto(campos[9], "idTurnoReemplazante"));
     return turno;
 }
 
 std::string Turno::esquema() {
-    // El 4º campo se llama `codigoMateria` y no `materia` a proposito: lo que
-    // viaja es el CODIGO de la materia ("ALG1"), nunca el indice del enum. El
+    // El 4º campo se llama `codigoEspecialidad` y no `especialidad` a proposito: lo que
+    // viaja es el CODIGO de la especialidad ("CARD"), nunca el indice del enum. El
     // nombre del campo lo deja escrito en el header del archivo.
-    return "id|idProfesor|idAlumno|codigoMateria|fecha|hora|duracionMin|aula|estado|idTurnoReemplazante";
+    return "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante";
 }
 
 std::string estadoATexto(EstadoTurno estado) {

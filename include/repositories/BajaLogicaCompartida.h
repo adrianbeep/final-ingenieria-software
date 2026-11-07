@@ -7,8 +7,8 @@
 #include <type_traits>
 
 // ---------------------------------------------------------------------------
-// La baja logica COMPARTIDA entre el repositorio de alumnos y el de
-// profesores.
+// La baja logica COMPARTIDA entre el repositorio de pacientes y el de
+// medicos.
 //
 // POR QUE VIVE ACA Y NO DUPLICADA EN LOS DOS REPOSITORIOS
 //

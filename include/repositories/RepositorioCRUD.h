@@ -4,11 +4,48 @@
 #include "persistence/ArchivoTexto.h"
 #include "repositories/IRepositorio.h"
 #include "structures/ArbolBST.h"
+#include "utils/Utils.h"
 
 #include <cstddef>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
+
+// ---------------------------------------------------------------------------
+// El detector de "TIENE NOMBRE Y APELLIDO".
+//
+// POR QUE EXISTE
+//
+// `RepositorioCRUD<T>` es un template GENERICO: `T` puede ser un paciente, un
+// medico... o un TURNO, que no es una persona y no tiene ni nombre ni
+// apellido. La busqueda por nombre solo tiene sentido para las entidades que
+// los tienen, asi que el cuerpo de la busqueda tiene que poder COMPILAR (o
+// no compilar) segun el tipo.
+//
+// Esto se resuelve con el patron de DETECCION (SFINAE): se pregunta "este
+// tipo tiene `getNombre()` y `getApellido()`?" sin romper la compilacion
+// cuando la respuesta es NO. Es el mismo patron que usan los tests con
+// `TieneBajaLogica` (ver `tests/test_repositorio.cpp`).
+//
+// El `if constexpr` del metodo descarta el resto del cuerpo en tiempo de
+// compilacion, asi que el repositorio de TURNOS sigue compilando: no tiene
+// nombre, no tiene nada que buscar, y devuelve una lista vacia.
+// ---------------------------------------------------------------------------
+namespace detalleRepositorio {
+
+// Detecta si `T` expone `getNombre()` y `getApellido()` (los getters de
+// `Persona`).
+template <class T, class = void>
+struct TieneNombreYApellido : std::false_type {};
+
+template <class T>
+struct TieneNombreYApellido<T, std::void_t<
+                                 decltype(std::declval<const T&>().getNombre()),
+                                 decltype(std::declval<const T&>().getApellido())>>
+    : std::true_type {};
+
+} // namespace detalleRepositorio
 
 // ---------------------------------------------------------------------------
 // RepositorioCRUD<T>: la IMPLEMENTACION del repositorio, una sola para las
@@ -25,7 +62,7 @@
 // ESTA CAPA NO TIENE REGLAS DE NEGOCIO
 //
 // El repositorio guarda y devuelve entidades. No sabe si dos turnos se
-// solapan, no valida que una matricula sea unica, no decide si un alumno
+// solapan, no valida que un dni sea unico, no decide si un paciente
 // inactivo puede ser agendado. Eso es del servicio. Lo unico que esta capa
 // dice es "este id ya estaba" o "este id no existe", porque son las dos
 // reglas del CRUD en si.
@@ -52,7 +89,7 @@ template <class T>
 class RepositorioCRUD : public IRepositorio<T> {
 public:
     // `ruta` es el archivo de datos y `nombreEntidad` el "magic" del header
-    // ("ALUMNOS", "PROFESORES", "TURNOS").
+    // ("PACIENTES", "MEDICOS", "TURNOS").
     RepositorioCRUD(std::string ruta, std::string nombreEntidad);
 
     void alta(const T& entidad) override;
@@ -68,9 +105,34 @@ public:
     // decision R6 se demuestra sobre la altura del arbol que queda cargado).
     const ArbolBST<T>& arbol() const { return _arbol; }
 
-    // El nombre de la entidad ("ALUMNOS", "PROFESORES", "TURNOS"): es lo
+    // El nombre de la entidad ("PACIENTES", "MEDICOS", "TURNOS"): es lo
     // que va en los mensajes de las excepciones del CRUD.
     const std::string& nombreEntidad() const { return _archivo.nombreEntidad(); }
+
+    // La RUTA del archivo de datos.
+    //
+    // La expone la pantalla de "cargar datos de ejemplo": esa operacion tiene
+    // que pisar EL ARCHIVO QUE ESTA ABIERTO (este) y no otro, asi que
+    // necesita saber cual es. Tambien la necesita para ubicar la semilla
+    // (el subdirectorio `ejemplo` de la misma carpeta).
+    const std::string& ruta() const { return _archivo.ruta(); }
+
+    // Busca las entidades cuyo NOMBRE o APELLIDO CONTIENEN el texto buscado.
+    //
+    // La coincidencia es PARCIAL ("an" esta dentro de "Ana" y de "Daniela") e
+    // INSENSIBLE A MAYUSCULAS ("AN" encuentra exactamente lo mismo que
+    // "an").
+    //
+    // NO lanza y NO modifica nada: es una CONSULTA. Que no haya ninguna
+    // coincidencia es un dato de la consulta, no un error (es el mismo
+    // criterio que usa `buscarPorId()` cuando no encuentra el id).
+    //
+    // Con un texto VACIO devuelve una lista vacia: una busqueda sin texto no
+    // encuentra nada, y devolveria la lista entera.
+    //
+    // Devuelve las coincidencias ORDENADAS por id, como el resto de las
+    // consultas del repositorio.
+    std::vector<T> buscarPorNombre(const std::string& texto) const;
 
 private:
     // Busca la entidad por id y la deja en `fuera`. Devuelve false si no
@@ -80,12 +142,12 @@ private:
     //
     // `ArbolBST::buscar()` busca por EQUIVALENCIA, y la equivalencia la
     // induce el `operator<` del tipo `T`. En el dominio, `Persona::operator<`
-    // ordena por `(id, tipo)`: para encontrar un alumno HABRIA que construir
-    // un alumno de prueba con el mismo id y el mismo tipo, y ese alumno de
+    // ordena por `(id, tipo)`: para encontrar un paciente HABRIA que construir
+    // un paciente de prueba con el mismo id y el mismo tipo, y ese paciente de
     // prueba tendria que tener un nombre, un apellido, un email, un
-    // telefono y una matricula VALIDOS (los setters lanzan
+    // telefono y un dni VALIDOS (los setters lanzan
     // `DatoInvalidoException` si no). O sea: para preguntar "existe el
-    // alumno #7" habria que inventar un alumno #7 completo.
+    // paciente #7" habria que inventar un paciente #7 completo.
     //
     // `ArbolBST::buscarPorClave()` evita exactamente eso: el arbol compara
     // una CLAVE contra el valor almacenado con el comparador que le pasa
@@ -172,7 +234,7 @@ void RepositorioCRUD<T>::modificar(const T& entidad) {
     // OJO: la clave del arbol es el `operator<` del tipo `T`, no el id. En el
     // dominio `Persona::operator<` ordena por `(id, tipo)`. Dentro de un
     // repositorio el tipo es SIEMPRE el mismo (`getTipo()` devuelve un valor
-    // fijo por clase: "Alumno", "Profesor", "Turno"), asi que buscar por id y
+    // fijo por clase: "Paciente", "Medico", "Turno"), asi que buscar por id y
     // buscar por clave son la misma busqueda. Aun asi, se borra con la
     // entidad ANTERIOR y no con la nueva: asi el borrado usa exactamente la
     // clave con la que el nodo fue indexado, sin depender de esa suposicion.
@@ -247,6 +309,62 @@ template <class T>
 std::size_t RepositorioCRUD<T>::contar() const {
     // O(1) de verdad: `size()` es el CONTADOR del TAD, no un recorrido.
     return _arbol.size();
+}
+
+template <class T>
+std::vector<T> RepositorioCRUD<T>::buscarPorNombre(const std::string& texto) const {
+    std::vector<T> encontrados;
+
+    // EL `if constexpr` ES LO QUE HACE QUE EL TEMPLATE SIGA SIENDO GENERICO
+    //
+    // El cuerpo de abajo usa `getNombre()` y `getApellido()`, que NO existen
+    // en todas las entidades (un turno no es una persona). Con `if constexpr`
+    // el compilador DESCARTA el cuerpo entero para los tipos que no tienen
+    // esos getters: no se compila, y por lo tanto no puede romper la
+    // compilacion del repositorio de turnos.
+    if constexpr (detalleRepositorio::TieneNombreYApellido<T>::value) {
+        // El texto se recorta y se pasa a minusculas UNA sola vez, antes del
+        // recorrido: es la misma cuenta para las dos comparaciones.
+        //
+        // `Utils::aMinusculas` es la UNICA forma de comparar textos en este
+        // proyecto: decodifica UTF-8 y baja tanto el ASCII como el rango
+        // Latin-1 Supplement, asi que un nombre con tilde y el mismo nombre
+        // sin ella se comparan como iguales.
+        const std::string buscado = Utils::aMinusculas(Utils::trim(texto));
+
+        // Una busqueda SIN TEXTO no encuentra nada: devolver la lista
+        // entera seria inventar resultados.
+        if (buscado.empty()) {
+            return encontrados;
+        }
+
+        // POR QUE UN RECORRIDO LINEAL Y NO UN INDICE SECUNDARIO POR NOMBRE
+        //
+        // El arbol del repositorio esta indexado por ID, no por nombre: el
+        // `ArbolBST` ordena por `getId()`. Agregar un indice secundario por
+        // nombre seria sobre-ingenieria para este dominio (el volumen del
+        // sistema lo hace irrelevante) y tendria que mantenerce en cada alta,
+        // modificacion, baja y recarga, con el riesgo de un estado mas que se
+        // desincroniza del arbol. Es el mismo criterio que usa la busqueda
+        // por dni y por legajo.
+        //
+        // `listar()` sale ORDENADO por id, asi que el resultado tambien.
+        for (const T& entidad : listar()) {
+            // El nombre y el apellido guardados ya vienen recortados (los
+            // setters de `Persona` los recortan), asi que alcanza con bajarlos
+            // a minusculas.
+            const bool coincideElNombre =
+                Utils::aMinusculas(entidad.getNombre()).find(buscado) != std::string::npos;
+            const bool coincideElApellido =
+                Utils::aMinusculas(entidad.getApellido()).find(buscado) != std::string::npos;
+
+            if (coincideElNombre || coincideElApellido) {
+                encontrados.push_back(entidad);
+            }
+        }
+    }
+
+    return encontrados;
 }
 
 template <class T>
