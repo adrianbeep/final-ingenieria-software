@@ -142,6 +142,60 @@ std::vector<std::string> renderizarLineas(const ftxui::Element& elemento, int an
     return lineas;
 }
 
+// EL ANCHO NATURAL DE UN ELEMENTO
+//
+// Es el ancho que la vista NECESITA para dibujarse entera: el que tiene que
+// entrar en la terminal.
+//
+// COMO SE MIDE
+//
+// `ftxui::Render` calcula el requerimiento de cada elemento (el ancho minimo
+// con el que se puede dibujar) y lo deja en `requirement()`. Ese ancho es el
+// NATURAL de la vista.
+//
+// POR QUE NO SE MIDE "LA LINEA MAS LARGA" DEL SCREEN
+//
+// Dos cosas lo arruinan: el `ftxui::separator()` dibuja una linea del ANCHO
+// de la pantalla, y `Screen::ToString()` devuelve la pantalla COMPLETA (con
+// el relleno de espacios de la derecha). Las dos cosas hacen que la linea mas
+// larga mida el ancho de la pantalla y no el de la vista.
+//
+// EL ANCHO DE LA PANTALLA
+//
+// Es de 300 columnas a proposito: es mas ancha que cualquier tabla que
+// dibuje la aplicacion, asi que NADA se envuelve y el ancho medido es el
+// natural y no el de un recorte.
+std::size_t anchoNatural(const ftxui::Element& elemento) {
+    ftxui::Screen pantalla = ftxui::Screen::Create(ftxui::Dimension::Fixed(300),
+                                                   ftxui::Dimension::Fixed(60));
+    ftxui::Render(pantalla, elemento);
+
+    const ftxui::Requirement requerimiento = elemento->requirement();
+    return requerimiento.min_x > 0 ? static_cast<std::size_t>(requerimiento.min_x) : 0;
+}
+
+// La linea que empieza con un texto: la PRIMERA que lo tiene.
+//
+// Es lo que permite comprobar el CONTENIDO de una linea concreta (la del
+// aviso de la ficha, la de un turno de la ficha de un medico) sin tener que
+// compararla entera.
+std::string lineaQueEmpiezaCon(const std::string& texto, const std::string& prefijo) {
+    std::size_t inicio = 0;
+    while (inicio <= texto.size()) {
+        const std::size_t fin = texto.find('\n', inicio);
+        const std::string linea = texto.substr(
+            inicio, fin == std::string::npos ? std::string::npos : fin - inicio);
+        if (linea.compare(0, prefijo.size(), prefijo) == 0) {
+            return linea;
+        }
+        if (fin == std::string::npos) {
+            break;
+        }
+        inicio = fin + 1;
+    }
+    return "";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -1307,6 +1361,12 @@ TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
     CHECK(texto.find("Historial completo") != std::string::npos);
     CHECK(texto.find("2027-03-10") != std::string::npos);
     CHECK(texto.find("2027-03-11") != std::string::npos);
+    // LA FICHA DEL PACIENTE NO MARCA NADA
+    //
+    // No muestra al medico, asi que no tiene con que comparar: la marca de
+    // los turnos que ya no son de la especialidad del medico es solo de la
+    // ficha del medico.
+    CHECK(texto.find("*") == std::string::npos);
 }
 
 TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexistente) {
@@ -1933,6 +1993,87 @@ TEST_CASE("el formulario de modificar se precarga con los datos de la entidad",
 }
 
 // ---------------------------------------------------------------------------
+// LA MARCA DE LOS TURNOS EN LA FICHA DEL MEDICO
+//
+// LA ESPECIALIDAD DEL TURNO ES UN DATO HISTORICO
+//
+// La especialidad del TURNO es la que se agendo (un hecho del pasado) y la
+// del MEDICO es la que atiende hoy (gobierna las reservas nuevas). Cuando no
+// son la misma, el turno es de una especialidad que el medico ya no
+// atiende.
+//
+// LA FICHA DEL MEDICO MARCA ESOS TURNOS
+//
+// El sujeto de la ficha es el medico: la comparacion es natural y es
+// barata. La ficha del PACIENTE no muestra al medico, asi que no tiene con
+// que comparar y no lleva marca.
+//
+// LA MARCA ES UN "*" Y ABAJO ESTA SU LEYENDA
+//
+// La marca va dentro de una celda de tabla, asi que tiene que ser corta. La
+// leyenda la dibuja el motor de la ficha, DEBAJO de las tablas: la pone la
+// pantalla (es dato, no una regla del motor).
+// ---------------------------------------------------------------------------
+TEST_CASE("la ficha de un medico marca los turnos que ya no son de su especialidad",
+           crud_medicos_ficha_marca_turnos) {
+    EscenarioMedicos escenario("crud_medicos_ficha_marca_turnos");
+    // El medico ATIENNE PEDIATRIA hoy.
+    escenario.medicos.alta(Medico(1, "Beto", "Perez", "beto.perez@unlp.edu.ar", "2214556677",
+                                   "LEG-1001", Especialidad::PEDI));
+    // El #31 se agendo de CARDIOLOGIA: NO es la que atiende hoy.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    // El #32 si es de la especialidad que atiende.
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::PEDI, Fecha(2027, 3, 11), Hora(9, 30), 45, "A-2"));
+
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('6'));
+    CHECK(motor.vista() == "Id");
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Ficha");
+
+    const std::string texto = motor.vistaTextoPlano();
+
+    // EL TURNO QUE NO ES DE SU ESPECIALIDAD LLEVA LA MARCA
+    const std::string fila31 = lineaQueEmpiezaCon(texto, "    31 | ");
+    CHECK(fila31.find("Cardiolog") != std::string::npos);
+    CHECK(fila31.find(" *") != std::string::npos);
+
+    // Y EL QUE SI ES DE SU ESPECIALIDAD, NO
+    const std::string fila32 = lineaQueEmpiezaCon(texto, "    32 | ");
+    CHECK(fila32.find("Pediatr") != std::string::npos);
+    CHECK(fila32.find(" *") == std::string::npos);
+
+    // Y LA LEYENDA DICE QUE SIGNIFICA LA MARCA
+    CHECK(texto.find("El * marca") != std::string::npos);
+}
+
+TEST_CASE("la ficha de un medico sin turnos divergentes no muestra la leyenda",
+           crud_medicos_ficha_sin_leyenda) {
+    EscenarioMedicos escenario("crud_medicos_ficha_sin_leyenda");
+    escenario.medicos.alta(Medico(1, "Beto", "Perez", "beto.perez@unlp.edu.ar", "2214556677",
+                                   "LEG-1001", Especialidad::PEDI));
+    // El unico turno es de la especialidad que atiende: no hay nada que
+    // marcar y no hay nada que explicar.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::PEDI, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('6'));
+    escribir(motor, "1");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Ficha");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("El * marca") == std::string::npos);
+    CHECK(lineaQueEmpiezaCon(texto, "    31 | ").find(" *") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // LA PANTALLA DE TURNOS
 //
 // QUE SE VERIFICA ACa
@@ -2547,7 +2688,7 @@ TEST_CASE("el render de la pantalla de turnos se puede dibujar en FTXUI",
 //     turnos que se reemplazaron (en las DOS direcciones).
 // ---------------------------------------------------------------------------
 
-TEST_CASE("listar todos muestra una fila por turno con las diez columnas",
+TEST_CASE("listar todos muestra una fila por turno con las seis columnas",
            turnos_listar) {
     definirNoColor("1");
     ui::Theme::recargarEntorno();
@@ -2570,32 +2711,92 @@ TEST_CASE("listar todos muestra una fila por turno con las diez columnas",
     const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 220, 12);
     CHECK(lineas.size() == 12);
     if (lineas.size() == 12) {
-        // LA FILA 3 ES LA CABECERA: TIENE LAS DIEZ COLUMNAS.
+        // LA FILA 3 ES LA CABECERA: TIENE LAS SEIS COLUMNAS DE LA LISTA.
+        //
+        // La lista se enfoca en lo que hace falta para RECONOCER un turno y
+        // para que la tabla entre en 80 columnas (ver el caso del ancho).
         const std::string cabecera = lineas[3];
         CHECK(cabecera.find("id") != std::string::npos);
+        CHECK(cabecera.find("fecha") != std::string::npos);
+        CHECK(cabecera.find("hora") != std::string::npos);
         CHECK(cabecera.find("paciente") != std::string::npos);
         CHECK(cabecera.find("medico") != std::string::npos);
-        CHECK(cabecera.find("especialidad") != std::string::npos);
-        CHECK(cabecera.find("fecha") != std::string::npos);
-        CHECK(cabecera.find("dia") != std::string::npos);
-        CHECK(cabecera.find("hora") != std::string::npos);
-        CHECK(cabecera.find("duracion") != std::string::npos);
-        CHECK(cabecera.find("consultorio") != std::string::npos);
         CHECK(cabecera.find("estado") != std::string::npos);
+
+        // Y LAS CUATRO QUE QUEDARON AFUERA NO ESTAN.
+        //
+        // `dia` se deduce de la fecha, `especialidad` es la del medico (la
+        // regla 2b), y `duracion` y `consultorio` estan en la ficha.
+        CHECK(cabecera.find("especialidad") == std::string::npos);
+        CHECK(cabecera.find("dia") == std::string::npos);
+        CHECK(cabecera.find("duracion") == std::string::npos);
+        CHECK(cabecera.find("consultorio") == std::string::npos);
 
         // UNA FILA POR TURNO, con los NOMBRES del paciente y del medico.
         CHECK(lineas[5].find("Ana Gomez") != std::string::npos);
         CHECK(lineas[5].find("Beto Perez") != std::string::npos);
-        CHECK(lineas[5].find("Cardiolog") != std::string::npos);
-        CHECK(lineas[5].find("A-1") != std::string::npos);
         CHECK(lineas[5].find("Activo") != std::string::npos);
         CHECK(lineas[6].find("Cancelado") != std::string::npos);
     }
 
-    // Y EN TEXTO PLANO SE VE EL DIA DE LA SEMANA.
+    // Y EN TEXTO PLANO SE VEN LOS MISMOS CAMPOS.
     const std::string texto = pantalla.vistaTextoPlano();
-    CHECK(texto.find(Fecha::nombreDiaSemana(fechaDesplazada(30).diaSemana()))
-          != std::string::npos);
+    CHECK(texto.find("Ana Gomez") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    CHECK(texto.find("Activo") != std::string::npos);
+    CHECK(texto.find("Cancelado") != std::string::npos);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// LA RED DE LAS 80 COLUMNAS
+//
+// LA LISTA TIENE QUE ENTRAR EN UNA TERMINAL DE 80 COLUMNAS
+//
+// `ui::Tabla` no scrollea ni trunca: si la tabla es mas ancha que la
+// terminal, la parte de la derecha (la del `estado`) no se ve. Con las diez
+// columnas de la especificacion, la tabla de la semilla mide 137 columnas.
+//
+// Este caso mide el ANCHO NATURAL de la vista "Listar todos" y falla si pasa
+// de 80. Es la red que hace que esto no se vuelva a romper en silencio.
+//
+// LOS NOMBRES SON LOS MAS LARGOS DE LA SEMILLA
+//
+// La semilla tiene "Ramirez Joaquin" y "Fernandez Diego" (quince letras cada
+// uno). El caso usa nombres de esa longitud para que el ancho que se mide
+// sea el de verdad, y no el de un camino feliz con nombres cortitos.
+// ---------------------------------------------------------------------------
+TEST_CASE("la lista de turnos entra en 80 columnas", turnos_lista_entra_en_80) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioTurnos escenario("turnos_lista_entra_en_80");
+
+    // LOS NOMBRES MAS LARGOS DE LA SEMILLA
+    escenario.pacientes.alta(pacienteDePrueba(1, "Valentina", "Ibarra", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Diego", "Fernandez", "LEG-1001", Especialidad::CARD));
+
+    // Y LOS TURNOS QUE PONEN CADA COLUMNA EN SU ANCHO MAXIMO: la fecha mas
+    // larga, la hora mas larga y el estado mas largo ("Reprogramado").
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "Consultorio 1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 11), Hora(9, 30), 45, "Consultorio 2",
+              EstadoTurno::Reprogramado));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    CHECK(pantalla.vista() == "Listado");
+
+    // EL ANCHO NATURAL DE LA VISTA
+    const std::size_t ancho = anchoNatural(pantalla.renderizar());
+
+    // LA RED
+    CHECK(ancho <= 80);
 
     borrarNoColor();
     ui::Theme::recargarEntorno();
@@ -2646,7 +2847,9 @@ TEST_CASE("buscar es de dos pasos: primero el criterio y despues el valor",
     CHECK(pantalla.vista() == "Resultados");
     const std::string texto = pantalla.vistaTextoPlano();
     CHECK(texto.find("Ana Gomez") != std::string::npos);
-    CHECK(texto.find("A-1") != std::string::npos);
+    // El turno se reconoce por su id: el consultorio ya no es una columna de
+    // la lista (esta en la ficha).
+    CHECK(texto.find("31") != std::string::npos);
 }
 
 TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
@@ -2671,9 +2874,11 @@ TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Resultados");
     const std::string porEstado = pantalla.vistaTextoPlano();
-    CHECK(porEstado.find("A-2") != std::string::npos);
+    // Los turnos se distinguen por su id: el consultorio no es una columna de
+    // la lista.
+    CHECK(porEstado.find("32") != std::string::npos);
     // El otro turno NO aparece: solo las coincidencias.
-    CHECK(porEstado.find("A-1") == std::string::npos);
+    CHECK(porEstado.find("31") == std::string::npos);
 
     // POR CONSULTORIO
     pantalla.manejar(eventoCaracter('0'));
@@ -2683,8 +2888,8 @@ TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Resultados");
     const std::string porConsultorio = pantalla.vistaTextoPlano();
-    CHECK(porConsultorio.find("A-1") != std::string::npos);
-    CHECK(porConsultorio.find("A-2") == std::string::npos);
+    CHECK(porConsultorio.find("31") != std::string::npos);
+    CHECK(porConsultorio.find("32") == std::string::npos);
 }
 
 TEST_CASE("buscar con un codigo de especialidad que no existe muestra el error del dominio",
@@ -2741,6 +2946,10 @@ TEST_CASE("ver detalle muestra todos los campos del turno", turnos_detalle) {
     CHECK(texto.find("Beto Perez") != std::string::npos);
     CHECK(texto.find("Cardiolog") != std::string::npos);
     CHECK(texto.find(fechaDesplazada(30).aTexto()) != std::string::npos);
+    // El dia de la semana esta en la FICHA (la lista se enfoca en seis
+    // columnas y el dia se deduce de la fecha).
+    CHECK(texto.find(Fecha::nombreDiaSemana(fechaDesplazada(30).diaSemana()))
+          != std::string::npos);
     CHECK(texto.find("10:00") != std::string::npos);
     CHECK(texto.find("45") != std::string::npos);
     CHECK(texto.find("A-1") != std::string::npos);
@@ -2785,6 +2994,87 @@ TEST_CASE("la ficha de un turno reprogramado muestra el reemplazo en las dos dir
     const std::string delNuevo = pantalla.vistaTextoPlano();
     CHECK(delNuevo.find("Reemplazado: #31") != std::string::npos);
     CHECK(delNuevo.find(fechaDesplazada(30).aTexto()) != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL AVISO DE LA ESPECIALIDAD
+//
+// LA ESPECIALIDAD DEL TURNO ES UN DATO HISTORICO
+//
+// La especialidad del TURNO es la que se AGENDO (un hecho del pasado) y la
+// del MEDICO es la que atiende HOY (gobierna las reservas nuevas). Cuando no
+// son la misma, el turno es de una especialidad que el medico ya no atiende.
+//
+// No es un error: es un hecho. Pero si la pantalla no lo dice, el usuario lo
+// lee como un bug. Por eso la ficha del turno avisa.
+//
+// Y al reves: si las dos especialidades son la misma, NO hay aviso. Un
+// aviso que aparece siempre es ruido.
+// ---------------------------------------------------------------------------
+TEST_CASE("el detalle de un turno avisa cuando su especialidad no es la que atiende hoy el medico",
+           turnos_detalle_especialidad_distinta) {
+    EscenarioTurnos escenario("turnos_detalle_especialidad_distinta");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    // El medico ATIENNE PEDIATRIA hoy...
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::PEDI));
+    // ...pero el turno se agendo de CARDIOLOGIA.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('7'));
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Detalle");
+
+    // EN TEXTO PLANO
+    const std::string aviso = lineaQueEmpiezaCon(pantalla.vistaTextoPlano(), "  Aviso: ");
+    CHECK(!aviso.empty());
+    // El aviso dice las DOS especialidades y que difieren.
+    CHECK(aviso.find("Cardiolog") != std::string::npos);
+    CHECK(aviso.find("Pediatr") != std::string::npos);
+    CHECK(aviso.find("difieren") != std::string::npos);
+
+    // Y EN EL RENDER DE FTXUI
+    const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 300, 20);
+    bool hayAviso = false;
+    for (const std::string& linea : lineas) {
+        if (linea.find("difieren") != std::string::npos) {
+            hayAviso = true;
+        }
+    }
+    CHECK(hayAviso);
+}
+
+TEST_CASE("el detalle de un turno no avisa cuando su especialidad es la que atiende hoy el medico",
+           turnos_detalle_especialidad_igual) {
+    EscenarioTurnos escenario("turnos_detalle_especialidad_igual");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    // El medico y el turno son de la MISMA especialidad: no hay nada que avisar.
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(10, 0), 45, "A-1"));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('7'));
+    escribir(pantalla, "31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Detalle");
+
+    // SIN AVISO EN TEXTO PLANO
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Aviso") == std::string::npos);
+    CHECK(texto.find("difieren") == std::string::npos);
+
+    // Y SIN AVISO EN EL RENDER
+    const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 300, 20);
+    for (const std::string& linea : lineas) {
+        CHECK(linea.find("difieren") == std::string::npos);
+    }
 }
 
 TEST_CASE("el menu principal ofrece la opcion de turnos", menu_principal_turnos) {

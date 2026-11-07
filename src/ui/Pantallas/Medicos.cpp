@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +34,13 @@ namespace ui {
 namespace Pantallas {
 namespace {
 
+// LA MARCA DE LOS TURNOS QUE YA NO SON DE LA ESPECIALIDAD DEL MEDICO
+//
+// Es un asterisco: va dentro de una celda de tabla, asi que tiene que ser
+// CORTO. La leyenda que lo explica la dibuja el motor de la ficha, debajo
+// de las tablas (la pone la pantalla, no el motor).
+const char* MARCADOR_DE_ESPECIALIDAD = "*";
+
 // LA FILA DE UN MEDICO
 //
 // Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
@@ -54,14 +62,51 @@ std::vector<std::string> filaDe(const Medico& medico) {
 // LA FILA DE UN TURNO
 //
 // Es la fila de la ficha: los turnos del medico con su estado.
-std::vector<std::string> filaDeTurno(const Turno& turno) {
+std::vector<std::string> filaDeTurno(const Turno& turno,
+                                     const std::optional<Especialidad>& especialidadActual) {
+    // LA MARCA DEL TURNO QUE YA NO ES DE LA ESPECIALIDAD DEL MEDICO
+    //
+    // La especialidad del TURNO es la que se agendo: es un hecho del pasado.
+    // La del MEDICO es la que atiende hoy: gobierna las reservas nuevas.
+    //
+    // Cuando no son la misma, el turno es de una especialidad que el medico
+    // ya no atiende. No es un error: es un dato historico (el medico cambio
+    // de especialidad, o el turno se migro a mano). Pero tiene que verse, o
+    // el usuario lo lee como un bug.
+    //
+    // LA MARCA ES CORTA
+    //
+    // Va dentro de una celda de una tabla: un asterisco y la leyenda que
+    // esta debajo de las tablas.
+    std::string especialidad = descripcionDe(turno.getEspecialidad());
+    if (especialidadActual && turno.getEspecialidad() != *especialidadActual) {
+        especialidad += " " + std::string(MARCADOR_DE_ESPECIALIDAD);
+    }
+
     return {std::to_string(turno.getId()),
             turno.getFecha().aTexto(),
             turno.getHora().aTexto(),
             std::to_string(turno.getDuracionMin()),
             turno.getConsultorio(),
-            descripcionDe(turno.getEspecialidad()),
+            especialidad,
             estadoATexto(turno.getEstado())};
+}
+
+// LA ESPECIALIDAD ACTUAL DEL MEDICO DE LA FICHA
+//
+// El sujeto de la ficha es el medico: la comparacion con la especialidad de
+// sus turnos es natural y es barata (el medico ya esta cargado).
+//
+// SI EL MEDICO NO ESTA
+//
+// No hay especialidad actual con que comparar, asi que no se marca nada: la
+// marca es una COMPARACION, y sin un lado no hay comparacion.
+std::optional<Especialidad> especialidadActualDe(int id, RepositorioMedicos& medicos) {
+    Medico medico;
+    if (!medicos.buscarPorId(id, medico)) {
+        return std::nullopt;
+    }
+    return medico.getEspecialidad();
 }
 
 // EL VALIDADOR DE UN CAMPO DEL FORMULARIO
@@ -237,22 +282,52 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     // El servicio no tiene una consulta de "turnos vigentes de un medico"
     // (la que usa es la de los pacientes): los vigentes se sacan del historial
     // filtrando por estado.
+    //
+    // LA MARCA DE LOS TURNOS QUE YA NO SON DE SU ESPECIALIDAD
+    //
+    // La ficha del MEDICO tiene al medico delante: por eso los turnos que
+    // no son de la especialidad que atiende HOY se marcan. La ficha del
+    // PACIENTE no muestra al medico, asi que no tiene con que comparar y no
+    // lleva marca.
     config.turnos.cabeceras = {"id", "fecha", "hora", "duracion", "consultorio", "especialidad", "estado"};
-    config.turnos.vigentes = [&servicioTurnos](int id) {
+    config.turnos.vigentes = [&servicioTurnos, &repositorio](int id) {
         std::vector<std::vector<std::string>> filas;
+        const std::optional<Especialidad> actual = especialidadActualDe(id, repositorio);
         for (const Turno& turno : servicioTurnos.turnosDeMedico(id)) {
             if (turno.getEstado() == EstadoTurno::Activo) {
-                filas.push_back(filaDeTurno(turno));
+                filas.push_back(filaDeTurno(turno, actual));
             }
         }
         return filas;
     };
-    config.turnos.historial = [&servicioTurnos](int id) {
+    config.turnos.historial = [&servicioTurnos, &repositorio](int id) {
         std::vector<std::vector<std::string>> filas;
+        const std::optional<Especialidad> actual = especialidadActualDe(id, repositorio);
         for (const Turno& turno : servicioTurnos.turnosDeMedico(id)) {
-            filas.push_back(filaDeTurno(turno));
+            filas.push_back(filaDeTurno(turno, actual));
         }
         return filas;
+    };
+
+    // LA LEYENDA DE LA MARCA
+    //
+    // Solo aparece si el medico tiene AL MENOS UN turno marcado: una nota
+    // que no explica nada es ruido.
+    //
+    // Es DATO que le pasa al motor de la ficha: el motor la dibuja sin saber
+    // que significa (ver `TurnosDePersona::nota`).
+    config.turnos.nota = [&servicioTurnos, &repositorio](int id) {
+        const std::optional<Especialidad> actual = especialidadActualDe(id, repositorio);
+        if (!actual) {
+            return std::string();
+        }
+        for (const Turno& turno : servicioTurnos.turnosDeMedico(id)) {
+            if (turno.getEspecialidad() != *actual) {
+                return std::string("El * marca los turnos de una especialidad que el medico ya "
+                                   "no atiende.");
+            }
+        }
+        return std::string();
     };
 
     return config;
