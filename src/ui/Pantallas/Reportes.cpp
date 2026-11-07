@@ -4,9 +4,11 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "ui/CrudPersonas.h"
 #include "ui/NombresDePersonas.h"
+#include "ui/Semana.h"
 #include "utils/Fecha.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -92,6 +94,16 @@ const std::vector<std::string>& cabecerasPorMedico() {
 const std::vector<std::string>& cabecerasPorEspecialidad() {
     static const std::vector<std::string> cabeceras = {"id",      "fecha", "hora",
                                                         "paciente", "medico", "estado"};
+    return cabeceras;
+}
+
+// LAS COLUMNAS DEL REPORTE DE OCUPACION
+//
+// No son las de un turno: son las de un DIA de la agenda. La ultima es el
+// porcentaje, asi que lleva el signo adelante ("% ocupacion").
+const std::vector<std::string>& cabecerasDeOcupacion() {
+    static const std::vector<std::string> cabeceras = {"fecha", "dia", "turnos",
+                                                        "horas ocupadas", "% ocupacion"};
     return cabeceras;
 }
 
@@ -207,6 +219,134 @@ Campo::Validador validadorDeIdMedico(RepositorioMedicos& medicos) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// LA OCUPACION DE UN DIA
+//
+// QUE SE MIDE
+//
+// La ocupacion es el tiempo que la agenda del dia tiene RESERVADO: los
+// minutos que los turnos activos ocupan.
+//
+// LAS TRES DECISIONES DEL METRICO
+//
+// 1. ES LA UNION DE LOS INTERVALOS, NO LA SUMA DE LAS DURACIONES
+//
+//    Dos medicos que atienden a la vez ocupan el calendario UNA vez, no
+//    dos: la agenda es el conjunto de los intervalos reservados, y un
+//    intervalo contado dos veces es un intervalo libre contado como
+//    ocupado. Por eso los intervalos se MERGEAN antes de medir.
+//
+// 2. SOLO OCUPAN LOS TURNOS ACTIVOS
+//
+//    Un turno cancelado o reprogramado NO tiene hora reservada: libero el
+//    horario. Por eso la ocupacion se mide sobre los turnos `Activo`. (Los
+//    cuatro reportes de listado muestran TODOS los estados: un reporte
+//    tiene que poder mostrar la historia de la agenda. Esta es una
+//    MEDIDA de la agenda, no un listado.)
+//
+// 3. EL PORCENTAJE ES SOBRE LA VENTANA DE ATENCION
+//
+//    El denominador es el horario de atencion del dominio (de las 08:00 a
+//    las 22:00): 14 horas, 840 minutos. Un dia sin nada reservado es 0%.
+// ---------------------------------------------------------------------------
+
+// Un intervalo reservado: de tal minuto al tal minuto (desde la medianoche).
+struct Intervalo {
+    int inicio;
+    int fin;
+};
+
+// Lo que la agenda de un dia tiene reservado.
+struct Ocupacion {
+    int turnos = 0;
+    int minutos = 0;
+};
+
+// Los minutos de la VENTANA DE ATENCION (08:00 a 22:00).
+int minutosDeLaVentana() {
+    return (Hora::HORA_FIN - Hora::HORA_INICIO) * Hora::MINUTOS_POR_HORA;
+}
+
+// LA OCUPACION DE UN DIA
+//
+// Son los turnos que reservan la agenda y los minutos que la union de sus
+// intervalos ocupa.
+Ocupacion ocupacionDe(const std::vector<Turno>& turnos) {
+    Ocupacion resultado;
+
+    std::vector<Intervalo> intervalos;
+    intervalos.reserve(turnos.size());
+
+    for (const Turno& turno : turnos) {
+        // SOLO OCUPAN LOS TURNOS ACTIVOS
+        if (turno.getEstado() != EstadoTurno::Activo) {
+            continue;
+        }
+        ++resultado.turnos;
+        const int inicio = turno.getHora().minutosDesdeMedianoche();
+        intervalos.push_back(Intervalo{inicio, inicio + turno.getDuracionMin()});
+    }
+
+    // LA UNION DE LOS INTERVALOS
+    //
+    // Se ordenan por arranque y se van Fusionando: dos intervalos que se
+    // tocan (o que se pisan) son uno solo.
+    std::sort(intervalos.begin(), intervalos.end(),
+              [](const Intervalo& uno, const Intervalo& otro) {
+                  if (uno.inicio != otro.inicio) {
+                      return uno.inicio < otro.inicio;
+                  }
+                  return uno.fin < otro.fin;
+              });
+
+    int inicioActual = -1;
+    int finActual = -1;
+    for (const Intervalo& intervalo : intervalos) {
+        if (inicioActual < 0) {
+            inicioActual = intervalo.inicio;
+            finActual = intervalo.fin;
+            continue;
+        }
+        if (intervalo.inicio <= finActual) {
+            // SE PISAN (o se tocan): el intervalo sigue siendo uno solo.
+            if (intervalo.fin > finActual) {
+                finActual = intervalo.fin;
+            }
+            continue;
+        }
+        // hay un hueco: el intervalo anterior ya termino.
+        resultado.minutos += finActual - inicioActual;
+        inicioActual = intervalo.inicio;
+        finActual = intervalo.fin;
+    }
+    if (inicioActual >= 0) {
+        resultado.minutos += finActual - inicioActual;
+    }
+
+    return resultado;
+}
+
+// LAS HORAS OCUPADAS, CON UN DECIMAL
+//
+// Se hace con ENTEROS: el numero de decimas de hora es `minutos * 10 / 60`,
+// redondeado al mas cercano. (Un turno de 45 minutos ocupa "0.8" horas.)
+std::string horasOcupadas(int minutos) {
+    const int decimas = (minutos * 10 + 30) / 60;
+    return std::to_string(decimas / 10) + "." + std::to_string(decimas % 10);
+}
+
+// EL PORCENTAJE DE OCUPACION, CON UN DECIMAL
+//
+// `ventana` es la cantidad de minutos que se toman como el cien por ciento:
+// la ventana de atencion de un dia (840) o la de la semana (5880).
+std::string porcentajeDe(int minutos, int ventana) {
+    if (ventana <= 0) {
+        return "0.0%";
+    }
+    const int decimas = (minutos * 1000 + ventana / 2) / ventana;
+    return std::to_string(decimas / 10) + "." + std::to_string(decimas % 10) + "%";
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -231,6 +371,7 @@ PantallaReportes::PantallaReportes(Aplicacion& aplicacion,
     _menu.agregar('2', "Turnos por paciente", [this]() { iniciarTurnosPorPaciente(); });
     _menu.agregar('3', "Turnos por medico", [this]() { iniciarTurnosPorMedico(); });
     _menu.agregar('4', "Turnos por especialidad", [this]() { abrirSelector(); });
+    _menu.agregar('5', "Ocupacion por semana", [this]() { iniciarOcupacion(); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 }
 
@@ -296,6 +437,8 @@ bool PantallaReportes::manejar(const Evento& evento) {
         case Vista::Selector:
             return manejarSelector(evento);
         case Vista::Resultado:
+            return manejarLectura(evento);
+        case Vista::Ocupacion:
             return manejarLectura(evento);
     }
     return false;
@@ -434,6 +577,16 @@ void PantallaReportes::iniciarTurnosPorMedico() {
     irA(Vista::Campo);
 }
 
+void PantallaReportes::iniciarOcupacion() {
+    // LA SEMANA SE PIDE CON UNA FECHA
+    //
+    // La fecha que se escribe es un dia cualquiera de la semana: el reporte
+    // arma la semana de LUNES a DOMINGO que lo contiene.
+    _reporte = Reporte::OcupacionPorSemana;
+    _campo = std::make_unique<Campo>("Fecha", "", validadorDeFecha());
+    irA(Vista::Campo);
+}
+
 void PantallaReportes::abrirSelector() {
     // LA ESPECIALIDAD SE ELIGE DE LAS DOCE DEL CATALOGO
     //
@@ -503,10 +656,89 @@ void PantallaReportes::confirmarCampo() {
             // No deberia llegar aca: la especialidad no se escribe, se elige.
             irA(Vista::Menu);
             return;
+
+        case Reporte::OcupacionPorSemana: {
+            // LA FECHA TIENE QUE EXISTIR EN EL CALENDARIO
+            //
+            // El campo solo valido la FORMA ("AAAA-MM-DD"): que la fecha
+            // exista es otra pregunta, y la responde el DOMINIO.
+            Fecha fecha;
+            try {
+                fecha = Fecha::desdeTexto(_campo->valor());
+            } catch (const DatoInvalidoException& error) {
+                avisar(error.what());
+                return;
+            }
+            armarOcupacion(fecha);
+            avisarExito(mensajeDeOcupacion());
+            irA(Vista::Ocupacion);
+            return;
+        }
     }
 
     avisarExito(std::to_string(_filas.size()) + " turno(s).");
     irA(Vista::Resultado);
+}
+
+// ---------------------------------------------------------------------------
+// La ocupacion de la semana
+// ---------------------------------------------------------------------------
+
+void PantallaReportes::armarOcupacion(const Fecha& fecha) {
+    // LA SEMANA ES LA DEL LUNES AL DOMINGO QUE CONTIENE A LA FECHA
+    //
+    // La fecha escrita es un dia cualquiera de la semana: el reporte arma la
+    // semana entera que lo contiene (ver `ui/Semana.h`).
+    const std::vector<Fecha> dias = diasDeLaSemana(fecha);
+
+    const int ventanaDelDia = minutosDeLaVentana();
+    const int ventanaDeLaSemana = ventanaDelDia * 7;
+
+    _filas.clear();
+    int totalTurnos = 0;
+    int totalMinutos = 0;
+
+    for (const Fecha& dia : dias) {
+        const Ocupacion ocupacion = ocupacionDe(_servicioTurnos.turnosDeFecha(dia));
+        totalTurnos += ocupacion.turnos;
+        totalMinutos += ocupacion.minutos;
+
+        _filas.push_back({dia.aTexto(),
+                          Fecha::nombreDiaSemana(dia.diaSemana()),
+                          std::to_string(ocupacion.turnos),
+                          horasOcupadas(ocupacion.minutos),
+                          porcentajeDe(ocupacion.minutos, ventanaDelDia)});
+    }
+
+    // LA FILA DEL TOTAL DE LA SEMANA
+    //
+    // Es la suma de los siete dias: los turnos, los minutos y el porcentaje
+    // sobre la ventana de la semana entera (siete ventanas de atencion).
+    _filas.push_back({"TOTAL",
+                      "",
+                      std::to_string(totalTurnos),
+                      horasOcupadas(totalMinutos),
+                      porcentajeDe(totalMinutos, ventanaDeLaSemana)});
+
+    _cabeceras = cabecerasDeOcupacion();
+    _mensajeVacio = "No hay turnos en esa semana. 0: volver al menu.";
+}
+
+std::string PantallaReportes::mensajeDeOcupacion() const {
+    // EL MENSAJE DICE QUE SEMANA SE REPORTO
+    //
+    // La ultima fila de la tabla es el total de los siete dias: el mensaje
+    // lo resume y dice de que semana es, para que el usuario sepa que el
+    // reporte hablo de la semana que queria.
+    if (_filas.empty()) {
+        return "0 turno(s).";
+    }
+    const std::vector<std::string>& total = _filas.back();
+    if (total.size() < 5) {
+        return "0 turno(s).";
+    }
+    return "Semana del " + _filas.front().front() + ": " + total[2] + " turno(s), " + total[3]
+        + " horas ocupadas (" + total[4] + ").";
 }
 
 void PantallaReportes::confirmarSeleccion() {
@@ -634,6 +866,15 @@ ftxui::Element PantallaReportes::lineaResultado() const {
     return tablaDe(_filas, _cabeceras);
 }
 
+ftxui::Element PantallaReportes::lineaOcupacion() const {
+    // LA TABLA DE LA OCUPACION SIEMPRE TIENE FILAS
+    //
+    // Son los siete dias de la semana mas el total: no hay un estado
+    // vacio que mostrar (una semana sin turnos es una semana con siete
+    // dias en cero).
+    return tablaDe(_filas, _cabeceras);
+}
+
 ftxui::Element PantallaReportes::tablaDe(const std::vector<std::vector<std::string>>& filas,
                                           const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
@@ -690,6 +931,9 @@ ftxui::Element PantallaReportes::renderizar() {
         case Vista::Resultado:
             lineas.push_back(lineaResultado());
             break;
+        case Vista::Ocupacion:
+            lineas.push_back(lineaOcupacion());
+            break;
     }
 
     if (!mensajeActual().esVacio()) {
@@ -715,6 +959,8 @@ std::string PantallaReportes::ayuda() const {
             return "Flechas: mover   Numero: elegir   Enter: confirmar   Esc: volver";
         case Vista::Resultado:
             return "0: volver   Esc: volver";
+        case Vista::Ocupacion:
+            return "0: volver   Esc: volver";
     }
     return "";
 }
@@ -730,6 +976,7 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
     static const std::string campo = "Campo";
     static const std::string selector = "Selector";
     static const std::string resultado = "Resultado";
+    static const std::string ocupacion = "Ocupacion";
 
     switch (vista) {
         case Vista::Menu:
@@ -740,6 +987,8 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
             return selector;
         case Vista::Resultado:
             return resultado;
+        case Vista::Ocupacion:
+            return ocupacion;
     }
     return menu;
 }
@@ -797,6 +1046,18 @@ std::string PantallaReportes::textoDeLaVista() const {
             }
             if (_filas.empty()) {
                 salida += "  " + _mensajeVacio + "\n";
+            }
+            return salida;
+        }
+        case Vista::Ocupacion: {
+            for (const std::vector<std::string>& fila : _filas) {
+                for (std::size_t i = 0; i < fila.size(); ++i) {
+                    if (i > 0) {
+                        salida += " | ";
+                    }
+                    salida += fila[i];
+                }
+                salida += "\n";
             }
             return salida;
         }

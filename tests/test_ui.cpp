@@ -24,6 +24,7 @@
 #include "ui/Pantallas/Medicos.h"
 #include "ui/Pantallas/Reportes.h"
 #include "ui/Pantallas/Turnos.h"
+#include "ui/Semana.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
 #include "ui/Theme.h"
@@ -3157,6 +3158,17 @@ void escribir(ui::Pantallas::PantallaReportes& pantalla, const std::string& text
     }
 }
 
+// La fila esperada de la tabla de ocupacion.
+//
+// El nombre del dia lo pone el DOMINIO (`Fecha::nombreDiaSemana`), asi que
+// el test lo pide ahi tambien: el texto plano de la vista une las celdas con
+// " | ".
+std::string filaDeOcupacion(const std::string& fecha, int diaSemana, const std::string& turnos,
+                             const std::string& horas, const std::string& porcentaje) {
+    return fecha + " | " + Fecha::nombreDiaSemana(diaSemana) + " | " + turnos + " | " + horas
+        + " | " + porcentaje;
+}
+
 } // namespace
 
 TEST_CASE("el menu de reportes muestra las cuatro acciones y el cero de volver",
@@ -3172,6 +3184,7 @@ TEST_CASE("el menu de reportes muestra las cuatro acciones y el cero de volver",
     CHECK(texto.find("2. Turnos por paciente") != std::string::npos);
     CHECK(texto.find("3. Turnos por medico") != std::string::npos);
     CHECK(texto.find("4. Turnos por especialidad") != std::string::npos);
+    CHECK(texto.find("5. Ocupacion por semana") != std::string::npos);
     CHECK(texto.find("0. Volver") != std::string::npos);
 }
 
@@ -3507,4 +3520,214 @@ TEST_CASE("el menu principal ofrece la opcion de reportes", menu_principal_repor
     menu.manejar(eventoCaracter('4'));
     CHECK(escenario.aplicacion.textoPlanoActual().find("REPORTES") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// LA OCUPACION POR SEMANA
+//
+// QUE SE VERIFICA ACa
+//
+//   - que la semana sea la del LUNES al DOMINGO que contiene a la fecha;
+//   - que el total de la semana sea la suma de los siete dias;
+//   - que la ocupacion sea la UNION de los intervalos reservados (dos turnos
+//     en paralelo ocupan una vez, no dos);
+//   - que SOLO los turnos `Activo` ocupen la agenda;
+//   - que el porcentaje sea sobre la ventana de atencion (08:00 a 22:00).
+//
+// LA ARITMETICA DE LAS FECHAS
+//
+// La semana se arma con el numero de dia (`Fecha::numeroDeDia()`) y su
+// inversa, que tienen que usar la MISMA convencion de bisiestos. Los tests
+// del final del archivo fijan esa ida y vuelta.
+// ---------------------------------------------------------------------------
+TEST_CASE("el reporte de ocupacion muestra los siete dias de la semana y el total",
+           reportes_ocupacion_por_semana) {
+    EscenarioReportes escenario("reportes_ocupacion_por_semana");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // Un turno el LUNES y otro el MIERCOLES de la misma semana.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-2"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    CHECK(pantalla.vista() == "Campo");
+    // Se escribe un dia de la semana: el MIERCOLES.
+    escribir(pantalla, "2027-03-10");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Ocupacion");
+
+    // LA SEMANA ES DEL LUNES AL DOMINGO
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find(filaDeOcupacion("2027-03-08", 0, "1", "1.0", "7.1%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-09", 1, "0", "0.0", "0.0%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-10", 2, "1", "1.0", "7.1%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-11", 3, "0", "0.0", "0.0%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-12", 4, "0", "0.0", "0.0%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-13", 5, "0", "0.0", "0.0%")) != std::string::npos);
+    CHECK(texto.find(filaDeOcupacion("2027-03-14", 6, "0", "0.0", "0.0%")) != std::string::npos);
+
+    // Y LA FILA DEL TOTAL DE LA SEMANA
+    //
+    // Dos turnos, dos horas (60 + 60) y el 2.0% de la ventana de la semana
+    // (120 minutos sobre 7 x 840).
+    CHECK(texto.find("TOTAL |  | 2 | 2.0 | 2.0%") != std::string::npos);
+
+    // EL MENSAJE DICE DE QUE SEMANA ES EL REPORTE
+    CHECK(escenario.contexto.mensaje().texto()
+          == "OK  Semana del 2027-03-08: 2 turno(s), 2.0 horas ocupadas (2.0%).");
+}
+
+TEST_CASE("la ocupacion cuenta una vez los turnos que se pisan",
+           reportes_ocupacion_es_la_union) {
+    EscenarioReportes escenario("reportes_ocupacion_es_la_union");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.medicos.alta(
+        medicoConEspecialidad(2, "Caro", "Ruiz", "LEG-1002", Especialidad::CARD));
+    // DOS MEDICOS A LA VEZ: de 08:00 a 09:00 y de 08:30 a 09:30.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 2, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 30), 60, "A-2"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    escribir(pantalla, "2027-03-08");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Ocupacion");
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // LA UNION DE LOS DOS INTERVALOS ES DE 08:00 A 09:30
+    //
+    // Son 90 minutos ("1.5" horas), no 120 ("2.0"): la agenda se cuenta una
+    // vez. Los DOS turnos se cuentan, pero el tiempo reservado se cuenta una
+    // sola vez.
+    CHECK(texto.find(filaDeOcupacion("2027-03-08", 0, "2", "1.5", "10.7%")) != std::string::npos);
+}
+
+TEST_CASE("un turno cancelado no ocupa la agenda", reportes_ocupacion_solo_activos) {
+    EscenarioReportes escenario("reportes_ocupacion_solo_activos");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // Un turno ACTIVO y uno CANCELADO (que libero su horario).
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(10, 0), 60, "A-2",
+              EstadoTurno::Cancelado));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    escribir(pantalla, "2027-03-08");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Ocupacion");
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // SOLO EL TURNO ACTIVO OCUPA: una hora, no dos.
+    CHECK(texto.find(filaDeOcupacion("2027-03-08", 0, "1", "1.0", "7.1%")) != std::string::npos);
+}
+
+TEST_CASE("un turno reprogramado tampoco ocupa la agenda",
+           reportes_ocupacion_solo_activos_reprogramado) {
+    EscenarioReportes escenario("reportes_ocupacion_solo_activos_reprogramado");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(10, 0), 60, "A-2",
+              EstadoTurno::Reprogramado));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    escribir(pantalla, "2027-03-08");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Ocupacion");
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    CHECK(texto.find(filaDeOcupacion("2027-03-08", 0, "1", "1.0", "7.1%")) != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// LA ARITMETICA DE LAS FECHAS
+//
+// LA SEMANA SE ARMA CON EL NUMERO DE DIA Y SU INVERSA
+//
+// `Fecha::numeroDeDia()` es el numero de dias desde el 2000-01-01, contando
+// los anos bisiestos. Para volver de un numero de dia a una fecha hay que
+// hacer el camino de vuelta CON LA MISMA CONVENCION: si las dos contaran
+// distinto, un dia seria de un largo y del otro.
+//
+// Estos tests fijan las dos puntas: la ida y vuelta, y el lunes que se
+// espera de una semana conocida.
+// ---------------------------------------------------------------------------
+TEST_CASE("el numero de dia y su inversa dan la misma fecha", semana_ida_y_vuelta) {
+    // Fechas queibo los bisiestos: el 2000 (divisible por 400) y el 2024
+    // (divisible por 4), y una que NO es bisiesto (el 2100, divisible por
+    // 100 pero no por 400).
+    const Fecha fechas[] = {Fecha(2000, 1, 1),  Fecha(2000, 2, 29), Fecha(2000, 3, 1),
+                            Fecha(2024, 2, 29), Fecha(2027, 3, 10), Fecha(2100, 12, 31)};
+    for (const Fecha& fecha : fechas) {
+        CHECK(ui::fechaDesdeNumeroDeDia(fecha.numeroDeDia()) == fecha);
+    }
+
+    // Y AL REVES: el numero de dia de una fecha que se conoce.
+    CHECK(Fecha(2000, 1, 1).numeroDeDia() == 0);
+    CHECK(Fecha(2000, 1, 2).numeroDeDia() == 1);
+    // El 2000 ES bisiesto: febrero tiene 29 dias.
+    CHECK(Fecha(2000, 3, 1).numeroDeDia() == 60);
+    CHECK(Fecha(2000, 12, 31).numeroDeDia() == 365);
+    // El 2001 NO es bisiesto: el 2000 sumo un dia al pasar el ano.
+    CHECK(Fecha(2001, 1, 1).numeroDeDia() == 366);
+    CHECK(Fecha(2001, 3, 1).numeroDeDia() == 425);
+}
+
+TEST_CASE("la semana de una fecha arranca en el lunes que se espera",
+           semana_arranca_en_el_lunes) {
+    // EL 2027-03-10 ES UN MIERCOLES
+    //
+    // La convencion del dominio es 0 = lunes, 1 = martes, 2 = miercoles.
+    CHECK(Fecha(2027, 3, 10).diaSemana() == 2);
+    CHECK(Fecha(2027, 3, 8).diaSemana() == 0);
+
+    const std::vector<Fecha> dias = ui::diasDeLaSemana(Fecha(2027, 3, 10));
+    CHECK(dias.size() == 7);
+    if (dias.size() == 7) {
+        CHECK(dias[0] == Fecha(2027, 3, 8));   // el lunes
+        CHECK(dias[1] == Fecha(2027, 3, 9));   // el martes
+        CHECK(dias[2] == Fecha(2027, 3, 10));  // el miercoles
+        CHECK(dias[6] == Fecha(2027, 3, 14));  // el domingo
+    }
+
+    // Y LA SEMANA DE UN LUNES ES ESA MISMA SEMANA
+    const std::vector<Fecha> propia = ui::diasDeLaSemana(Fecha(2027, 3, 8));
+    CHECK(propia.size() == 7);
+    if (propia.size() == 7) {
+        CHECK(propia.front() == Fecha(2027, 3, 8));
+        CHECK(propia.back() == Fecha(2027, 3, 14));
+    }
+
+    // Y LA DE UN DOMINGO TAMBIEN
+    const std::vector<Fecha> domingo = ui::diasDeLaSemana(Fecha(2027, 3, 14));
+    CHECK(domingo.size() == 7);
+    if (domingo.size() == 7) {
+        CHECK(domingo.front() == Fecha(2027, 3, 8));
+        CHECK(domingo.back() == Fecha(2027, 3, 14));
+    }
+}
+
 

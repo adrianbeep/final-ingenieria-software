@@ -86,7 +86,7 @@ private:
     //
     // El nombre de cada vista es el que ve el test (`vista()`): por eso son
     // palabras y no numeros.
-    enum class Vista { Menu, Campo, Selector, Resultado };
+    enum class Vista { Menu, Campo, Selector, Resultado, Ocupacion };
 
     // QUE REPORTE SE ESTA ARMANDO
     //
@@ -94,7 +94,13 @@ private:
     // muestra (las columnas de la tabla). Las cuatro comparten el mismo
     // camino: se elige el reporte del menu, se responde su pregunta y se ve
     // la tabla con el total.
-    enum class Reporte { TurnosPorFecha, TurnosPorPaciente, TurnosPorMedico, TurnosPorEspecialidad };
+    enum class Reporte {
+        TurnosPorFecha,
+        TurnosPorPaciente,
+        TurnosPorMedico,
+        TurnosPorEspecialidad,
+        OcupacionPorSemana
+    };
 
     static const std::string& nombreDeVista(Vista vista);
 
@@ -115,11 +121,16 @@ private:
     void iniciarTurnosPorFecha();
     void iniciarTurnosPorPaciente();
     void iniciarTurnosPorMedico();
+    void iniciarOcupacion();
     void abrirSelector();
 
     // --- La confirmacion ---
     void confirmarCampo();
     void confirmarSeleccion();
+
+    // --- La ocupacion de la semana ---
+    void armarOcupacion(const Fecha& fecha);
+    std::string mensajeDeOcupacion() const;
 
     // --- Los mensajes ---
     void avisar(const std::string& texto);
@@ -135,6 +146,7 @@ private:
     ftxui::Element lineaError(const std::string& texto) const;
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaResultado() const;
+    ftxui::Element lineaOcupacion() const;
     ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
                            const std::vector<std::string>& cabeceras) const;
     std::string ayuda() const;
