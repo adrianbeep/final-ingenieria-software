@@ -109,7 +109,8 @@ private:
         Criterio,
         Valor,
         Resultados,
-        Detalle
+        Detalle,
+        ConfirmarEjemplo
     };
 
     // Que se hace con el turno que se elige
@@ -146,11 +147,10 @@ private:
     // La fila de la pantalla donde se dibuja la PRIMERA opcion de la
     // confirmacion (la del "Si").
     //
-    // La `ui::Confirmacion` NO expone la fila en la que se dibujan sus
-    // opciones, asi que su hit-testing no sirve: la pantalla dibuja las dos
-    // opciones en dos filas conocidas y traduce el clic al atajo
-    // correspondiente. Sin esto, un clic en el ENCABEZADO caeria en la
-    // primera opcion y confirmaria una cancelacion sin querer.
+    // La pantalla dibuja las dos opciones en dos filas conocidas y se lo
+    // dice a la `ui::Confirmacion` (`definirFilaInicial`): sin esto, un clic
+    // en el ENCABEZADO caeria en la primera opcion y confirmaria una
+    // cancelacion sin querer.
     static constexpr int FILA_INICIAL_CONFIRMACION = 3;
 
     static const std::string& nombreDeVista(Vista vista);
@@ -169,6 +169,8 @@ private:
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo,
                       const std::function<void()>& alConfirmar);
     bool manejarConfirmacion(const Evento& evento);
+    bool manejarConfirmacionEjemplo(const Evento& evento);
+    bool manejarListado(const Evento& evento);
     bool manejarMenuCriterios(const Evento& evento);
     bool manejarLectura(const Evento& evento);
 
@@ -204,6 +206,15 @@ private:
     std::string etiquetaDeCriterio(Criterio criterio) const;
     Campo::Validador validadorDeCriterio(Criterio criterio) const;
 
+    // --- El estado vacio con ACCION ---
+    //
+    // Un listado sin turnos no es un mensaje: es un menu con dos opciones
+    // ("cargar ejemplo" y "volver"). La logica de la carga vive en el
+    // helper compartido (`ui::cargarDatosDeEjemplo`); la pantalla solo la
+    // pide y muestra el resultado.
+    void pedirCargaDeEjemplo();
+    void ejecutarCargaDeEjemplo();
+
     // --- Los mensajes ---
     void avisar(const std::string& texto);
     void avisarExito(const std::string& texto);
@@ -219,7 +230,9 @@ private:
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaFormulario() const;
     ftxui::Element lineaConfirmacion() const;
+    ftxui::Element lineaConfirmacionEjemplo() const;
     ftxui::Element lineaListado() const;
+    ftxui::Element lineaMenuVacio() const;
     ftxui::Element lineaResultados() const;
     ftxui::Element lineaDetalle() const;
     ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
@@ -239,6 +252,12 @@ private:
     std::string _titulo;
     Menu _menu;
     Menu _menuCriterios;
+
+    // EL MENU DEL ESTADO VACIO
+    //
+    // Es el menu de DOS opciones que aparece cuando el listado no tiene
+    // turnos: "cargar ejemplo" y "volver".
+    Menu _menuVacio;
 
     Vista _vista = Vista::Menu;
     Accion _accion = Accion::Agendar;
@@ -274,6 +293,9 @@ private:
 
     // La confirmacion de la cancelacion.
     std::unique_ptr<Confirmacion> _confirmacion;
+
+    // La confirmacion de la carga de datos de ejemplo.
+    std::unique_ptr<Confirmacion> _confirmacionEjemplo;
 
     // El turno de la operacion en curso.
     Turno _turno;

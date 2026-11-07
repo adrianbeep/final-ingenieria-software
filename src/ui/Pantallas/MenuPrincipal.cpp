@@ -4,7 +4,9 @@
 #include "ui/ColorFtxui.h"
 #include "ui/Contexto.h"
 #include "ui/Mensaje.h"
+#include "ui/Pantallas/AcercaDe.h"
 #include "ui/Pantallas/Calendario.h"
+#include "ui/Pantallas/Configuracion.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
 #include "ui/Pantallas/Reportes.h"
@@ -28,6 +30,8 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     _menu.agregar('3', "Turnos", [this]() { abrirTurnos(); });
     _menu.agregar('4', "Reportes", [this]() { abrirReportes(); });
     _menu.agregar('5', "Calendario", [this]() { abrirCalendario(); });
+    _menu.agregar('6', "Configuracion", [this]() { abrirConfiguracion(); });
+    _menu.agregar('7', "Acerca de", [this]() { abrirAcercaDe(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -95,6 +99,26 @@ void MenuPrincipal::abrirCalendario() {
     _aplicacion.ir([](ui::Aplicacion& app) {
         return crearPantallaCalendario(app, app.contexto().pacientes(), app.contexto().medicos(),
                                        app.contexto().servicioTurnos(), ui::hoyDelSistema());
+    });
+}
+
+void MenuPrincipal::abrirConfiguracion() {
+    // LA PANTALLA DE CONFIGURACION
+    //
+    // No necesita nada del contexto: el toggle de los colores escribe el
+    // estado COMPARTIDO de la paleta (ver `ui::Theme`) y la carga de datos de
+    // ejemplo usa el contexto (que es donde estan los repositorios).
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaConfiguracion(app);
+    });
+}
+
+void MenuPrincipal::abrirAcercaDe() {
+    // LA PANTALLA DE "ACERCA DE"
+    //
+    // Es de SOLO LECTURA: no necesita ni el contexto ni ningun repositorio.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaAcercaDe(app);
     });
 }
 

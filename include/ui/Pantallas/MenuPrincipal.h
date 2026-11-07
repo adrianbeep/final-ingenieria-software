@@ -11,10 +11,15 @@
 //
 // NACE CON LAS OPCIONES CUYO MODULO YA EXISTE (decision D33)
 //
-// El menu no promete pantallas que todavia no estan: en este PR son
-// "1. Pacientes", "2. Medicos", "3. Turnos", "4. Reportes", "5. Calendario"
-// y "0. Salir". Los PRs siguientes van agregar su opcion en su lugar, asi
+// El menu no promete pantallas que todavia no estan: las opciones son las que
+// ya tienen modulo. Los PRs siguientes van agregar su opcion en su lugar, asi
 // que la lista nunca promete nada que no funcione.
+//
+// SON OCHO OPCIONES
+//
+// "1. Pacientes", "2. Medicos", "3. Turnos", "4. Reportes", "5. Calendario",
+// "6. Configuracion", "7. Acerca de" y "0. Salir". El '0' esta reservado
+// para salir y no se puede usar para otra cosa.
 //
 // EL MENSAJE DE LA ULTIMA OPERACION
 //
@@ -50,6 +55,8 @@ private:
     void abrirTurnos();
     void abrirReportes();
     void abrirCalendario();
+    void abrirConfiguracion();
+    void abrirAcercaDe();
 
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(int indice) const;

@@ -136,5 +136,10 @@ private:
     int duracionMin = 0;
     std::string consultorio;
     EstadoTurno estado = EstadoTurno::Activo;
-    int idTurnoReemplazante = -1;  // -1 = este turno no reemplaza a otro
+    // -1 = a este turno no lo reemplazo ninguno.
+    //
+    // OJO CON LA DIRECCION: cuando se reprograma un turno, el VIEJO queda
+    // `Reprogramado` y apunta al NUEVO (ver `ServicioTurnos::reprogramar`).
+    // El turno NUEVO tiene el -1: no fue reemplazado por nadie.
+    int idTurnoReemplazante = -1;
 };

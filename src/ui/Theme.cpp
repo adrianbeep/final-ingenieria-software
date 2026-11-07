@@ -63,20 +63,54 @@ bool& entornoLeido() {
     return leido;
 }
 
-} // namespace
-
-Theme::Theme() : Theme(Theme::coloresActivosPorDefecto()) {
+// ---------------------------------------------------------------------------
+// EL ESTADO COMPARTIDO DE LOS COLORES ACTIVOS
+//
+// Es UN SOLO booleano para todo el programa: el toggle de la pantalla de
+// configuracion lo escribe y TODAS las pantallas lo leen.
+//
+// SE INICIALIZA UNA SOLA VEZ
+//
+// El valor inicial sale del entorno (`coloresActivosPorDefecto()`). Despues
+// de eso, el unico que lo cambia es `establecerColoresActivos()`.
+//
+// POR QUE NO ESTA EN EL CONSTRUCTOR DE `Theme`
+//
+// `Tabla` crea un `Theme` en cada render, y las pantallas tienen el suyo
+// desde que se arman. Si el constructor reiniciara el estado compartido, el
+// toggle se perderia en el primer redibujado. Por eso el estado vive ACA
+// (un `static` de funcion) y el constructor solo lo CONSULTA.
+//
+// OJO: el estado se inicializa al PRIMER USO, no al cargar el programa. Es
+// lo que permite que los tests cambien `NO_COLOR` antes de la primera
+// consulta.
+// ---------------------------------------------------------------------------
+bool& estadoCompartido() {
+    static bool valor = Theme::coloresActivosPorDefecto();
+    return valor;
 }
 
-Theme::Theme(bool coloresActivos) : _coloresActivos(coloresActivos) {
+} // namespace
+
+Theme::Theme() {
+    // La instancia NO fija ningun valor: sigue al estado compartido (que
+    // se inicializa en el primer uso).
+}
+
+Theme::Theme(bool coloresActivos) : _forzado(coloresActivos) {
 }
 
 bool Theme::coloresActivos() const {
-    return _coloresActivos;
+    // El valor EFECTIVO: el forzado de la instancia si lo hay, y el del
+    // estado compartido si no.
+    if (_forzado.has_value()) {
+        return *_forzado;
+    }
+    return estadoCompartido();
 }
 
 std::optional<Color> Theme::colorDe(Rol rol) const {
-    if (!_coloresActivos) {
+    if (!coloresActivos()) {
         return std::nullopt;
     }
     switch (rol) {
@@ -139,8 +173,22 @@ bool Theme::coloresActivosPorDefecto() {
     return valorCacheado();
 }
 
+void Theme::establecerColoresActivos(bool coloresActivos) {
+    // Escribe el estado COMPARTIDO: el efecto es inmediato en todas las
+    // pantallas que lo siguen (o sea, todas).
+    estadoCompartido() = coloresActivos;
+}
+
 void Theme::recargarEntorno() {
+    // Se descarta el valor cacheado del entorno...
     entornoLeido() = false;
+
+    // ...y se vuelve a aplicar al estado COMPARTIDO lo que dice el entorno.
+    //
+    // "Recargar el entorno" es "volver a lo que dice el entorno": si el
+    // usuario habia apagado los colores a mano, esta llamada los vuelve a
+    // prender (o los apaga, si `NO_COLOR` esta definida).
+    estadoCompartido() = coloresActivosPorDefecto();
 }
 
 } // namespace ui

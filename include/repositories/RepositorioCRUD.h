@@ -109,6 +109,14 @@ public:
     // que va en los mensajes de las excepciones del CRUD.
     const std::string& nombreEntidad() const { return _archivo.nombreEntidad(); }
 
+    // La RUTA del archivo de datos.
+    //
+    // La expone la pantalla de "cargar datos de ejemplo": esa operacion tiene
+    // que pisar EL ARCHIVO QUE ESTA ABIERTO (este) y no otro, asi que
+    // necesita saber cual es. Tambien la necesita para ubicar la semilla
+    // (el subdirectorio `ejemplo` de la misma carpeta).
+    const std::string& ruta() const { return _archivo.ruta(); }
+
     // Busca las entidades cuyo NOMBRE o APELLIDO CONTIENEN el texto buscado.
     //
     // La coincidencia es PARCIAL ("an" esta dentro de "Ana" y de "Daniela") e

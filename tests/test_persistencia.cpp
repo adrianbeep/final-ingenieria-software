@@ -1606,6 +1606,32 @@ void verificarCoherenciaDeTurnos(const std::string& rutaTurnos,
             }
         }
         CHECK(existe);
+
+        // LA DIRECCION DEL REEMPLAZO
+        //
+        // Cuando se reprograma un turno, el VIEJO queda `Reprogramado` y
+        // apunta al NUEVO (ver `ServicioTurnos::reprogramar`): el nuevo tiene
+        // el id MAYOR y esta `Activo`.
+        //
+        // Un turno que NO esta `Reprogramado` no fue reemplazado por nadie, asi
+        // que su `idTurnoReemplazante` tiene que ser -1.
+        if (turno.getEstado() == EstadoTurno::Reprogramado) {
+            CHECK(turno.getIdTurnoReemplazante() != -1);
+
+            const Turno* reemplazo = nullptr;
+            for (const Turno& candidato : turnos) {
+                if (candidato.getId() == turno.getIdTurnoReemplazante()) {
+                    reemplazo = &candidato;
+                    break;
+                }
+            }
+            CHECK(reemplazo != nullptr);
+            if (reemplazo != nullptr) {
+                CHECK(reemplazo->getEstado() == EstadoTurno::Activo);
+            }
+        } else {
+            CHECK(turno.getIdTurnoReemplazante() == -1);
+        }
     }
 }
 
@@ -1627,8 +1653,8 @@ TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad 
 TEST_CASE("la semilla de data/ejemplo esta en la version 2 y es coherente",
           persistencia_semilla) {
     // La SEMILLA es el juego de archivos que se copia sobre `data/` para
-    // empezar de cero (la pantalla de "cargar datos de ejemplo" todavia no
-    // existe: es la Fase 6 / PR15). Esta SEPARADA de los archivos vivos: los
+    // empezar de cero (lo hace la pantalla de "cargar datos de ejemplo", que
+    // vive en la Fase 6 / PR15). Esta SEPARADA de los archivos vivos: los
     // vivos los modifica la aplicacion, la semilla no.
     const std::string rutaTurnos = rutaDeSemilla("turnos.dat");
     const std::string rutaMedicos = rutaDeSemilla("medicos.dat");

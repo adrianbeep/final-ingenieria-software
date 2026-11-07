@@ -11,6 +11,7 @@
 #include "services/ServicioTurnos.h"
 #include "ui/Aplicacion.h"
 #include "ui/Campo.h"
+#include "ui/CargarEjemplo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
 #include "ui/Consola.h"
@@ -21,7 +22,9 @@
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Mes.h"
+#include "ui/Pantallas/AcercaDe.h"
 #include "ui/Pantallas/Calendario.h"
+#include "ui/Pantallas/Configuracion.h"
 #include "ui/Pantallas/MenuPrincipal.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
@@ -35,10 +38,13 @@
 
 #include <ftxui.hpp>
 
+#include <cctype>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -1297,16 +1303,21 @@ TEST_CASE("listar muestra una fila por paciente", crud_listar) {
     CHECK(texto.find("activo") != std::string::npos);
 }
 
-TEST_CASE("un listado vacio dice que no hay y como volver", crud_listado_vacio) {
+TEST_CASE("un listado vacio dice que no hay y ofrece cargar el ejemplo",
+           crud_listado_vacio) {
     Escenario escenario("crud_listado_vacio");
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('4'));
     CHECK(motor.vista() == "Listado");
 
+    // EL ESTADO VACIO ES UN MENU DE DOS OPCIONES
+    //
+    // El texto plano conserva el formato del menu ("  N. Etiqueta").
     const std::string texto = motor.vistaTextoPlano();
     CHECK(texto.find("No hay pacientes") != std::string::npos);
-    CHECK(texto.find("0: volver al menu") != std::string::npos);
+    CHECK(texto.find("1. Cargar ejemplo") != std::string::npos);
+    CHECK(texto.find("2. Volver") != std::string::npos);
 }
 
 TEST_CASE("buscar por nombre devuelve las filas de las coincidencias", crud_buscar) {
@@ -1434,8 +1445,8 @@ TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
     CHECK(motor.vista() == "Confirmar");
 
     // Un clic en el ENCABEZADO (la fila 0): cae fuera de las opciones y no
-    // confirma nada. (La `ui::Confirmacion` no sabe en que fila se dibujan
-    // sus opciones: el motor traduce el clic.)
+    // confirma nada. (La `ui::Confirmacion` sabe en que fila se dibujan sus
+    // opciones: el motor se lo dice al crearla.)
     ui::Evento encabezado;
     encabezado.boton = ui::BotonMouse::Izquierdo;
     encabezado.x = 4;
@@ -2814,7 +2825,7 @@ TEST_CASE("la lista de turnos entra en 80 columnas", turnos_lista_entra_en_80) {
     ui::Theme::recargarEntorno();
 }
 
-TEST_CASE("un listado de turnos vacio dice que no hay y como volver",
+TEST_CASE("un listado de turnos vacio dice que no hay y ofrece cargar el ejemplo",
            turnos_listar_vacio) {
     EscenarioTurnos escenario("turnos_listar_vacio");
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
@@ -2822,9 +2833,13 @@ TEST_CASE("un listado de turnos vacio dice que no hay y como volver",
     pantalla.manejar(eventoCaracter('5'));
     CHECK(pantalla.vista() == "Listado");
 
+    // EL ESTADO VACIO ES UN MENU DE DOS OPCIONES
+    //
+    // El texto plano conserva el formato del menu ("  N. Etiqueta").
     const std::string texto = pantalla.vistaTextoPlano();
     CHECK(texto.find("No hay turnos") != std::string::npos);
-    CHECK(texto.find("0: volver al menu") != std::string::npos);
+    CHECK(texto.find("1. Cargar ejemplo") != std::string::npos);
+    CHECK(texto.find("2. Volver") != std::string::npos);
 }
 
 TEST_CASE("buscar es de dos pasos: primero el criterio y despues el valor",
@@ -4635,3 +4650,1255 @@ TEST_CASE("las tablas del calendario entran en 80 columnas",
 
 
 
+
+// ---------------------------------------------------------------------------
+// EL CIERRE DE LA FASE 6 (PR15)
+//
+// QUE SE VERIFICA ACa
+//
+//   - el flag de color COMPARTIDO: el toggle cambia el render de una pantalla
+//     VIVA, `NO_COLOR` es el estado INICIAL (no un veto) y recargar el
+//     entorno vuelve a lo que dice el entorno;
+//   - el menu principal COMPLETO (las ocho opciones) y sus atajos;
+//   - la pila de la `ui::Aplicacion` (ir, volver, salir);
+//   - el estado que comparte el `ui::Contexto`;
+//   - las dos pantallas nuevas (configuracion y "acerca de");
+//   - los estados vacios CON ACCION (los listados de pacientes, medicos y
+//     turnos) y la carga de datos de ejemplo;
+//   - el conteo de 38 pantallas del epico;
+//   - la Definition of Done: el '0' y el `Escape` vuelven en todos los
+//     niveles, toda baja o cancelacion pide confirmacion de dos pasos, y hay
+//     UN SOLO formato de error en toda la aplicacion.
+// ---------------------------------------------------------------------------
+namespace {
+
+// EL COLOR DE FRENTE DE UNA FILA
+//
+// El texto de una pantalla es el mismo con y sin color: lo que cambia es el
+// color de la celda. Por eso el test del toggle mira la celda y no el texto.
+//
+// Devuelve `ftxui::Color::Default` si la fila no tiene texto.
+ftxui::Color colorDeLaFila(const ftxui::Element& elemento, int fila, int ancho = 120,
+                            int alto = 30) {
+    ftxui::Screen pantalla = ftxui::Screen::Create(ftxui::Dimension::Fixed(ancho),
+                                                   ftxui::Dimension::Fixed(alto));
+    ftxui::Render(pantalla, elemento);
+
+    for (int x = 0; x < pantalla.dimx(); ++x) {
+        const ftxui::Cell& celda = pantalla.PixelAt(x, fila);
+        if (!celda.character.empty() && celda.character != " ") {
+            return celda.foreground_color;
+        }
+    }
+    return ftxui::Color::Default;
+}
+
+// UN DIRECTORIO DE PRUEBAS NUEVO
+//
+// La carga de datos de ejemplo necesita una CARPETA: la semilla es el
+// subdirectorio `ejemplo` de la carpeta del archivo de datos. Por eso este
+// helper crea la carpeta (y borra la anterior, asi cada test arranca limpio).
+std::filesystem::path directorioNuevoDePrueba(const std::string& nombre) {
+    const std::filesystem::path base = directorioDePruebas() / nombre;
+    std::error_code error;
+    std::filesystem::remove_all(base, error);
+    std::filesystem::create_directories(base, error);
+    return base;
+}
+
+// Escribe un archivo de texto (en binario, con LF: los bytes de los
+// archivos de datos no dependen del sistema operativo).
+void escribirArchivo(const std::filesystem::path& ruta, const std::string& contenido) {
+    std::ofstream salida(ruta, std::ios::out | std::ios::binary | std::ios::trunc);
+    salida << contenido;
+}
+
+// Lee un archivo de texto.
+std::string leerArchivo(const std::filesystem::path& ruta) {
+    std::ifstream entrada(ruta, std::ios::in | std::ios::binary);
+    std::ostringstream buffer;
+    buffer << entrada.rdbuf();
+    return buffer.str();
+}
+
+// LA SEMILLA DE PRUEBA
+//
+// Los tres archivos de la semilla, con UN registro cada uno (alcanza para
+// probar que la carga funciona). Son archivos VALIDOS del formato v2: lo que
+// se copia se recarga despues, asi que tiene que poder leerse.
+void escribirSemilla(const std::filesystem::path& base) {
+    const std::filesystem::path semilla = base / "ejemplo";
+    std::error_code error;
+    std::filesystem::create_directories(semilla, error);
+
+    escribirArchivo(semilla / "pacientes.dat",
+                    "#PACIENTES|2|1\n"
+                    "id|nombre|apellido|email|telefono|activo|dni\n"
+                    "1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391\n");
+    escribirArchivo(semilla / "medicos.dat",
+                    "#MEDICOS|2|1\n"
+                    "id|nombre|apellido|email|telefono|activo|legajo|especialidad\n"
+                    "1|Gomez|Laura|laura.gomez@unlp.edu.ar|2214556677|1|LEG-1001|CARD\n");
+    escribirArchivo(semilla / "turnos.dat",
+                    "#TURNOS|2|1\n"
+                    "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|"
+                    "estado|idTurnoReemplazante\n"
+                    "1|1|1|CARD|2027-03-10|10:00|45|A-1|Activo|-1\n");
+}
+
+// EL ESCENARIO DEL CIERRE
+//
+// Los repositorios de verdad, en un directorio NUEVO (con su carpeta
+// `ejemplo` al lado), y la aplicacion con una pantalla de prueba DEBAJO.
+struct EscenarioCierre {
+    explicit EscenarioCierre(const std::string& nombre)
+        : base(directorioNuevoDePrueba(nombre)),
+          pacientes((base / "pacientes.dat").string()),
+          medicos((base / "medicos.dat").string()),
+          turnos((base / "turnos.dat").string()),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+    }
+
+    std::filesystem::path base;
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+};
+
+// EL ESCENARIO DEL MOTOR CRUD CON CARPETA
+//
+// Es el `Escenario` del motor, pero con los repositorios en una CARPETA (con
+// su carpeta `ejemplo` al lado): la carga de datos de ejemplo necesita la
+// semilla al lado de los archivos vivos.
+struct EscenarioCrudConCarpeta {
+    explicit EscenarioCrudConCarpeta(const std::string& nombre)
+        : base(directorioNuevoDePrueba(nombre)),
+          pacientes((base / "pacientes.dat").string()),
+          medicos((base / "medicos.dat").string()),
+          turnos((base / "turnos.dat").string()),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto motor = std::make_unique<ui::CrudPersonas<Paciente>>(
+            aplicacion, pacientes, pacientes,
+            ui::Pantallas::configDePacientes(pacientes, servicio));
+        puntero = motor.get();
+        aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
+    }
+
+    std::filesystem::path base;
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::CrudPersonas<Paciente>* puntero = nullptr;
+};
+
+// EL ESCENARIO DEL MOTOR CRUD DE MEDICOS CON CARPETA
+//
+// Igual que el anterior, pero con el motor de medicos.
+struct EscenarioCrudMedicosConCarpeta {
+    explicit EscenarioCrudMedicosConCarpeta(const std::string& nombre)
+        : base(directorioNuevoDePrueba(nombre)),
+          medicos((base / "medicos.dat").string()),
+          pacientes((base / "pacientes.dat").string()),
+          turnos((base / "turnos.dat").string()),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        medicos.cargar();
+        pacientes.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto motor = std::make_unique<ui::CrudPersonas<Medico>>(
+            aplicacion, medicos, medicos,
+            ui::Pantallas::configDeMedicos(medicos, servicio));
+        puntero = motor.get();
+        aplicacion.ir([&motor](ui::Aplicacion&) { return std::move(motor); });
+    }
+
+    std::filesystem::path base;
+    RepositorioMedicos medicos;
+    RepositorioPacientes pacientes;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::CrudPersonas<Medico>* puntero = nullptr;
+};
+
+// UNA PANTALLA MARCADA
+//
+// Es como `PantallaDePrueba`, pero con un texto propio: asi dos pantallas
+// apiladas se pueden distinguir.
+class PantallaMarcada : public ui::Pantalla {
+public:
+    explicit PantallaMarcada(std::string texto) : _texto(std::move(texto)) {
+    }
+
+    std::string titulo() const override { return _texto; }
+    ftxui::Element renderizar() override { return ftxui::text(_texto); }
+    bool manejar(const ui::Evento&) override { return false; }
+    std::string textoPlano() const override { return _texto; }
+
+private:
+    std::string _texto;
+};
+
+// LA CANTIDAD DE OPCIONES DE UN MENU EN TEXTO PLANO
+//
+// Cada opcion es una linea que empieza con "  N. " (dos espacios, el atajo
+// y el punto). Es el MISMO formato que dibuja `ui::Menu`, asi que el test
+// cuenta lo que el usuario ve.
+int cantidadDeOpciones(const std::string& textoDelMenu) {
+    int cantidad = 0;
+    std::size_t inicio = 0;
+    while (inicio <= textoDelMenu.size()) {
+        const std::size_t fin = textoDelMenu.find('\n', inicio);
+        const std::string linea = textoDelMenu.substr(
+            inicio, fin == std::string::npos ? std::string::npos : fin - inicio);
+        if (linea.size() >= 4 && linea.compare(0, 2, "  ") == 0
+            && std::isdigit(static_cast<unsigned char>(linea[2])) && linea[3] == '.') {
+            ++cantidad;
+        }
+        if (fin == std::string::npos) {
+            break;
+        }
+        inicio = fin + 1;
+    }
+    return cantidad;
+}
+
+// LA RAIZ DEL REPOSITORIO
+//
+// Se busca subiendo desde el directorio actual hasta encontrar el
+// `CMakeLists.txt` con los directorios `include` y `src` al lado: eso es el
+// repositorio. Si no se encuentra (por ejemplo, si los tests se corren
+// desde un binario copiado a otro lado), devuelve una ruta vacia.
+std::filesystem::path raizDelRepositorio() {
+    std::filesystem::path actual = std::filesystem::current_path();
+    for (int i = 0; i < 8; ++i) {
+        if (std::filesystem::exists(actual / "CMakeLists.txt")
+            && std::filesystem::is_directory(actual / "include")
+            && std::filesystem::is_directory(actual / "src")) {
+            return actual;
+        }
+        const std::filesystem::path padre = actual.parent_path();
+        if (padre == actual) {
+            break;
+        }
+        actual = padre;
+    }
+    return std::filesystem::path();
+}
+
+// TODOS LOS ARCHIVOS DE LA CAPA `ui`
+std::vector<std::filesystem::path> archivosDeLaCapaUi(const std::filesystem::path& raiz) {
+    std::vector<std::filesystem::path> archivos;
+    const std::filesystem::path carpetas[] = {raiz / "include" / "ui", raiz / "src" / "ui"};
+    for (const std::filesystem::path& carpeta : carpetas) {
+        if (!std::filesystem::is_directory(carpeta)) {
+            continue;
+        }
+        for (const auto& entrada : std::filesystem::recursive_directory_iterator(carpeta)) {
+            if (entrada.is_regular_file()) {
+                archivos.push_back(entrada.path());
+            }
+        }
+    }
+    return archivos;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// EL FLAG DE COLOR COMPARTIDO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el toggle cambia el render de una pantalla VIVA", tema_el_toggle_cambia_el_render) {
+    // SIN COLORES
+    ui::Theme::establecerColoresActivos(false);
+
+    EscenarioCierre escenario("tema_el_toggle_cambia_el_render");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    // El titulo de la pantalla se dibuja con el color del titulo... si los
+    // colores estan encendidos.
+    CHECK(colorDeLaFila(menu.renderizar(), 0) == ftxui::Color::Default);
+
+    // EL TOGGLE: el estado es COMPARTIDO, asi que el cambio se ve en la
+    // pantalla que YA esta abierta (no en una nueva).
+    ui::Theme::establecerColoresActivos(true);
+
+    const ui::Theme tema;
+    CHECK(colorDeLaFila(menu.renderizar(), 0) == ui::aFtxui(tema.titulo()));
+
+    ui::Theme::establecerColoresActivos(false);
+}
+
+TEST_CASE("NO_COLOR definido y no vacio arranca SIN color", tema_no_color_no_vacio) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    // EL ENTORNO MANDA AL ARRANCAR
+    CHECK(ui::Theme::coloresActivosPorDefecto() == false);
+    const ui::Theme tema;
+    CHECK(tema.coloresActivos() == false);
+    CHECK(tema.colorDe(ui::Rol::Titulo).has_value() == false);
+
+    // PERO NO ES UN VETO: el usuario puede ENCENDERLOS desde la
+    // configuracion.
+    ui::Theme::establecerColoresActivos(true);
+    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(ui::Theme().colorDe(ui::Rol::Titulo).has_value() == true);
+
+    ui::Theme::establecerColoresActivos(false);
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("NO_COLOR definido y vacio arranca CON color", tema_no_color_vacio) {
+    // Un `NO_COLOR` DEFINIDO pero VACIO no apaga los colores: la
+    // especificacion dice que la variable tiene que tener un valor.
+    //
+    // OJO CON WINDOWS
+    //
+    // En Windows una variable de entorno no puede existir VACIA (la CRT la
+    // borra: `_putenv_s` con una cadena vacia la elimina), asi que ahi el
+    // caso se verifica con el estado que el sistema operativo puede
+    // representar. En POSIX (donde si se puede) el caso se verifica entero.
+    // El resultado esperado es el MISMO en los dos: los colores ENCENDIDOS.
+    definirNoColor("");
+    ui::Theme::recargarEntorno();
+
+    CHECK(ui::Theme::coloresActivosPorDefecto() == true);
+    const ui::Theme tema;
+    CHECK(tema.coloresActivos() == true);
+    CHECK(tema.colorDe(ui::Rol::Titulo).has_value() == true);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("establecer los colores y recargar el entorno vuelve al valor del entorno",
+           tema_establecer_y_recargar) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+    CHECK(ui::Theme().coloresActivos() == true);
+
+    // EL TOGGLE MANUAL
+    ui::Theme::establecerColoresActivos(false);
+    CHECK(ui::Theme().coloresActivos() == false);
+
+    // RECARGAR EL ENTORNO VUELVE A LO QUE DICE EL ENTORNO (no a lo que el
+    // usuario habia apagado a mano).
+    ui::Theme::recargarEntorno();
+    CHECK(ui::Theme().coloresActivos() == true);
+
+    // Y CON `NO_COLOR` DEFINIDO, RECARGAR LOS APAGA.
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+    CHECK(ui::Theme().coloresActivos() == false);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("un tema forzado no toca el estado compartido", tema_forzado_no_toca_el_compartido) {
+    // El estado compartido arranca con los colores ENCENDIDOS: el test
+    // comprueba que un tema forzado NO lo toca.
+    ui::Theme::establecerColoresActivos(true);
+
+    // EL TEMA FORZADO (lo usan los tests)
+    const ui::Theme sin(false);
+    CHECK(sin.coloresActivos() == false);
+    CHECK(sin.colorDe(ui::Rol::Titulo).has_value() == false);
+
+    // EL ESTADO COMPARTIDO NO SE TOCO: otra instancia sigue con los colores.
+    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(ui::Theme().colorDe(ui::Rol::Titulo).has_value() == true);
+
+    // Se restaura el valor del ENTORNO para el test que sigue: si `NO_COLOR`
+    // esta definida, el valor del entorno es "sin colores".
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// EL MENU PRINCIPAL
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el menu principal muestra las ocho opciones",
+           menu_principal_las_ocho_opciones) {
+    EscenarioCierre escenario("menu_principal_las_ocho_opciones");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    const std::string texto = menu.textoPlano();
+    CHECK(texto.find("1. Pacientes") != std::string::npos);
+    CHECK(texto.find("2. Medicos") != std::string::npos);
+    CHECK(texto.find("3. Turnos") != std::string::npos);
+    CHECK(texto.find("4. Reportes") != std::string::npos);
+    CHECK(texto.find("5. Calendario") != std::string::npos);
+    CHECK(texto.find("6. Configuracion") != std::string::npos);
+    CHECK(texto.find("7. Acerca de") != std::string::npos);
+    CHECK(texto.find("0. Salir") != std::string::npos);
+
+    // Y son ocho: ni una mas ni una menos.
+    CHECK(cantidadDeOpciones(menu.textoPlano()) == 8);
+}
+
+TEST_CASE("los atajos del menu principal abren los modulos y el cero sale",
+           menu_principal_los_atajos) {
+    EscenarioCierre escenario("menu_principal_los_atajos");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    // EL '1' ABRE PACIENTES
+    menu.manejar(eventoCaracter('1'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("PACIENTES") != std::string::npos);
+    CHECK(escenario.aplicacion.saliendo() == false);
+
+    // EL '2' ABRE MEDICOS (desde el menu principal, que sigue abajo en la pila)
+    ui::Pantallas::MenuPrincipal menu2(escenario.aplicacion);
+    menu2.manejar(eventoCaracter('2'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("MEDICOS") != std::string::npos);
+
+    // EL '0' DEL MENU PRINCIPAL SALE DE LA APLICACION
+    ui::Pantallas::MenuPrincipal menu3(escenario.aplicacion);
+    menu3.manejar(eventoCaracter('0'));
+    CHECK(escenario.aplicacion.saliendo() == true);
+}
+
+TEST_CASE("los atajos seis y siete abren la configuracion y el acerca de",
+           menu_principal_configuracion_y_acerca_de) {
+    EscenarioCierre escenario("menu_principal_configuracion_y_acerca_de");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    menu.manejar(eventoCaracter('6'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("CONFIGURACION") != std::string::npos);
+
+    EscenarioCierre otro("menu_principal_acerca_de");
+    ui::Pantallas::MenuPrincipal menu2(otro.aplicacion);
+    menu2.manejar(eventoCaracter('7'));
+    CHECK(otro.aplicacion.textoPlanoActual().find("ACERCA DE") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// LA PILA DE LA APLICACION
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la pila de la aplicacion apila, vuelve y sale", aplicacion_la_pila) {
+    EscenarioCierre escenario("aplicacion_la_pila");
+
+    // LA PILA ARRANCA CON LA PANTALLA DE PRUEBA
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+
+    // `ir` APILA: la de arriba es la que se ve.
+    escenario.aplicacion.ir([](ui::Aplicacion&) {
+        return std::make_unique<PantallaMarcada>("arriba");
+    });
+    CHECK(escenario.aplicacion.textoPlanoActual() == "arriba");
+
+    // `volver` SACA LA DE ARRIBA: la de abajo queda arriba.
+    escenario.aplicacion.volver();
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+    CHECK(escenario.aplicacion.saliendo() == false);
+
+    // `volver` CON UNA SOLA PANTALLA TERMINA EL CICLO.
+    escenario.aplicacion.volver();
+    CHECK(escenario.aplicacion.saliendo() == true);
+}
+
+TEST_CASE("una fabrica vacia no apila nada y salir termina el ciclo",
+           aplicacion_fabrica_vacia_y_salir) {
+    EscenarioCierre escenario("aplicacion_fabrica_vacia_y_salir");
+
+    // UNA FABRICA NULA NO APILA NADA
+    escenario.aplicacion.ir(ui::Aplicacion::Fabrica());
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+
+    // `salir` TERMINA EL CICLO
+    CHECK(escenario.aplicacion.saliendo() == false);
+    escenario.aplicacion.salir();
+    CHECK(escenario.aplicacion.saliendo() == true);
+}
+
+// ---------------------------------------------------------------------------
+// EL CONTEXTO: EL ESTADO COMPARTIDO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el contexto comparte el estado entre las pantallas",
+           contexto_el_estado_compartido) {
+    EscenarioCierre escenario("contexto_el_estado_compartido");
+
+    // EL MENSAJE DE LA ULTIMA OPERACION
+    //
+    // Lo escribe una pantalla y lo lee la que esta arriba: es el estado que
+    // se comparte ENTRE pantallas.
+    CHECK(escenario.contexto.mensaje().esVacio());
+    escenario.contexto.mostrarMensaje(ui::Mensaje::exito("Paciente #7 registrado."));
+    CHECK(escenario.contexto.mensaje().esExito());
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Paciente #7 registrado.");
+
+    // Y EL COLOR ES UN ESTADO COMPARTIDO DEL PROGRAMA
+    //
+    // No vive en el contexto, pero se comparte igual: lo que cambia en una
+    // pantalla se ve en todas las demas.
+    ui::Theme::establecerColoresActivos(false);
+    CHECK(ui::Theme().coloresActivos() == false);
+    // Se restaura el valor del ENTORNO (no un true a secas): si `NO_COLOR`
+    // esta definida, el valor del entorno es "sin colores".
+    ui::Theme::recargarEntorno();
+    CHECK(ui::Theme().coloresActivos() == ui::Theme::coloresActivosPorDefecto());
+}
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE CONFIGURACION
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el menu de configuracion muestra las dos acciones y el cero de volver",
+           configuracion_menu_inicial) {
+    EscenarioCierre escenario("configuracion_menu_inicial");
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(pantalla.titulo() == "CONFIGURACION");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("1. Activar / desactivar colores") != std::string::npos);
+    CHECK(texto.find("2. Cargar datos de ejemplo") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+    CHECK(cantidadDeOpciones(texto) == 3);
+}
+
+TEST_CASE("el toggle de los colores cambia el estado compartido y avisa",
+           configuracion_el_toggle) {
+    EscenarioCierre escenario("configuracion_el_toggle");
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    ui::Theme::establecerColoresActivos(false);
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(escenario.contexto.mensaje().esExito());
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Colores activados.");
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(ui::Theme().coloresActivos() == false);
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Colores desactivados.");
+
+    // Se restaura el valor del ENTORNO (no un true a secas): si `NO_COLOR`
+    // esta definida, el valor del entorno es "sin colores".
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("cargar los datos de ejemplo pide confirmacion de dos pasos",
+           configuracion_la_carga_pide_confirmacion) {
+    EscenarioCierre escenario("configuracion_la_carga_pide_confirmacion");
+    escribirSemilla(escenario.base);
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Confirmar");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Cargar los datos de ejemplo?") != std::string::npos);
+    CHECK(texto.find("1. Si") != std::string::npos);
+    CHECK(texto.find("2. No") != std::string::npos);
+
+    // TODAVIA NO SE COPIO NADA: la pantalla esta esperando la respuesta.
+    CHECK(escenario.pacientes.contar() == 0);
+
+    // EL '2' ES "NO": no se carga nada.
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.pacientes.contar() == 0);
+    CHECK(escenario.medicos.contar() == 0);
+    CHECK(escenario.turnos.contar() == 0);
+}
+
+TEST_CASE("cargar los datos de ejemplo copia la semilla y recarga los repositorios",
+           configuracion_la_carga_copia_y_recarga) {
+    EscenarioCierre escenario("configuracion_la_carga_copia_y_recarga");
+    escribirSemilla(escenario.base);
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    const std::string semillaAntes =
+        leerArchivo(escenario.base / "ejemplo" / "pacientes.dat");
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Confirmar");
+
+    // EL '1' ES "SI": se copia la semilla y se recarga.
+    pantalla.manejar(eventoCaracter('1'));
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().esExito());
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+
+    // LOS REPOSITORIOS TIENEN LOS DATOS NUEVOS
+    //
+    // Se recargaron EN EL LUGAR: son los mismos objetos que la pantalla
+    // tiene por referencia, asi que ven los datos sin enterarse.
+    CHECK(escenario.pacientes.contar() == 1);
+    CHECK(escenario.medicos.contar() == 1);
+    CHECK(escenario.turnos.contar() == 1);
+
+    // Y LA SEMILLA NO SE TOCO: la copia va de la semilla al archivo vivo,
+    // nunca al reves.
+    CHECK(leerArchivo(escenario.base / "ejemplo" / "pacientes.dat") == semillaAntes);
+}
+
+TEST_CASE("una carga que falla avisa el error y no lanza", configuracion_la_carga_falla) {
+    EscenarioCierre escenario("configuracion_la_carga_falla");
+    // NO hay semilla: la copia no se puede hacer.
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Confirmar");
+
+    pantalla.manejar(eventoCaracter('1'));
+
+    // EL ERROR SE MUESTRA EN PANTALLA (con el formato unico) y la pantalla
+    // sigue viva.
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().esError());
+    CHECK(escenario.contexto.mensaje().texto().compare(0, 4, "ERR ") == 0);
+}
+
+TEST_CASE("el cero y el escape de la configuracion vuelven",
+           configuracion_el_cero_y_el_escape_vuelven) {
+    EscenarioCierre escenario("configuracion_el_cero_y_el_escape_vuelven");
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    // EL '0' SACA LA PANTALLA DE LA PILA
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+
+    // EL `Escape` TAMBIEN (la pantalla lo consume: no tiene vistas internas).
+    ui::Pantallas::PantallaConfiguracion otra(escenario.aplicacion);
+    otra.manejar(eventoTecla(ui::TipoTecla::Escape));
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+TEST_CASE("el raton tambien confirma la carga de ejemplo de la configuracion",
+           configuracion_el_raton_confirma) {    EscenarioCierre escenario("configuracion_el_raton_confirma");
+    escribirSemilla(escenario.base);
+    ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Confirmar");
+
+    // Un clic en el ENCABEZADO (la fila 0) cae fuera de las opciones: no
+    // confirma nada.
+    ui::Evento encabezado;
+    encabezado.boton = ui::BotonMouse::Izquierdo;
+    encabezado.x = 4;
+    encabezado.y = 0;
+    pantalla.manejar(encabezado);
+    CHECK(pantalla.vista() == "Confirmar");
+    CHECK(escenario.pacientes.contar() == 0);
+
+    // Un clic en la fila del "Si" (la fila 3) SI confirma: la
+    // `ui::Confirmacion` hace su propio hit-testing (la pantalla le dice en
+    // que fila se dibuja).
+    ui::Evento si;
+    si.boton = ui::BotonMouse::Izquierdo;
+    si.x = 4;
+    si.y = 3;
+    pantalla.manejar(si);
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+    CHECK(escenario.pacientes.contar() == 1);
+}
+
+// ---------------------------------------------------------------------------
+// EL HELPER DE LA CARGA: LAS GARANTIAS DEL ARCHIVO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la copia deja el archivo vivo completo y sin temporales",
+           carga_la_copia_es_atomica) {
+    EscenarioCierre escenario("carga_la_copia_es_atomica");
+    escribirSemilla(escenario.base);
+
+    // EL ARCHIVO VIVO TIENE OTRO CONTENIDO
+    escenario.pacientes.alta(pacienteDePrueba(1, "Viejo", "Paciente", "2020399"));
+
+    std::string error;
+    CHECK(ui::cargarDatosDeEjemplo(escenario.contexto, error) == true);
+    CHECK(error.empty());
+
+    // EL ARCHIVO VIVO ES EXACTAMENTE LA SEMILLA
+    //
+    // Si la copia se hiciera en dos pasos sin `rename`, el archivo podria
+    // quedar truncado a mitad de copia.
+    CHECK(leerArchivo(escenario.base / "pacientes.dat")
+          == leerArchivo(escenario.base / "ejemplo" / "pacientes.dat"));
+    CHECK(leerArchivo(escenario.base / "turnos.dat")
+          == leerArchivo(escenario.base / "ejemplo" / "turnos.dat"));
+
+    // Y NO QUEDA NINGUN TEMPORAL TIRADO
+    CHECK(std::filesystem::exists(escenario.base / "pacientes.dat.tmp") == false);
+    CHECK(std::filesystem::exists(escenario.base / "medicos.dat.tmp") == false);
+    CHECK(std::filesystem::exists(escenario.base / "turnos.dat.tmp") == false);
+
+    // Y LA SEMILLA NO SE TOCO
+    CHECK(leerArchivo(escenario.base / "ejemplo" / "pacientes.dat").find("Garcia")
+          != std::string::npos);
+}
+
+TEST_CASE("una semilla invalida no lanza y los otros repositorios se recargan",
+           carga_la_semilla_invalida_no_lanza) {
+    EscenarioCierre escenario("carga_la_semilla_invalida_no_lanza");
+    escribirSemilla(escenario.base);
+
+    // LA SEMILLA DE PACIENTES ES INVALIDA
+    //
+    // Un archivo de la version 1: el repositorio lo RECHAZA con un error
+    // claro (no lo adivina). Es la forma de hacer que la recarga de UN
+    // repositorio falle sin tocar el resto.
+    //
+    // OJO: es el PRIMERO que se recarga a proposito: si la recarga no
+    // estuviera aislada, la excepcion cortaria el proceso y los otros dos
+    // repositorios se quedarian con los datos VIEJOS.
+    escribirArchivo(escenario.base / "ejemplo" / "pacientes.dat",
+                    "#PACIENTES|1|1\n"
+                    "id|nombre|apellido|email|telefono|activo|dni\n"
+                    "1|Viejo|Paciente|viejo@unlp.edu.ar|2214556677|1|2020399\n");
+
+    // HAY DATOS VIEJOS: la carga tiene que cambiar los de medicos y turnos.
+    escenario.pacientes.alta(pacienteDePrueba(1, "Viejo", "Paciente", "2020399"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Viejo", "Medico", "LEG-9999", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(1, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(8, 0), 45, "A-1"));
+
+    std::string error;
+    const bool salio = ui::cargarDatosDeEjemplo(escenario.contexto, error);
+
+    // NO SE LANZO NADA: el helper devuelve false y el error dice por que.
+    CHECK(salio == false);
+    CHECK(error.find("pacientes.dat") != std::string::npos);
+
+    // Y LOS OTROS DOS SE RECARGARON
+    //
+    // Si la falla de uno los hubiera dejado con los datos viejos, la
+    // proxima `persistir()` de un alta pisaria el archivo nuevo con la
+    // memoria vieja (y la carga se revertiria en silencio).
+    CHECK(escenario.medicos.contar() == 1);
+    Medico medico;
+    CHECK(escenario.medicos.buscarPorId(1, medico) == true);
+    CHECK(medico.getNombre() == "Gomez");
+    CHECK(escenario.turnos.contar() == 1);
+    Turno turno;
+    CHECK(escenario.turnos.buscarPorId(1, turno) == true);
+    CHECK(turno.getFecha() == Fecha(2027, 3, 10));
+
+    // EL QUE FALLO NO PERDIO SUS DATOS VIEJOS: la recarga se aborta antes de
+    // tocar el arbol (el repositorio rechaza el archivo y no adivina).
+    CHECK(escenario.pacientes.contar() == 1);
+    Paciente paciente;
+    CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+    CHECK(paciente.getNombre() == "Viejo");
+}
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE ACERCA DE
+// ---------------------------------------------------------------------------
+
+TEST_CASE("acerca de dice los datos del trabajo practico", acerca_de_los_datos) {
+    EscenarioCierre escenario("acerca_de_los_datos");
+    ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Sistema de Turnos Medicos") != std::string::npos);
+    CHECK(texto.find("Analisis de Sistemas, segundo anio") != std::string::npos);
+    CHECK(texto.find("Trabajo Practico Final de Ingenieria de Software")
+          != std::string::npos);
+    CHECK(texto.find("Adrian Joaquin Naum") != std::string::npos);
+}
+
+TEST_CASE("acerca de muestra la tabla de atajos", acerca_de_los_atajos) {
+    EscenarioCierre escenario("acerca_de_los_atajos");
+    ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // EL TECLADO
+    CHECK(texto.find("Flechas arriba / abajo") != std::string::npos);
+    CHECK(texto.find("Mueven la seleccion") != std::string::npos);
+    CHECK(texto.find("Enter") != std::string::npos);
+    CHECK(texto.find("Elige la opcion") != std::string::npos);
+    CHECK(texto.find("Vuelve") != std::string::npos);
+    CHECK(texto.find("Pasa al siguiente campo") != std::string::npos);
+    CHECK(texto.find("Borra el caracter anterior") != std::string::npos);
+    CHECK(texto.find("Elige la opcion cuyo atajo es ese numero") != std::string::npos);
+
+    // EL RATON
+    CHECK(texto.find("Clic izquierdo") != std::string::npos);
+    CHECK(texto.find("Rueda del raton") != std::string::npos);
+}
+
+TEST_CASE("acerca de da los creditos de FTXUI", acerca_de_los_creditos) {
+    EscenarioCierre escenario("acerca_de_los_creditos");
+    ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+
+    // La version y la licencia son las de la copia VENDORIZADA (ver
+    // `third_party/ftxui/PROVENANCE.md` y `third_party/ftxui/LICENSE`).
+    CHECK(texto.find("FTXUI v7.0.3") != std::string::npos);
+    CHECK(texto.find("MIT") != std::string::npos);
+    CHECK(texto.find("third_party/ftxui/") != std::string::npos);
+}
+
+TEST_CASE("el render de acerca de se puede dibujar en FTXUI", acerca_de_el_render) {
+    EscenarioCierre escenario("acerca_de_el_render");
+    ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+
+    const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 120, 40);
+    CHECK(lineas.size() > 15);
+
+    bool encontroElSistema = false;
+    bool encontroLosCreditos = false;
+    for (const std::string& linea : lineas) {
+        if (linea.find("Sistema de Turnos Medicos") != std::string::npos) {
+            encontroElSistema = true;
+        }
+        if (linea.find("FTXUI v7.0.3") != std::string::npos) {
+            encontroLosCreditos = true;
+        }
+    }
+    CHECK(encontroElSistema);
+    CHECK(encontroLosCreditos);
+
+    // LA RED DE LAS 80 COLUMNAS
+    //
+    // La tabla de atajos tiene que entrar en una terminal de 80: si no
+    // entra, la columna de la derecha queda cortada.
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+}
+
+TEST_CASE("el cero y el escape de acerca de vuelven", acerca_de_el_cero_y_el_escape_vuelven) {
+    EscenarioCierre escenario("acerca_de_el_cero_y_el_escape_vuelven");
+    ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+
+    ui::Pantallas::PantallaAcercaDe otra(escenario.aplicacion);
+    otra.manejar(eventoTecla(ui::TipoTecla::Escape));
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+// ---------------------------------------------------------------------------
+// LOS ESTADOS VACIOS CON ACCION
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el listado vacio de pacientes ofrece cargar el ejemplo",
+           crud_el_vacio_ofrece_cargar_el_ejemplo) {
+    EscenarioCrudConCarpeta escenario("crud_el_vacio_ofrece_cargar_el_ejemplo");
+    escribirSemilla(escenario.base);
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    CHECK(motor.vista() == "Listado");
+
+    // EL ESTADO VACIO ES UN MENU DE DOS OPCIONES
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("No hay pacientes") != std::string::npos);
+    CHECK(texto.find("1. Cargar ejemplo") != std::string::npos);
+    CHECK(texto.find("2. Volver") != std::string::npos);
+
+    // EL '1' PIDE CONFIRMACION DE DOS PASOS
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "ConfirmarEjemplo");
+    CHECK(motor.vistaTextoPlano().find("Cargar los datos de ejemplo?")
+          != std::string::npos);
+
+    // EL '1' CONFIRMA: se copia la semilla y el listado se refresca.
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "Listado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+
+    // EL LISTADO MUESTRA LOS DATOS NUEVOS
+    const std::string despues = motor.vistaTextoPlano();
+    CHECK(despues.find("Garcia") != std::string::npos);
+    CHECK(despues.find("Cargar ejemplo") == std::string::npos);
+}
+
+TEST_CASE("el raton tambien confirma la carga del ejemplo", crud_el_vacio_el_raton) {
+    EscenarioCrudConCarpeta escenario("crud_el_vacio_el_raton");
+    escribirSemilla(escenario.base);
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "ConfirmarEjemplo");
+
+    // Un clic en el ENCABEZADO (la fila 0) cae fuera de las opciones: no
+    // confirma nada.
+    ui::Evento encabezado;
+    encabezado.boton = ui::BotonMouse::Izquierdo;
+    encabezado.x = 4;
+    encabezado.y = 0;
+    motor.manejar(encabezado);
+    CHECK(motor.vista() == "ConfirmarEjemplo");
+    CHECK(escenario.pacientes.contar() == 0);
+
+    // Un clic en la fila del "Si" (la fila 3) SI confirma: la `ui::Confirmacion`
+    // hace su propio hit-testing (el motor le dice en que fila se dibuja).
+    ui::Evento si;
+    si.boton = ui::BotonMouse::Izquierdo;
+    si.x = 4;
+    si.y = 3;
+    motor.manejar(si);
+
+    CHECK(motor.vista() == "Listado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+    CHECK(escenario.pacientes.contar() == 1);
+}
+
+TEST_CASE("el listado vacio de medicos ofrece cargar el ejemplo",
+           crud_el_vacio_de_medicos_ofrece_cargar_el_ejemplo) {
+    EscenarioCrudMedicosConCarpeta escenario(
+        "crud_el_vacio_de_medicos_ofrece_cargar_el_ejemplo");
+    escribirSemilla(escenario.base);
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    CHECK(motor.vista() == "Listado");
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("No hay medicos") != std::string::npos);
+    CHECK(texto.find("1. Cargar ejemplo") != std::string::npos);
+    CHECK(texto.find("2. Volver") != std::string::npos);
+
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "ConfirmarEjemplo");
+
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "Listado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+    CHECK(motor.vistaTextoPlano().find("Gomez") != std::string::npos);
+}
+
+TEST_CASE("el listado vacio de turnos ofrece cargar el ejemplo",
+           turnos_el_vacio_ofrece_cargar_el_ejemplo) {
+    EscenarioCierre escenario("turnos_el_vacio_ofrece_cargar_el_ejemplo");
+    escribirSemilla(escenario.base);
+
+    auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
+        escenario.aplicacion, escenario.turnos, escenario.pacientes, escenario.medicos,
+        escenario.servicio);
+    ui::Pantallas::PantallaTurnos& turnos = *pantalla;
+    escenario.aplicacion.ir(
+        [&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+
+    turnos.manejar(eventoCaracter('5'));
+    CHECK(turnos.vista() == "Listado");
+
+    const std::string texto = turnos.vistaTextoPlano();
+    CHECK(texto.find("No hay turnos") != std::string::npos);
+    CHECK(texto.find("1. Cargar ejemplo") != std::string::npos);
+    CHECK(texto.find("2. Volver") != std::string::npos);
+
+    turnos.manejar(eventoCaracter('1'));
+    CHECK(turnos.vista() == "ConfirmarEjemplo");
+
+    turnos.manejar(eventoCaracter('1'));
+    CHECK(turnos.vista() == "Listado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Datos de ejemplo cargados.");
+    CHECK(turnos.vistaTextoPlano().find("2027-03-10") != std::string::npos);
+}
+
+TEST_CASE("el cero y el escape del estado vacio vuelven",
+           cierre_el_cero_y_el_escape_del_estado_vacio_vuelven) {
+    EscenarioCrudConCarpeta escenario("cierre_el_cero_y_el_escape_del_estado_vacio_vuelven");
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('4'));
+    CHECK(motor.vista() == "Listado");
+
+    // EL '0' DEL ESTADO VACIO VUELVE AL MENU DEL MOTOR
+    motor.manejar(eventoCaracter('0'));
+    CHECK(motor.vista() == "Menu");
+
+    // EL 'Escape' TAMBIEN
+    motor.manejar(eventoCaracter('4'));
+    motor.manejar(eventoTecla(ui::TipoTecla::Escape));
+    CHECK(motor.vista() == "Menu");
+}
+
+// ---------------------------------------------------------------------------
+// EL CONTEO DE 38 PANTALLAS DEL EPICO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
+           cierre_las_38_pantallas) {
+    // CADA OPCION DE UN MENU ES UNA PANTALLA DEL EPICO
+    //
+    // El menu principal y la pantalla de "acerca de" son UNA cada una (no
+    // son menus de acciones).
+    int total = 0;
+
+    // 1. EL MENU PRINCIPAL (una pantalla)
+    {
+        EscenarioCierre escenario("cierre_38_menu_principal");
+        ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+        const std::string texto = menu.textoPlano();
+        CHECK(texto.find("1. Pacientes") != std::string::npos);
+        CHECK(texto.find("2. Medicos") != std::string::npos);
+        CHECK(texto.find("3. Turnos") != std::string::npos);
+        CHECK(texto.find("4. Reportes") != std::string::npos);
+        CHECK(texto.find("5. Calendario") != std::string::npos);
+        CHECK(texto.find("6. Configuracion") != std::string::npos);
+        CHECK(texto.find("7. Acerca de") != std::string::npos);
+        CHECK(texto.find("0. Salir") != std::string::npos);
+        total += 1;
+    }
+
+    // 2. PACIENTES (siete pantallas)
+    {
+        EscenarioCrudConCarpeta escenario("cierre_38_pacientes");
+        const std::string texto = escenario.puntero->vistaTextoPlano();
+        CHECK(texto.find("1. Registrar paciente") != std::string::npos);
+        CHECK(texto.find("2. Modificar paciente") != std::string::npos);
+        CHECK(texto.find("3. Baja / Reactivar") != std::string::npos);
+        CHECK(texto.find("4. Listar todos") != std::string::npos);
+        CHECK(texto.find("5. Buscar") != std::string::npos);
+        CHECK(texto.find("6. Ver ficha + historial") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 7);
+        total += 7;
+    }
+
+    // 3. MEDICOS (siete pantallas)
+    {
+        EscenarioCrudMedicosConCarpeta escenario("cierre_38_medicos");
+        const std::string texto = escenario.puntero->vistaTextoPlano();
+        CHECK(texto.find("1. Registrar medico") != std::string::npos);
+        CHECK(texto.find("2. Modificar medico") != std::string::npos);
+        CHECK(texto.find("3. Baja / Reactivar") != std::string::npos);
+        CHECK(texto.find("4. Listar todos") != std::string::npos);
+        CHECK(texto.find("5. Buscar") != std::string::npos);
+        CHECK(texto.find("6. Ver ficha + turnos") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 7);
+        total += 7;
+    }
+
+    // 4. TURNOS (ocho pantallas)
+    {
+        EscenarioCierre escenario("cierre_38_turnos");
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
+            escenario.aplicacion, escenario.turnos, escenario.pacientes, escenario.medicos,
+            escenario.servicio);
+        const std::string texto = pantalla->vistaTextoPlano();
+        CHECK(texto.find("1. Agendar turno") != std::string::npos);
+        CHECK(texto.find("2. Cancelar turno") != std::string::npos);
+        CHECK(texto.find("3. Reprogramar turno") != std::string::npos);
+        CHECK(texto.find("4. Modificar turno") != std::string::npos);
+        CHECK(texto.find("5. Listar todos") != std::string::npos);
+        CHECK(texto.find("6. Buscar") != std::string::npos);
+        CHECK(texto.find("7. Ver detalle") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 8);
+        total += 8;
+    }
+
+    // 5. REPORTES (siete pantallas)
+    {
+        EscenarioCierre escenario("cierre_38_reportes");
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaReportes>(
+            escenario.aplicacion, escenario.pacientes, escenario.medicos, escenario.servicio);
+        const std::string texto = pantalla->vistaTextoPlano();
+        CHECK(texto.find("1. Turnos por fecha") != std::string::npos);
+        CHECK(texto.find("2. Turnos por paciente") != std::string::npos);
+        CHECK(texto.find("3. Turnos por medico") != std::string::npos);
+        CHECK(texto.find("4. Turnos por especialidad") != std::string::npos);
+        CHECK(texto.find("5. Ocupacion por semana") != std::string::npos);
+        CHECK(texto.find("6. Pacientes y medicos dados de baja") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 7);
+        total += 7;
+    }
+
+    // 6. CALENDARIO (cuatro pantallas)
+    {
+        EscenarioCierre escenario("cierre_38_calendario");
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaCalendario>(
+            escenario.aplicacion, escenario.pacientes, escenario.medicos, escenario.servicio,
+            Fecha(2027, 3, 10));
+        const std::string texto = pantalla->vistaTextoPlano();
+        CHECK(texto.find("1. Ver mes") != std::string::npos);
+        CHECK(texto.find("2. Ver detalle del dia") != std::string::npos);
+        CHECK(texto.find("3. Agenda") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 4);
+        total += 4;
+    }
+
+    // 7. CONFIGURACION (tres pantallas)
+    {
+        EscenarioCierre escenario("cierre_38_configuracion");
+        ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+        const std::string texto = pantalla.vistaTextoPlano();
+        CHECK(texto.find("1. Activar / desactivar colores") != std::string::npos);
+        CHECK(texto.find("2. Cargar datos de ejemplo") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 3);
+        total += 3;
+    }
+
+    // 8. ACERCA DE (una pantalla)
+    {
+        EscenarioCierre escenario("cierre_38_acerca_de");
+        ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
+        CHECK(pantalla.titulo() == "ACERCA DE");
+        total += 1;
+    }
+
+    // EL CONTEO DEL EPICO
+    CHECK(total == 38);
+}
+
+// ---------------------------------------------------------------------------
+// LA DEFINITION OF DONE DEL EPICO
+// ---------------------------------------------------------------------------
+
+TEST_CASE("toda baja y toda cancelacion pide confirmacion de dos pasos",
+           cierre_las_confirmaciones_de_dos_pasos) {
+    // LA BAJA DE UN PACIENTE
+    {
+        EscenarioCrudConCarpeta escenario("cierre_confirmacion_de_dos_pasos_baja");
+        escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+        ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+        motor.manejar(eventoCaracter('3'));
+        motor.manejar(eventoCaracter('1'));
+        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+        // La vista de confirmacion: los DOS pasos (el '1' y el '2').
+        CHECK(motor.vista() == "Confirmar");
+        const std::string texto = motor.vistaTextoPlano();
+        CHECK(texto.find("1. Si") != std::string::npos);
+        CHECK(texto.find("2. No") != std::string::npos);
+
+        // Y sin confirmar NO se toca nada.
+        motor.manejar(eventoCaracter('2'));
+        Paciente paciente;
+        CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
+        CHECK(paciente.esActivo() == true);
+    }
+
+    // LA CANCELACION DE UN TURNO
+    {
+        EscenarioCierre escenario("cierre_confirmacion_de_dos_pasos_cancelacion");
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
+            escenario.aplicacion, escenario.turnos, escenario.pacientes, escenario.medicos,
+            escenario.servicio);
+        ui::Pantallas::PantallaTurnos& turnos = *pantalla;
+        escenario.aplicacion.ir(
+            [&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+
+        escenario.turnos.alta(
+            Turno(1, 1, 1, Especialidad::CARD, fechaDesplazada(30), Hora(8, 0), 45, "A-1"));
+
+        turnos.manejar(eventoCaracter('2'));
+        turnos.manejar(eventoCaracter('1'));
+        turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+        CHECK(turnos.vista() == "Confirmar");
+        const std::string texto = turnos.vistaTextoPlano();
+        CHECK(texto.find("1. Si") != std::string::npos);
+        CHECK(texto.find("2. No") != std::string::npos);
+    }
+}
+
+TEST_CASE("hay un solo formato de error en toda la aplicacion",
+           cierre_un_solo_formato_de_error) {
+    // EL FORMATO VIVE EN UN SOLO LUGAR
+    //
+    // Los prefijos ("OK  ", "ERR ", "AVISO ") los escribe SOLO
+    // `ui::Mensaje`. Si otra pantalla los escribiera a mano, el formato se
+    // desincronizaria en la primera pantalla nueva.
+    const std::filesystem::path raiz = raizDelRepositorio();
+    CHECK(!raiz.empty());
+    if (raiz.empty()) {
+        return;
+    }
+
+    for (const std::filesystem::path& archivo : archivosDeLaCapaUi(raiz)) {
+        // El archivo del formato queda fuera: es el que lo define.
+        if (archivo.filename() == "Mensaje.cpp" || archivo.filename() == "Mensaje.h") {
+            continue;
+        }
+        const std::string contenido = leerArchivo(archivo);
+        CHECK(contenido.find("\"ERR \"") == std::string::npos);
+        CHECK(contenido.find("\"OK  \"") == std::string::npos);
+        CHECK(contenido.find("\"AVISO \"") == std::string::npos);
+    }
+
+    // Y EL FORMATO ES EL QUE DICE SER
+    CHECK(ui::Mensaje::error("algo").texto() == "ERR algo");
+    CHECK(ui::Mensaje::exito("algo").texto() == "OK  algo");
+    CHECK(ui::Mensaje::aviso("algo").texto() == "AVISO algo");
+}
+
+TEST_CASE("los errores que la aplicacion produce usan el formato unico",
+           cierre_los_errores_de_la_aplicacion) {
+    // UN ERROR DEL DOMINIO (el servicio rechaza un turno)
+    {
+        EscenarioTurnos escenario("cierre_los_errores_de_la_aplicacion");
+        ui::Pantallas::PantallaTurnos& turnos = *escenario.puntero;
+
+        // Se agenda un turno con una especialidad que el medico no atiende:
+        // el servicio lo rechaza y la pantalla muestra el error DEL DOMINIO.
+        escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+        // El medico atiende Gastroenterologia, no Cardiologia.
+        escenario.medicos.alta(
+            medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::GAST));
+
+        turnos.manejar(eventoCaracter('1'));
+        llenarFormularioDeAgendar(turnos, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+        turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
+        // El formulario tiene un selector de especialidad: se elige la
+        // primera (Cardiologia), que no es la del medico.
+        CHECK(turnos.vista() == "Selector");
+        turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+        const std::string mensaje = escenario.contexto.mensaje().texto();
+        CHECK(mensaje.compare(0, 4, "ERR ") == 0);
+    }
+
+    // UN ERROR DE LA CARGA DE DATOS DE EJEMPLO
+    {
+        EscenarioCierre escenario("cierre_los_errores_de_la_aplicacion_carga");
+        ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
+        pantalla.manejar(eventoCaracter('2'));
+        pantalla.manejar(eventoCaracter('1'));
+
+        const std::string mensaje = escenario.contexto.mensaje().texto();
+        CHECK(mensaje.compare(0, 4, "ERR ") == 0);
+    }
+}

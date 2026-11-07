@@ -38,6 +38,17 @@ public:
 
     const std::string& pregunta() const;
 
+    // LA FILA DE LA PANTALLA DONDE SE DIBUJA LA PRIMERA OPCION
+    //
+    // La pantalla que dibuja la confirmacion tiene que avisarle en que fila
+    // arranca: sin ese numero, el clic del raton no podria saber que opcion
+    // se toco (y un clic en el encabezado confirmaria sin querer).
+    //
+    // OJO: el valor es el de la PANTALLA, no uno interno de la confirmacion:
+    // la confirmacion no sabe donde esta, se lo dice quien la dibuja.
+    void definirFilaInicial(int fila);
+    int filaInicial() const;
+
     // La confirmacion en texto plano: la pregunta y las dos opciones. Es lo
     // que se imprime cuando NO hay terminal interactiva (D31).
     std::string textoPlano() const;

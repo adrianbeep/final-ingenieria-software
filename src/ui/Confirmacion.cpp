@@ -31,6 +31,16 @@ bool Confirmacion::confirmo() const {
     return _confirmo;
 }
 
+void Confirmacion::definirFilaInicial(int fila) {
+    // La fila la necesita el HIT-TESTING del raton: el menu interno sabe
+    // en que fila de la pantalla esta cada opcion.
+    _menu.definirFilaInicial(fila);
+}
+
+int Confirmacion::filaInicial() const {
+    return _menu.filaInicial();
+}
+
 const std::string& Confirmacion::pregunta() const {
     return _menu.titulo();
 }

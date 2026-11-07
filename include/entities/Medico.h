@@ -8,7 +8,7 @@
 #include <string>
 
 // ---------------------------------------------------------------------------
-// Medico: una Persona que attends consultas de una especialidad.
+// Medico: una Persona que atiende consultas de una especialidad.
 //
 // `legajo` es UNICO en el sistema: la unicidad la verifica
 // `RepositorioMedicos`, que es quien tiene el conjunto de las entidades

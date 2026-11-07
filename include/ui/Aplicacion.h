@@ -57,6 +57,12 @@ public:
     // Termina el ciclo de eventos.
     void salir();
 
+    // Si el ciclo de eventos ya termino (o esta por terminar).
+    //
+    // Lo usan los tests: `salir()` no imprime nada ni corta el proceso, asi
+    // que la unica forma de verificar que se disparo es preguntar.
+    bool saliendo() const;
+
     // Corre la aplicacion.
     //
     // `respaldoSinTerminal` es el texto que se imprime cuando NO hay

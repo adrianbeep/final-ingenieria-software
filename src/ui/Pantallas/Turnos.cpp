@@ -2,6 +2,8 @@
 
 #include "domain/Especialidad.h"
 #include "exceptions/ExcepcionesSistema.h"
+#include "ui/CargarEjemplo.h"
+#include "ui/Contexto.h"
 #include "ui/CrudPersonas.h"
 #include "ui/NombresDePersonas.h"
 #include "utils/Fecha.h"
@@ -382,7 +384,8 @@ PantallaTurnos::PantallaTurnos(Aplicacion& aplicacion,
       _servicioTurnos(servicioTurnos),
       _titulo("TURNOS"),
       _menu("Turnos"),
-      _menuCriterios("Buscar turnos") {
+      _menuCriterios("Buscar turnos"),
+      _menuVacio("No hay turnos") {
     // EL MENU DEL MODULO
     //
     // El atajo es el numero que se escribe (decision D28) y el '0' es
@@ -410,6 +413,14 @@ PantallaTurnos::PantallaTurnos(Aplicacion& aplicacion,
                                 [this, criterio = CRITERIOS[i]]() { iniciarBusqueda(criterio); });
     }
     _menuCriterios.agregar('0', "Volver", [this]() { volverAtras(); });
+
+    // EL MENU DEL ESTADO VACIO
+    //
+    // Es el menu de DOS opciones que aparece cuando el listado no tiene
+    // turnos. El '1' carga el juego de ejemplo (pide confirmacion antes) y el
+    // '2' vuelve al menu del modulo.
+    _menuVacio.agregar('1', "Cargar ejemplo", [this]() { pedirCargaDeEjemplo(); });
+    _menuVacio.agregar('2', "Volver", [this]() { volverAtras(); });
 }
 
 std::string PantallaTurnos::titulo() const {
@@ -447,6 +458,9 @@ void PantallaTurnos::volverAtras() {
             return;
         case Vista::Valor:
             irA(Vista::Criterio);
+            return;
+        case Vista::ConfirmarEjemplo:
+            irA(Vista::Listado);
             return;
         default:
             irA(Vista::Menu);
@@ -504,11 +518,14 @@ bool PantallaTurnos::manejar(const Evento& evento) {
             return manejarSelector(evento);
         case Vista::Confirmar:
             return manejarConfirmacion(evento);
+        case Vista::ConfirmarEjemplo:
+            return manejarConfirmacionEjemplo(evento);
         case Vista::Criterio:
             return manejarMenuCriterios(evento);
         case Vista::Valor:
             return manejarCampo(evento, _campoValor, [this]() { confirmarValor(); });
         case Vista::Listado:
+            return manejarListado(evento);
         case Vista::Resultados:
         case Vista::Detalle:
             return manejarLectura(evento);
@@ -670,29 +687,12 @@ bool PantallaTurnos::manejarConfirmacion(const Evento& evento) {
         return false;
     }
 
-    // EL RATON LO TRADUCE LA PANTALLA
+    // EL RATON LO RESUELVE LA CONFIRMACION
     //
-    // La `ui::Confirmacion` no sabe en que fila se dibujan sus opciones (no
-    // expone su menu), asi que un clic caeria siempre en la primera: un
-    // clic en el encabezado confirmaria una cancelacion sin querer. La
-    // pantalla sabe donde las dibuja, asi que el clic se traduce al atajo.
-    Evento efectivo = evento;
-    if (evento.esMouse()) {
-        if (!evento.esClic()) {
-            return false;
-        }
-        const int indice = evento.y - FILA_INICIAL_CONFIRMACION;
-        if (indice < 0 || indice > 1) {
-            // El clic cae fuera de las opciones: no se consume.
-            return false;
-        }
-        Evento atajo;
-        atajo.tipo = TipoTecla::Caracter;
-        atajo.caracter = indice == 0 ? "1" : "2";
-        efectivo = atajo;
-    }
-
-    if (!_confirmacion->aplicarEvento(efectivo)) {
+    // La `ui::Confirmacion` tiene su propio hit-testing: la pantalla le dijo
+    // en que fila se dibujan sus opciones (`definirFilaInicial`) y ella sabe
+    // que opcion se toco. Por eso el clic NO se traduce a mano aca.
+    if (!_confirmacion->aplicarEvento(evento)) {
         return false;
     }
 
@@ -703,6 +703,97 @@ bool PantallaTurnos::manejarConfirmacion(const Evento& evento) {
         irA(Vista::Id);
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// El estado vacio CON ACCION
+//
+// Un listado sin turnos no es un mensaje: es un MENU con dos opciones. La
+// primera carga el juego de ejemplo (pidiendo confirmacion antes) y la
+// segunda vuelve al menu del modulo.
+//
+// El '0' y el `Escape` tambien vuelven (la regla de UX del proyecto), asi
+// que el usuario no queda atrapado en el estado vacio.
+// ---------------------------------------------------------------------------
+
+void PantallaTurnos::pedirCargaDeEjemplo() {
+    // LA CONFIRMACION DE DOS PASOS
+    //
+    // La carga pisa los datos de trabajo: no se puede deshacer, asi que se
+    // pregunta antes (decision D37: los atajos son '1' y '2', no '0').
+    _confirmacionEjemplo = std::make_unique<Confirmacion>(
+        "Cargar los datos de ejemplo? Se pisan los datos actuales.");
+    // La confirmacion se dibuja en unas filas conocidas: se lo dice para que
+    // su hit-testing del raton funcione.
+    _confirmacionEjemplo->definirFilaInicial(FILA_INICIAL_CONFIRMACION);
+    irA(Vista::ConfirmarEjemplo);
+}
+
+void PantallaTurnos::ejecutarCargaDeEjemplo() {
+    // LA LOGICA DE LA COPIA Y LA RECARGA VIVE EN EL HELPER COMPARTIDO
+    //
+    // La pantalla no sabe de archivos: solo pide la carga y muestra el
+    // resultado.
+    std::string error;
+    if (cargarDatosDeEjemplo(_aplicacion.contexto(), error)) {
+        avisarExito("Datos de ejemplo cargados.");
+    } else {
+        avisar(error);
+    }
+    // Se vuelve al listado: ahora muestra los turnos nuevos (el listado se
+    // dibuja a partir del repositorio, que ya fue recargado).
+    irA(Vista::Listado);
+}
+
+bool PantallaTurnos::manejarConfirmacionEjemplo(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    // EL `Escape` VUELVE AL LISTADO
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    if (!_confirmacionEjemplo) {
+        return false;
+    }
+
+    // EL RATON LO RESUELVE LA CONFIRMACION
+    //
+    // La pantalla le dijo en que fila se dibujan sus opciones
+    // (`definirFilaInicial`), asi que el clic NO se traduce a mano aca.
+    if (!_confirmacionEjemplo->aplicarEvento(evento)) {
+        return false;
+    }
+
+    if (_confirmacionEjemplo->confirmo()) {
+        ejecutarCargaDeEjemplo();
+    } else {
+        // Si NO confirma, se vuelve al listado sin hacer nada.
+        irA(Vista::Listado);
+    }
+    return true;
+}
+
+bool PantallaTurnos::manejarListado(const Evento& evento) {
+    // EL ESTADO VACIO TIENE SU PROPIO MENU
+    //
+    // Solo cuando NO hay nada que mostrar: con datos, el listado es una
+    // tabla de solo lectura (como antes).
+    if (_turnos.listar().empty()) {
+        if (esTeclaVolver(evento)) {
+            volverAtras();
+            return true;
+        }
+        if (esTeclaEscape(evento)) {
+            volverAtras();
+            return true;
+        }
+        return _menuVacio.aplicarEvento(evento);
+    }
+
+    return manejarLectura(evento);
 }
 
 bool PantallaTurnos::manejarMenuCriterios(const Evento& evento) {
@@ -914,6 +1005,9 @@ void PantallaTurnos::confirmarId() {
             // turno se cancela SOLO cuando el usuario dice "Si".
             _confirmacion = std::make_unique<Confirmacion>("Cancelar el turno #"
                                                            + std::to_string(id) + "?");
+            // La confirmacion se dibuja en unas filas conocidas: se lo dice
+            // para que su hit-testing del raton funcione.
+            _confirmacion->definirFilaInicial(FILA_INICIAL_CONFIRMACION);
             irA(Vista::Confirmar);
             return;
 
@@ -1376,6 +1470,17 @@ ftxui::Element PantallaTurnos::lineaConfirmacion() const {
     return ftxui::vbox(std::move(lineas));
 }
 
+ftxui::Element PantallaTurnos::lineaConfirmacionEjemplo() const {
+    ftxui::Elements lineas;
+    if (_confirmacionEjemplo) {
+        lineas.push_back(ftxui::text("  " + _confirmacionEjemplo->pregunta()));
+        // LAS DOS OPCIONES EN DOS FILAS (como en la confirmacion de la baja).
+        lineas.push_back(ftxui::text("  1. Si"));
+        lineas.push_back(ftxui::text("  2. No"));
+    }
+    return ftxui::vbox(std::move(lineas));
+}
+
 ftxui::Element PantallaTurnos::tablaDe(const std::vector<std::vector<std::string>>& filas,
                                        const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
@@ -1390,10 +1495,20 @@ ftxui::Element PantallaTurnos::lineaListado() const {
     for (const Turno& turno : _turnos.listar()) {
         filas.push_back(filaDe(turno, _pacientes, _medicos));
     }
-    if (filas.empty()) {
-        return ftxui::text("  " + vacio("turnos"));
-    }
     return tablaDe(filas, cabecerasDeTurno());
+}
+
+ftxui::Element PantallaTurnos::lineaMenuVacio() const {
+    // EL ESTADO VACIO ES UN MENU, NO UN MENSAJE
+    //
+    // Un listado sin turnos tiene una salida (cargar el ejemplo) y una
+    // vuelta (volver). El menu se dibuja con el MISMO formato que todos
+    // los otros menus de la aplicacion ("  N. Etiqueta").
+    ftxui::Elements lineas;
+    for (int i = 0; i < _menuVacio.cantidad(); ++i) {
+        lineas.push_back(lineaOpcion(_menuVacio, i));
+    }
+    return ftxui::vbox(std::move(lineas));
 }
 
 ftxui::Element PantallaTurnos::lineaResultados() const {
@@ -1457,7 +1572,10 @@ std::string PantallaTurnos::vacio(const std::string& queFalta) const {
     //
     // Un mensaje que dice "no hay nada" y no dice como volver deja al
     // usuario atrapado: el mensaje dice las dos cosas.
-    return "No hay " + queFalta + " para mostrar. 0: volver al menu.";
+    //
+    // La salida (cargar el ejemplo) y la vuelta (volver) son las dos
+    // opciones del menu del estado vacio.
+    return "No hay " + queFalta + " para mostrar.";
 }
 
 ftxui::Element PantallaTurnos::renderizar() {
@@ -1502,8 +1620,24 @@ ftxui::Element PantallaTurnos::renderizar() {
         case Vista::Confirmar:
             lineas.push_back(lineaConfirmacion());
             break;
+        case Vista::ConfirmarEjemplo:
+            lineas.push_back(lineaConfirmacionEjemplo());
+            break;
         case Vista::Listado:
-            lineas.push_back(lineaListado());
+            // EL ESTADO VACIO ES UN MENU
+            //
+            // Sin turnos, el listado no es una tabla: es un mensaje ("no hay
+            // ...") mas un menu de DOS opciones ("cargar ejemplo" y "volver").
+            // Con turnos, es la tabla de siempre.
+            if (_turnos.listar().empty()) {
+                lineas.push_back(ftxui::text("  " + vacio("turnos")));
+                // La opcion `i` del menu vacio queda en la fila
+                // `filaInicial + i`: el hit-testing del raton lo necesita.
+                _menuVacio.definirFilaInicial(static_cast<int>(lineas.size()));
+                lineas.push_back(lineaMenuVacio());
+            } else {
+                lineas.push_back(lineaListado());
+            }
             break;
         case Vista::Criterio:
             // La opcion `i` del menu de criterios queda en la fila
@@ -1555,7 +1689,15 @@ std::string PantallaTurnos::ayuda() const {
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Confirmar:
             return "1: Si   2: No   0: volver   Esc: volver";
+        case Vista::ConfirmarEjemplo:
+            return "1: Si   2: No   0: volver   Esc: volver";
         case Vista::Listado:
+            // En el listado VACIO las opciones son las del menu del estado
+            // vacio; con turnos, el listado es de solo lectura.
+            if (_turnos.listar().empty()) {
+                return "1: cargar ejemplo   2: volver   0: volver   Esc: volver";
+            }
+            return "0: volver   Esc: volver";
         case Vista::Resultados:
         case Vista::Detalle:
             return "0: volver   Esc: volver";
@@ -1581,6 +1723,7 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
     static const std::string valor = "Valor";
     static const std::string resultados = "Resultados";
     static const std::string detalle = "Detalle";
+    static const std::string confirmarEjemplo = "ConfirmarEjemplo";
 
     switch (vista) {
         case Vista::Menu:
@@ -1603,6 +1746,8 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
             return resultados;
         case Vista::Detalle:
             return detalle;
+        case Vista::ConfirmarEjemplo:
+            return confirmarEjemplo;
     }
     return menu;
 }
@@ -1673,6 +1818,14 @@ std::string PantallaTurnos::textoDeLaVista() const {
             }
             return salida;
         }
+        case Vista::ConfirmarEjemplo: {
+            if (_confirmacionEjemplo) {
+                salida += "  " + _confirmacionEjemplo->pregunta() + "\n";
+                salida += "  1. Si\n";
+                salida += "  2. No\n";
+            }
+            return salida;
+        }
         case Vista::Valor: {
             if (!_campoValor) {
                 return salida;
@@ -1696,7 +1849,16 @@ std::string PantallaTurnos::textoDeLaVista() const {
                 salida += "\n";
             }
             if (turnos.empty()) {
+                // EL ESTADO VACIO ES UN MENU
+                //
+                // El texto plano conserva el formato del menu ("  N.
+                // Etiqueta"), asi que lo que se ve sin terminal es lo mismo
+                // que lo que se ve en la terminal.
                 salida += "  " + vacio("turnos") + "\n";
+                for (int i = 0; i < _menuVacio.cantidad(); ++i) {
+                    salida += "  " + std::string(1, _menuVacio.atajoDe(i)) + ". "
+                        + _menuVacio.etiquetas()[static_cast<std::size_t>(i)] + "\n";
+                }
             }
             return salida;
         }

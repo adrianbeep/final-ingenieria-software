@@ -66,14 +66,29 @@ struct Bordes {
 
 class Theme {
 public:
-    // Usa el valor por defecto de los colores activos (ver
-    // `coloresActivosPorDefecto()`).
+    // Usa el estado COMPARTIDO de los colores activos (ver
+    // `establecerColoresActivos()`).
+    //
+    // LA INSTANCIA SIGUE AL ESTADO COMPARTIDO
+    //
+    // La instancia NO copia el valor: lo consulta cada vez que se lo piden.
+    // Por eso un cambio del flag (el toggle de la pantalla de configuracion)
+    // se ve AL INSTANTE en las pantallas que ya estan abiertas, sin tener que
+    // recrearlas.
+    //
+    // Y el constructor NO reinicia el estado compartido: si lo reiniciara,
+    // el `Theme` que `Tabla` crea en cada render perderia el toggle en el
+    // primer redibujado.
     Theme();
 
-    // Fuerza el valor. Lo usan los tests y el menu de configuracion.
+    // Fuerza el valor SOLO para esta instancia (lo usan los tests).
+    //
+    // No toca el estado compartido: el valor forzado es de la instancia y
+    // muere con ella.
     explicit Theme(bool coloresActivos);
 
-    // Si la paleta propone colores o no.
+    // El valor EFECTIVO de esta instancia: el forzado (si lo hay) o el del
+    // estado compartido.
     bool coloresActivos() const;
 
     // El color a pintar para un rol.
@@ -114,17 +129,41 @@ public:
     // SE LEE UNA SOLA VEZ: el valor se cachea en el primer uso. Releer el
     // entorno en cada dibujo seria un `getenv` por frame, y el entorno no
     // cambia mientras corre el programa.
+    //
+    // ES EL ESTADO INICIAL, NO UN VETO
+    //
+    // `NO_COLOR` dice como ARRANCA la aplicacion, no si puede haber colores.
+    // Con la variable definida la aplicacion arranca sin colores, pero el
+    // usuario puede ENCENDERLOS desde la pantalla de configuracion (con
+    // `establecerColoresActivos()`).
     static bool coloresActivosPorDefecto();
 
-    // Descarta el valor cacheado: la proxima llamada a
-    // `coloresActivosPorDefecto()` vuelve a leer el entorno.
+    // Escribe el estado COMPARTIDO de los colores activos.
     //
-    // Lo usan los tests (que cambian `NO_COLOR` en caliente) y el menu de
-    // configuracion (que puede cambiar la paleta en caliente).
+    // El efecto es INMEDIATO: todas las pantallas que siguen al estado
+    // compartido (o sea, todas las que se armaron con `Theme()`) cambian en
+    // el proximo redibujado.
+    //
+    // Es lo que usa el toggle de la pantalla de configuracion.
+    static void establecerColoresActivos(bool coloresActivos);
+
+    // Descarta el valor cacheado del entorno y VUELVE A APLICARLO al estado
+    // compartido.
+    //
+    // "Recargar el entorno" es "volver a lo que dice el entorno": si el
+    // usuario habia apagado los colores a mano, recargar los vuelve a
+    // prender (o los apaga, si `NO_COLOR` esta definida).
+    //
+    // Lo usan los tests (que cambian `NO_COLOR` en caliente).
     static void recargarEntorno();
 
 private:
-    bool _coloresActivos;
+    // El valor FORZADO de esta instancia.
+    //
+    // Es `std::nullopt` cuando la instancia SIGUE al estado compartido: en
+    // ese caso `coloresActivos()` devuelve el valor compartido, que puede
+    // cambiar en cualquier momento.
+    std::optional<bool> _forzado;
 };
 
 } // namespace ui
