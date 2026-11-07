@@ -9,6 +9,7 @@
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
+#include "ui/Selector.h"
 #include "ui/Tabla.h"
 #include "ui/Theme.h"
 #include "utils/Utils.h"
@@ -18,6 +19,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -163,6 +165,28 @@ public:
         std::vector<CriterioBusqueda> criterios;     // los criterios de busqueda
         std::function<bool(const T&)> esActivo;      // esta activa?
         TurnosDePersona turnos;                      // los turnos de la ficha
+
+        // EL SELECTOR DEL FORMULARIO
+        //
+        // Un dato que se ELIGE de una lista en vez de escribirse. Es
+        // OPCIONAL: si no esta, el formulario es solo de texto y el motor
+        // funciona exactamente como antes.
+        //
+        // El `valor` devuelve el VALOR de la opcion elegida (no su
+        // etiqueta): para la especialidad es el CODIGO ("GAST"), que es lo
+        // que viaja al archivo. La `etiqueta` es lo que ve el usuario.
+        //
+        // EL VALOR VA AL FINAL DEL VECTOR DE VALORES
+        //
+        // El motor arma el vector de `construir` con los campos de texto, en
+        // el orden de `campos`, y el valor del selector se AGREGA al final.
+        struct SelectorDeFormulario {
+            std::string etiqueta;                                  // "especialidad"
+            std::vector<std::string> opciones;                     // las 12 descripciones
+            std::function<std::string(std::size_t)> valor;         // el valor de cada opcion
+            std::function<int(const T&)> indiceInicial;            // la opcion que arranca elegida
+        };
+        std::optional<SelectorDeFormulario> selector;
     };
 
     CrudPersonas(Aplicacion& app, IRepositorio<T>& repositorio,
@@ -186,6 +210,7 @@ private:
     enum class Vista {
         Menu,
         Formulario,
+        Selector,
         Id,
         Confirmar,
         Listado,
@@ -223,6 +248,7 @@ private:
     // --- Los manejadores de cada vista ---
     bool manejarMenu(const Evento& evento);
     bool manejarFormulario(const Evento& evento);
+    bool manejarSelector(const Evento& evento);
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo);
     bool manejarConfirmacion(const Evento& evento);
     bool manejarMenuCriterios(const Evento& evento);
@@ -238,6 +264,15 @@ private:
     void abrirFormulario(std::vector<std::unique_ptr<Campo>> campos);
     void confirmarFormulario();
     void moverFoco(int delta);
+
+    // --- El selector ---
+    //
+    // Con selector, el formulario NO guarda: deja los valores esperando y
+    // abre el selector. El Enter del selector es el que arma la entidad y
+    // la guarda.
+    void abrirSelector();
+    void confirmarSeleccion();
+    void guardar(std::vector<std::string> valores);
 
     // --- El id ---
     void abrirCampoId(Accion accion);
@@ -262,6 +297,8 @@ private:
     // --- El dibujo ---
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(const Menu& menu, int indice) const;
+    ftxui::Element lineaOpcionSelector(int indice) const;
+    ftxui::Element lineaNumeroSelector() const;
     ftxui::Element lineaCampo(const Campo& campo, bool enfocado) const;
     ftxui::Element lineaError(const std::string& texto) const;
     ftxui::Element lineaMensaje() const;
@@ -307,6 +344,14 @@ private:
     // Los campos del formulario y el que tiene el foco.
     std::vector<std::unique_ptr<Campo>> _campos;
     std::size_t _indiceCampo = 0;
+
+    // El selector del formulario y los valores que esperan su eleccion.
+    //
+    // Los valores quedan ESPERANDO porque el selector es un paso DEL
+    // formulario: si el usuario vuelve atras (con el `Escape`), lo que
+    // escribio sigue ahi.
+    std::unique_ptr<Selector> _selector;
+    std::vector<std::string> _valoresPendientes;
 
     // El campo del id y el del valor de busqueda.
     std::unique_ptr<Campo> _campoId;
@@ -388,6 +433,7 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
     // vivir mas que la llamada.
     static const std::string menu = "Menu";
     static const std::string formulario = "Formulario";
+    static const std::string selector = "Selector";
     static const std::string id = "Id";
     static const std::string confirmacion = "Confirmar";
     static const std::string listado = "Listado";
@@ -401,6 +447,8 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
             return menu;
         case Vista::Formulario:
             return formulario;
+        case Vista::Selector:
+            return selector;
         case Vista::Id:
             return id;
         case Vista::Confirmar:
@@ -492,6 +540,8 @@ bool CrudPersonas<T>::manejar(const Evento& evento) {
             return manejarMenu(evento);
         case Vista::Formulario:
             return manejarFormulario(evento);
+        case Vista::Selector:
+            return manejarSelector(evento);
         case Vista::Id:
             return manejarCampo(evento, _campoId);
         case Vista::Confirmar:
@@ -590,6 +640,63 @@ bool CrudPersonas<T>::manejarFormulario(const Evento& evento) {
     }
 
     return _campos[_indiceCampo]->aplicarEvento(evento);
+}
+
+// ---------------------------------------------------------------------------
+// El selector
+// ---------------------------------------------------------------------------
+
+template <class T>
+bool CrudPersonas<T>::manejarSelector(const Evento& evento) {
+    if (!_selector) {
+        return false;
+    }
+
+    // EL `Escape` VUELVE AL FORMULARIO
+    //
+    // El selector es un paso DEL formulario (no un nivel del menu): el
+    // `Escape` sube al formulario, con todo lo que el usuario escribio
+    // intacto.
+    if (esTeclaEscape(evento)) {
+        irA(Vista::Formulario);
+        return true;
+    }
+
+    // EL RATON MUEVE EL RESALTADO, NO CONFIRMA
+    //
+    // Un clic elige la fila, pero la confirmacion es el Enter: un clic
+    // accidental no cambia la especialidad de un medico.
+    if (evento.esMouse()) {
+        if (!evento.esClic()) {
+            return false;
+        }
+        const int indice = _selector->opcionEnFila(evento.y, _selector->filaInicial());
+        if (indice < 0) {
+            // El clic cae fuera de las opciones: no se consume.
+            return false;
+        }
+        _selector->seleccionar(indice);
+        return true;
+    }
+
+    // EL '0' NO ES "VOLVER" ACA
+    //
+    // En el selector el '0' es un DIGITO: es el numero de una opcion, y como
+    // el catalogo tiene doce opciones (y no diez), el '0' no puede ser un
+    // atajo de vuelta. Si no existe, el selector muestra el error.
+    if (!_selector->aplicarEvento(evento)) {
+        return false;
+    }
+
+    // EL ENTER CONFIRMA LA ELECCION
+    //
+    // Con un numero escrito que no existe, el selector deja el error y el
+    // numero en la pantalla: el usuario lo corrige. Sin error, la eleccion
+    // es valida y se guarda.
+    if (evento.tipo == TipoTecla::Enter && _selector->error().empty()) {
+        confirmarSeleccion();
+    }
+    return true;
 }
 
 template <class T>
@@ -793,7 +900,7 @@ void CrudPersonas<T>::confirmarFormulario() {
         }
     }
 
-    // ARMAR LA ENTIDAD
+    // ARMAR LOS VALORES
     //
     // El vector que recibe `construir` es [id, campo1, campo2, ...]: el id
     // va adelante porque lo PROPONE el repositorio (o es el id de la entidad
@@ -802,12 +909,78 @@ void CrudPersonas<T>::confirmarFormulario() {
         _modoFormulario == ModoFormulario::Registro ? _repositorio.proximoId() : _id;
 
     std::vector<std::string> valores;
-    valores.reserve(_campos.size() + 1);
+    valores.reserve(_campos.size() + 2);
     valores.push_back(std::to_string(id));
     for (const std::unique_ptr<Campo>& campo : _campos) {
         valores.push_back(campo->valor());
     }
 
+    // CON SELECTOR: PRIMERO SE ELIGE, DESPUES SE GUARDA
+    //
+    // Un dato que se ELIGE no se escribe: el formulario deja los valores
+    // ESPERANDO y abre el selector. El Enter del selector es el que arma la
+    // entidad y la guarda.
+    if (_config.selector) {
+        _valoresPendientes = std::move(valores);
+        abrirSelector();
+        return;
+    }
+
+    guardar(std::move(valores));
+}
+
+template <class T>
+void CrudPersonas<T>::abrirSelector() {
+    const typename Config::SelectorDeFormulario& descriptor = *_config.selector;
+
+    _selector = std::make_unique<Selector>(descriptor.etiqueta, descriptor.opciones);
+
+    // LA OPCION QUE ARRANCA ELEGIDA
+    //
+    // Al MODIFICAR arranca con la especialidad que ya tiene la entidad: el
+    // selector muestra el dato que se esta editando, no el primero de la
+    // lista. Al REGISTRAR no hay entidad, asi que arranca con la primera.
+    if (_entidad && descriptor.indiceInicial) {
+        _selector->seleccionar(descriptor.indiceInicial(*_entidad));
+    }
+
+    irA(Vista::Selector);
+}
+
+template <class T>
+void CrudPersonas<T>::confirmarSeleccion() {
+    if (!_selector || !_config.selector) {
+        irA(Vista::Menu);
+        return;
+    }
+    const typename Config::SelectorDeFormulario& descriptor = *_config.selector;
+    if (!descriptor.valor) {
+        // No deberia pasar: es un error de programacion de la pantalla.
+        avisar("el selector no tiene valor configurado");
+        irA(Vista::Formulario);
+        return;
+    }
+    const int indice = _selector->seleccion();
+    if (indice < 0 || indice >= _selector->cantidad()) {
+        // No deberia pasar: es un error de programacion de la pantalla (un
+        // selector sin opciones no tiene nada que elegir).
+        avisar("el selector no tiene opciones para elegir");
+        irA(Vista::Formulario);
+        return;
+    }
+
+    // EL VALOR DEL SELECTOR VA AL FINAL
+    //
+    // El vector de valores es [id, campo1, campo2, ...] y el valor elegido
+    // se AGREGA al final: asi los campos de texto no cambian de lugar.
+    std::vector<std::string> valores = _valoresPendientes;
+    valores.push_back(descriptor.valor(static_cast<std::size_t>(indice)));
+
+    guardar(std::move(valores));
+}
+
+template <class T>
+void CrudPersonas<T>::guardar(std::vector<std::string> valores) {
     try {
         const T entidad = _config.construir(valores);
         if (_modoFormulario == ModoFormulario::Registro) {
@@ -824,9 +997,14 @@ void CrudPersonas<T>::confirmarFormulario() {
         // El repositorio puede rechazar la entidad (por ejemplo, la
         // dni ya la tiene otro). El error se muestra y el formulario
         // sigue abierto: no se pierde lo que el usuario escribio.
+        //
+        // Con selector, el error puede aparecer en la vista del selector:
+        // en ese caso se vuelve al formulario, que es donde se corrige.
         avisar(error.motivo());
+        irA(Vista::Formulario);
     } catch (const ExcepcionSistema& error) {
         avisar(error.what());
+        irA(Vista::Formulario);
     }
 }
 
@@ -1035,6 +1213,23 @@ ftxui::Element CrudPersonas<T>::renderizar() {
         case Vista::Formulario:
             lineas.push_back(lineaFormulario());
             break;
+        case Vista::Selector: {
+            if (!_selector) {
+                break;
+            }
+            lineas.push_back(ftxui::text("  " + _selector->titulo()));
+            lineas.push_back(lineaNumeroSelector());
+            // La opcion `i` del selector queda en la fila `filaInicial + i`:
+            // el hit-testing del raton lo necesita.
+            _selector->definirFilaInicial(static_cast<int>(lineas.size()));
+            for (int i = 0; i < _selector->cantidad(); ++i) {
+                lineas.push_back(lineaOpcionSelector(i));
+            }
+            if (!_selector->error().empty()) {
+                lineas.push_back(lineaError(_selector->error()));
+            }
+            break;
+        }
         case Vista::Id:
             lineas.push_back(lineaCampo(*_campoId, true));
             break;
@@ -1083,6 +1278,27 @@ ftxui::Element CrudPersonas<T>::lineaOpcion(const Menu& menu, int indice) const 
         elemento = elemento | ftxui::inverted;
     }
     return elemento;
+}
+
+template <class T>
+ftxui::Element CrudPersonas<T>::lineaOpcionSelector(int indice) const {
+    ftxui::Element elemento = ftxui::text(_selector->lineaDe(indice));
+    if (indice == _selector->seleccion()) {
+        // El resaltado de la opcion elegida. `inverted` funciona SIN color,
+        // asi que el selector se ve igual con `NO_COLOR` definido.
+        elemento = elemento | ftxui::inverted;
+    }
+    return elemento;
+}
+
+template <class T>
+ftxui::Element CrudPersonas<T>::lineaNumeroSelector() const {
+    // EL NUMERO QUE SE ESTA ESCRIBIENDO
+    //
+    // Va a la vista porque es lo que el usuario esta TECLEANDO: si no se
+    // mostrara, escribir "12" seria indistinguible de no escribir nada. La
+    // barra vertical es el cursor, como en el `Campo`.
+    return ftxui::text("  Numero: " + _selector->numeroDigitado() + "|");
 }
 
 template <class T>
@@ -1238,6 +1454,9 @@ std::string CrudPersonas<T>::ayuda() const {
         case Vista::Formulario:
             return "Tab: siguiente campo   Enter: confirmar   0: volver (campo vacio)   "
                    "Esc: volver";
+        case Vista::Selector:
+            return "Flechas: mover   Numero: elegir   Enter: confirmar   "
+                   "Esc: volver al formulario";
         case Vista::Id:
         case Vista::Valor:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
@@ -1317,6 +1536,22 @@ std::string CrudPersonas<T>::textoDeLaVista() const {
                     "  " + _campos[i]->etiqueta() + ": " + _campos[i]->textoEnPantalla() + "\n";
                 if (!_campos[i]->error().empty()) {
                     salida += "      " + _campos[i]->error() + "\n";
+                }
+            }
+            return salida;
+        }
+        case Vista::Selector: {
+            if (_selector) {
+                // La vista en texto plano tiene el MISMO orden que la
+                // dibujada: el titulo, el numero que se esta escribiendo y
+                // las opciones.
+                salida += "  " + _selector->titulo() + "\n";
+                salida += "  Numero: " + _selector->numeroDigitado() + "\n";
+                for (int i = 0; i < _selector->cantidad(); ++i) {
+                    salida += _selector->lineaDe(i, i == _selector->seleccion()) + "\n";
+                }
+                if (!_selector->error().empty()) {
+                    salida += "      " + _selector->error() + "\n";
                 }
             }
             return salida;

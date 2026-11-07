@@ -6,9 +6,11 @@
 #include "repositories/IRepositorioBajaLogica.h"
 #include "services/ServicioTurnos.h"
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -97,6 +99,13 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     //
     // El nombre de cada campo es el nombre de su columna: asi el formulario
     // de modificar se carga con los valores de la entidad que se edita.
+    //
+    // LA ESPECIALIDAD NO ESTA ACA
+    //
+    // La especialidad no es un campo de TEXTO: se ELIGE de una lista (la
+    // decision 1). El `ui::Menu` no puede, porque exige un atajo de un
+    // digito y el catalogo tiene doce especialidades: la elige el
+    // `ui::Selector` de mas abajo.
     config.campos = {
         {"nombre", "", validadorDelCampo([](Medico& medico, const std::string& texto) {
              medico.setNombre(texto);
@@ -112,24 +121,55 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
          })},
         {"legajo", "", validadorDelCampo([](Medico& medico, const std::string& texto) {
              medico.setLegajo(texto);
-         })},
-        // LA ESPECIALIDAD SE ESCRIBE CON SU CODIGO
-        //
-        // El campo es un TEXTO, asi que lo que el usuario escribe es el
-        // codigo del catalogo ("CARD"). `especialidadDesdeCodigo` lo
-        // traduce al `enum class` y, si el codigo no existe, lanza
-        // `DatoInvalidoException`: el validador la captura y muestra el
-        // motivo, sin dejar que la pantalla invente una regla propia.
-        {"especialidad", "", validadorDelCampo([](Medico& medico, const std::string& texto) {
-             medico.setEspecialidad(especialidadDesdeCodigo(texto));
          })}};
+
+    // EL SELECTOR DE LA ESPECIALIDAD
+    //
+    // LO QUE SE VE Y LO QUE SE GUARDA SON DOS COSAS
+    //
+    // El usuario ve la DESCRIPCION ("Gastroenterologia") y lo que viaja al
+    // archivo es el CODIGO ("GAST"): el `valor` devuelve el codigo y la
+    // `opciones` guarda las descripciones.
+    //
+    // LA NUMERACION ES POSICIONAL
+    //
+    // Las opciones se numeran por su posicion (1, 2, 3, ...), asi que el
+    // numero completo se puede escribir: "12" elige la doceava. Un `Menu`
+    // no podria: sus atajos son de un digito.
+    CrudPersonas<Medico>::Config::SelectorDeFormulario selector;
+    selector.etiqueta = "especialidad";
+    for (const Especialidad& especialidad : todasLasEspecialidades()) {
+        selector.opciones.push_back(descripcionDe(especialidad));
+    }
+    selector.valor = [](std::size_t indice) -> std::string {
+        return codigoDe(todasLasEspecialidades()[indice]);
+    };
+    // EL INDICE NO SE ADIVINA: SE BUSCA
+    //
+    // El numero del `enum class` NO es el indice del catalogo (el catalogo
+    // es una tabla y el enum su declaracion): se comparan los CODIGOS, que
+    // son la clave del catalogo.
+    selector.indiceInicial = [](const Medico& medico) -> int {
+        const std::string codigo = codigoDe(medico.getEspecialidad());
+        const std::vector<Especialidad>& catalogo = todasLasEspecialidades();
+        for (std::size_t i = 0; i < catalogo.size(); ++i) {
+            if (codigoDe(catalogo[i]) == codigo) {
+                return static_cast<int>(i);
+            }
+        }
+        // No esta en el catalogo: se deja la primera opcion (el `ui::Selector`
+        // ignora un indice fuera de rango).
+        return 0;
+    };
+    config.selector = std::move(selector);
 
     // EL CONSTRUCTOR DE LA ENTIDAD
     //
     // El vector que llega es [id, nombre, apellido, email, telefono, legajo,
     // especialidad]: el id va adelante porque lo PROPONE el repositorio (o es
     // el id de la entidad que se esta modificando) y nunca lo escribe el
-    // usuario. La especialidad llega como CODIGO y se traduce al catalogo.
+    // usuario. La especialidad llega como CODIGO (la elige el selector) y se
+    // traduce al catalogo.
     config.construir = [](const std::vector<std::string>& valores) {
         return Medico(std::stoi(valores[0]), valores[1], valores[2], valores[3], valores[4],
                         valores[5], especialidadDesdeCodigo(valores[6]));

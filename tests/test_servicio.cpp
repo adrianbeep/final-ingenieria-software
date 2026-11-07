@@ -203,55 +203,9 @@ Medico medicoDePrueba(int id) {
                     "2214556677", "LEG-1" + std::to_string(id), Especialidad::CARD);
 }
 
-// La fecha de HOY, segun el reloj del sistema. Es la misma referencia que
-// usa el servicio para la regla de la fecha vencida.
-Fecha hoyDelSistema() {
-    const std::time_t ahora = std::time(nullptr);
-    const std::tm* local = std::localtime(&ahora);
-    return Fecha(local->tm_year + 1900, local->tm_mon + 1, local->tm_mday);
-}
-
-// Una fecha `dias` dias a partir de hoy (negativo = antes).
-//
-// POR QUE NO UNA FECHA FIJA
-//
-// El servicio RECHAZA las fechas que ya pasaron. Una fecha fija dejaria de
-// servir el dia que se cumpliera, y el test pasaria a fallar solo. Derivar
-// la fecha del reloj hace que el test siga teniendo sentido siempre.
-Fecha fechaDesplazada(int dias) {
-    const Fecha hoy = hoyDelSistema();
-    int anio = hoy.anio;
-    int mes = hoy.mes;
-    int dia = hoy.dia;
-
-    while (dias > 0) {
-        ++dia;
-        if (dia > Fecha::diasDelMes(anio, mes)) {
-            dia = 1;
-            ++mes;
-            if (mes > 12) {
-                mes = 1;
-                ++anio;
-            }
-        }
-        --dias;
-    }
-
-    while (dias < 0) {
-        --dia;
-        if (dia < 1) {
-            --mes;
-            if (mes < 1) {
-                mes = 12;
-                --anio;
-            }
-            dia = Fecha::diasDelMes(anio, mes);
-        }
-        ++dias;
-    }
-
-    return Fecha(anio, mes, dia);
-}
+// La fecha de HOY y la fecha desplazada viven en el ARNES (`test_framework.h`):
+// las necesitan tambien los tests de la pantalla de turnos, que agendan
+// turnos con el mismo servicio.
 
 // Un turno valido, con la duracion por defecto (45 minutos).
 Turno turnoDePrueba(int id, int idMedico, int idPaciente, int hora, int minuto) {
@@ -807,6 +761,35 @@ TEST_CASE("reprogramar crea un turno NUEVO y deja el viejo como Reprogramado",
     CHECK(nuevo.getEspecialidad() == original.getEspecialidad());
     CHECK(nuevo.getDuracionMin() == original.getDuracionMin());
     CHECK(nuevo.getConsultorio() == original.getConsultorio());
+}
+
+TEST_CASE("reprogramar devuelve el id del turno NUEVO", servicio_reprogramar_devuelve_el_id) {
+    Escenario escenario;
+    escenario.conPersonas(1, 1);
+
+    const Turno original = turnoDePrueba(1, 1, 1, 10, 0);
+    escenario.servicio.agendar(original);
+
+    // EL ID DEVUELTO ES EL DEL TURNO NUEVO
+    //
+    // La pantalla que reprograma lo necesita para armar el mensaje "Turno #1
+    // reprogramado. Nuevo turno #2.": sin ese id, el mensaje no se puede
+    // escribir.
+    const int idNuevo = escenario.servicio.reprogramar(1, fechaDesplazada(45), Hora(11, 0));
+
+    CHECK(idNuevo == 2);
+
+    // Y es el id del turno que quedo en el repositorio: no es un numero
+    // cualquiera, es el del turno que se creo.
+    Turno nuevo;
+    CHECK(escenario.turnos.buscarPorId(idNuevo, nuevo) == true);
+    CHECK(nuevo.getEstado() == EstadoTurno::Activo);
+    CHECK(nuevo.getHora() == Hora(11, 0));
+
+    // Y el viejo apunta al nuevo.
+    Turno viejo;
+    CHECK(escenario.turnos.buscarPorId(1, viejo) == true);
+    CHECK(viejo.getIdTurnoReemplazante() == idNuevo);
 }
 
 TEST_CASE("reprogramar a un horario libre funciona aunque el turno viejo siga en el repositorio",
