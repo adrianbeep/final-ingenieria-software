@@ -86,7 +86,7 @@ private:
     //
     // El nombre de cada vista es el que ve el test (`vista()`): por eso son
     // palabras y no numeros.
-    enum class Vista { Menu, Campo, Selector, Resultado, Ocupacion };
+    enum class Vista { Menu, Campo, Selector, Resultado, Ocupacion, Bajas };
 
     // QUE REPORTE SE ESTA ARMANDO
     //
@@ -100,6 +100,15 @@ private:
         TurnosPorMedico,
         TurnosPorEspecialidad,
         OcupacionPorSemana
+    };
+
+    // UNA TABLA DEL REPORTE DE DADOS DE BAJA
+    //
+    // Son las de las pantallas de entidades: el reporte usa su MISMA
+    // configuracion, asi que se ve exactamente como ellas.
+    struct TablaDeBaja {
+        std::vector<std::vector<std::string>> filas;
+        std::vector<std::string> cabeceras;
     };
 
     static const std::string& nombreDeVista(Vista vista);
@@ -122,6 +131,7 @@ private:
     void iniciarTurnosPorPaciente();
     void iniciarTurnosPorMedico();
     void iniciarOcupacion();
+    void mostrarBajas();
     void abrirSelector();
 
     // --- La confirmacion ---
@@ -146,6 +156,7 @@ private:
     ftxui::Element lineaError(const std::string& texto) const;
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaResultado() const;
+    ftxui::Element lineaBajas() const;
     ftxui::Element lineaOcupacion() const;
     ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
                            const std::vector<std::string>& cabeceras) const;
@@ -177,6 +188,12 @@ private:
 
     // Lo que se dice cuando el reporte no tiene filas.
     std::string _mensajeVacio;
+
+    // LAS DOS TABLAS DEL REPORTE DE DADOS DE BAJA
+    //
+    // Los pacientes dados de baja y los medicos dados de baja.
+    TablaDeBaja _tablaPacientes;
+    TablaDeBaja _tablaMedicos;
 };
 
 // La pantalla de reportes, lista para apilarse en la aplicacion.

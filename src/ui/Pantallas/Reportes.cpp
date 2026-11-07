@@ -4,6 +4,8 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "ui/CrudPersonas.h"
 #include "ui/NombresDePersonas.h"
+#include "ui/Pantallas/Medicos.h"
+#include "ui/Pantallas/Pacientes.h"
 #include "ui/Semana.h"
 #include "utils/Fecha.h"
 #include "utils/Utils.h"
@@ -372,6 +374,7 @@ PantallaReportes::PantallaReportes(Aplicacion& aplicacion,
     _menu.agregar('3', "Turnos por medico", [this]() { iniciarTurnosPorMedico(); });
     _menu.agregar('4', "Turnos por especialidad", [this]() { abrirSelector(); });
     _menu.agregar('5', "Ocupacion por semana", [this]() { iniciarOcupacion(); });
+    _menu.agregar('6', "Pacientes y medicos dados de baja", [this]() { mostrarBajas(); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 }
 
@@ -439,6 +442,8 @@ bool PantallaReportes::manejar(const Evento& evento) {
         case Vista::Resultado:
             return manejarLectura(evento);
         case Vista::Ocupacion:
+            return manejarLectura(evento);
+        case Vista::Bajas:
             return manejarLectura(evento);
     }
     return false;
@@ -585,6 +590,43 @@ void PantallaReportes::iniciarOcupacion() {
     _reporte = Reporte::OcupacionPorSemana;
     _campo = std::make_unique<Campo>("Fecha", "", validadorDeFecha());
     irA(Vista::Campo);
+}
+
+void PantallaReportes::mostrarBajas() {
+    // EL REPORTE NO PIDE NADA
+    //
+    // No hay dato que escribir: los dados de baja son los que ya estan, y
+    // el repositorio los sabe (`listarInactivos`).
+
+    // LAS COLUMNAS SON LAS DE LAS PANTALLAS DE ENTIDADES
+    //
+    // El reporte usa la MISMA configuracion que las pantallas de pacientes y
+    // de medicos (`configDePacientes` y `configDeMedicos`): asi el reporte
+    // se ve exactamente como las pantallas de las que viene, y no hay dos
+    // listas de columnas que se puedan desincronizar.
+    const CrudPersonas<Paciente>::Config configPacientes =
+        configDePacientes(_pacientes, _servicioTurnos);
+    _tablaPacientes.filas.clear();
+    for (const Paciente& paciente : _pacientes.listarInactivos()) {
+        _tablaPacientes.filas.push_back(configPacientes.fila(paciente));
+    }
+    _tablaPacientes.cabeceras = configPacientes.cabeceras;
+
+    const CrudPersonas<Medico>::Config configMedicos =
+        configDeMedicos(_medicos, _servicioTurnos);
+    _tablaMedicos.filas.clear();
+    for (const Medico& medico : _medicos.listarInactivos()) {
+        _tablaMedicos.filas.push_back(configMedicos.fila(medico));
+    }
+    _tablaMedicos.cabeceras = configMedicos.cabeceras;
+
+    // EL MENSAJE DICE LOS DOS TOTALES
+    //
+    // Los dos counts tienen que verse: un reporte que solo dijera cuantos
+    // pacientes hay dejaria a medias la informacion.
+    avisarExito(std::to_string(_tablaPacientes.filas.size()) + " paciente(s) inactivos. "
+                 + std::to_string(_tablaMedicos.filas.size()) + " medico(s) inactivos.");
+    irA(Vista::Bajas);
 }
 
 void PantallaReportes::abrirSelector() {
@@ -866,6 +908,34 @@ ftxui::Element PantallaReportes::lineaResultado() const {
     return tablaDe(_filas, _cabeceras);
 }
 
+ftxui::Element PantallaReportes::lineaBajas() const {
+    // LAS DOS TABLAS, UNA DEBAJO DE LA OTRA
+    //
+    // Los pacientes dados de baja y los medicos dados de baja. Cada una con
+    // su titulo, para que se sepa cual es cual.
+    ftxui::Elements lineas;
+
+    lineas.push_back(ftxui::text("  Pacientes dados de baja:"));
+    if (_tablaPacientes.filas.empty()) {
+        // EL ESTADO VACIO TIENE SALIDA
+        //
+        // Un mensaje que dice "no hay nada" y no dice como volver deja al
+        // usuario atrapado: el mensaje dice las dos cosas.
+        lineas.push_back(ftxui::text("    No hay pacientes inactivos. 0: volver al menu."));
+    } else {
+        lineas.push_back(tablaDe(_tablaPacientes.filas, _tablaPacientes.cabeceras));
+    }
+
+    lineas.push_back(ftxui::text("  Medicos dados de baja:"));
+    if (_tablaMedicos.filas.empty()) {
+        lineas.push_back(ftxui::text("    No hay medicos inactivos. 0: volver al menu."));
+    } else {
+        lineas.push_back(tablaDe(_tablaMedicos.filas, _tablaMedicos.cabeceras));
+    }
+
+    return ftxui::vbox(std::move(lineas));
+}
+
 ftxui::Element PantallaReportes::lineaOcupacion() const {
     // LA TABLA DE LA OCUPACION SIEMPRE TIENE FILAS
     //
@@ -934,6 +1004,9 @@ ftxui::Element PantallaReportes::renderizar() {
         case Vista::Ocupacion:
             lineas.push_back(lineaOcupacion());
             break;
+        case Vista::Bajas:
+            lineas.push_back(lineaBajas());
+            break;
     }
 
     if (!mensajeActual().esVacio()) {
@@ -961,6 +1034,8 @@ std::string PantallaReportes::ayuda() const {
             return "0: volver   Esc: volver";
         case Vista::Ocupacion:
             return "0: volver   Esc: volver";
+        case Vista::Bajas:
+            return "0: volver   Esc: volver";
     }
     return "";
 }
@@ -977,6 +1052,7 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
     static const std::string selector = "Selector";
     static const std::string resultado = "Resultado";
     static const std::string ocupacion = "Ocupacion";
+    static const std::string bajas = "Bajas";
 
     switch (vista) {
         case Vista::Menu:
@@ -989,6 +1065,8 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
             return resultado;
         case Vista::Ocupacion:
             return ocupacion;
+        case Vista::Bajas:
+            return bajas;
     }
     return menu;
 }
@@ -1058,6 +1136,37 @@ std::string PantallaReportes::textoDeLaVista() const {
                     salida += fila[i];
                 }
                 salida += "\n";
+            }
+            return salida;
+        }
+        case Vista::Bajas: {
+            salida += "  Pacientes dados de baja:\n";
+            if (_tablaPacientes.filas.empty()) {
+                salida += "    No hay pacientes inactivos. 0: volver al menu.\n";
+            } else {
+                for (const std::vector<std::string>& fila : _tablaPacientes.filas) {
+                    for (std::size_t i = 0; i < fila.size(); ++i) {
+                        if (i > 0) {
+                            salida += " | ";
+                        }
+                        salida += fila[i];
+                    }
+                    salida += "\n";
+                }
+            }
+            salida += "  Medicos dados de baja:\n";
+            if (_tablaMedicos.filas.empty()) {
+                salida += "    No hay medicos inactivos. 0: volver al menu.\n";
+            } else {
+                for (const std::vector<std::string>& fila : _tablaMedicos.filas) {
+                    for (std::size_t i = 0; i < fila.size(); ++i) {
+                        if (i > 0) {
+                            salida += " | ";
+                        }
+                        salida += fila[i];
+                    }
+                    salida += "\n";
+                }
             }
             return salida;
         }

@@ -3185,6 +3185,7 @@ TEST_CASE("el menu de reportes muestra las cuatro acciones y el cero de volver",
     CHECK(texto.find("3. Turnos por medico") != std::string::npos);
     CHECK(texto.find("4. Turnos por especialidad") != std::string::npos);
     CHECK(texto.find("5. Ocupacion por semana") != std::string::npos);
+    CHECK(texto.find("6. Pacientes y medicos dados de baja") != std::string::npos);
     CHECK(texto.find("0. Volver") != std::string::npos);
 }
 
@@ -3697,8 +3698,7 @@ TEST_CASE("el numero de dia y su inversa dan la misma fecha", semana_ida_y_vuelt
 }
 
 TEST_CASE("la semana de una fecha arranca en el lunes que se espera",
-           semana_arranca_en_el_lunes) {
-    // EL 2027-03-10 ES UN MIERCOLES
+           semana_arranca_en_el_lunes) {    // EL 2027-03-10 ES UN MIERCOLES
     //
     // La convencion del dominio es 0 = lunes, 1 = martes, 2 = miercoles.
     CHECK(Fecha(2027, 3, 10).diaSemana() == 2);
@@ -3729,5 +3729,187 @@ TEST_CASE("la semana de una fecha arranca en el lunes que se espera",
         CHECK(domingo.back() == Fecha(2027, 3, 14));
     }
 }
+
+// ---------------------------------------------------------------------------
+// LOS PACIENTES Y MEDICOS DADOS DE BAJA
+//
+// QUE SE VERIFICA ACa
+//
+//   - que el reporte muestre las DOS tablas, con las columnas de las
+//     pantallas de entidades;
+//   - que salgan SOLO los dados de baja (los activos no);
+//   - que el mensaje diga los DOS totales;
+//   - el estado vacio, con su salida.
+//
+// LAS COLUMNAS SON LAS DE LAS PANTALLAS
+//
+// El reporte usa la misma configuracion que ellas (`configDePacientes` y
+// `configDeMedicos`), asi que no hay dos listas de columnas que se puedan
+// desincronizar.
+// ---------------------------------------------------------------------------
+TEST_CASE("el reporte de dados de baja muestra las dos tablas y los dos totales",
+           reportes_dados_de_baja) {
+    EscenarioReportes escenario("reportes_dados_de_baja");
+
+    // Un paciente activo y uno DADO DE BAJA.
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    Paciente inactivo = pacienteDePrueba(2, "Valentina", "Ibarra", "2020392");
+    inactivo.setActivo(false);
+    escenario.pacientes.alta(inactivo);
+
+    // Un medico activo y uno DADO DE BAJA.
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    Medico medicoInactivo = Medico(2, "Diego", "Fernandez", "diego.fernandez@unlp.edu.ar",
+                                    "2214556688", "LEG-1002", Especialidad::PEDI);
+    medicoInactivo.setActivo(false);
+    escenario.medicos.alta(medicoInactivo);
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('6'));
+    CHECK(pantalla.vista() == "Bajas");
+
+    // EL MENSAJE DICE LOS DOS TOTALES
+    CHECK(escenario.contexto.mensaje().texto()
+          == "OK  1 paciente(s) inactivos. 1 medico(s) inactivos.");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Pacientes dados de baja") != std::string::npos);
+    CHECK(texto.find("Medicos dados de baja") != std::string::npos);
+
+    // LOS DADOS DE BAJA SALEN
+    //
+    // Las tablas de las entidades tienen el nombre y el apellido en columnas
+    // separadas (son las de las pantallas de pacientes y de medicos).
+    CHECK(texto.find("Valentina | Ibarra") != std::string::npos);
+    CHECK(texto.find("Diego | Fernandez") != std::string::npos);
+    CHECK(texto.find("inactivo") != std::string::npos);
+    // Y LOS ACTIVOS NO
+    CHECK(texto.find("Ana | Gomez") == std::string::npos);
+    CHECK(texto.find("Beto | Perez") == std::string::npos);
+}
+
+TEST_CASE("un reporte de dados de baja sin dados de baja dice que no hay",
+           reportes_dados_de_baja_vacio) {
+    EscenarioReportes escenario("reportes_dados_de_baja_vacio");
+    // SOLO ENTIDADES ACTIVAS: no hay ningun dado de baja.
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('6'));
+    CHECK(pantalla.vista() == "Bajas");
+
+    CHECK(escenario.contexto.mensaje().texto()
+          == "OK  0 paciente(s) inactivos. 0 medico(s) inactivos.");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("No hay pacientes inactivos") != std::string::npos);
+    CHECK(texto.find("No hay medicos inactivos") != std::string::npos);
+    // Y CADA ESTADO VACIO DICE COMO VOLVER
+    CHECK(texto.find("0: volver al menu") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL RENDER DE LA PANTALLA DE REPORTES
+//
+// QUE SE VERIFICA ACa
+//
+// Que cada vista de la pantalla se pueda DIBUJAR en una pantalla de FTXUI.
+//
+// Son seis vistas y el caso las recorre todas: el menu, el campo, el
+// selector, el resultado de un reporte, la ocupacion y los dados de baja.
+// (La tabla de los dados de baja es mas ancha que 80 columnas: es la de las
+// pantallas de entidades, y por eso se dibuja en una pantalla mas ancha.)
+// ---------------------------------------------------------------------------
+TEST_CASE("el render de la pantalla de reportes se puede dibujar en FTXUI",
+           reportes_render) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioReportes escenario("reportes_render");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Valentina", "Ibarra", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Diego", "Fernandez", "LEG-1001", Especialidad::CARD));
+    Medico inactivo = Medico(2, "Caro", "Ruiz", "caro.ruiz@unlp.edu.ar", "2214556677", "LEG-1002",
+                              Especialidad::PEDI);
+    inactivo.setActivo(false);
+    escenario.medicos.alta(inactivo);
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 8), Hora(8, 0), 60, "A-1"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    // EL MENU DEL MODULO
+    std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 80, 14);
+    CHECK(lineas.size() == 14);
+    if (lineas.size() == 14) {
+        CHECK(lineas[0].find("REPORTES") != std::string::npos);
+        CHECK(lineas[2].find("1. Turnos por fecha") != std::string::npos);
+        CHECK(lineas[7].find("6. Pacientes y medicos dados de baja") != std::string::npos);
+        CHECK(lineas[8].find("0. Volver") != std::string::npos);
+    }
+
+    // EL CAMPO DE LA FECHA
+    pantalla.manejar(eventoCaracter('1'));
+    lineas = renderizarLineas(pantalla.renderizar(), 80, 8);
+    CHECK(lineas.size() == 8);
+    if (lineas.size() == 8) {
+        CHECK(lineas[2].find("Fecha:") != std::string::npos);
+    }
+
+    // EL SELECTOR DE LA ESPECIALIDAD
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('4'));
+    lineas = renderizarLineas(pantalla.renderizar(), 80, 20);
+    CHECK(lineas.size() == 20);
+    if (lineas.size() == 20) {
+        CHECK(lineas[2].find("especialidad") != std::string::npos);
+        CHECK(lineas[4].find("1. Cardiolog") != std::string::npos);
+        CHECK(lineas[15].find("12. Neumolog") != std::string::npos);
+    }
+
+    // EL RESULTADO DE UN REPORTE
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    lineas = renderizarLineas(pantalla.renderizar(), 80, 12);
+    CHECK(lineas.size() == 12);
+    if (lineas.size() == 12) {
+        CHECK(lineas[3].find("paciente") != std::string::npos);
+        CHECK(lineas[3].find("medico") != std::string::npos);
+    }
+
+    // LA OCUPACION DE LA SEMANA
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('5'));
+    escribir(pantalla, "2027-03-08");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    lineas = renderizarLineas(pantalla.renderizar(), 80, 16);
+    CHECK(lineas.size() == 16);
+    if (lineas.size() == 16) {
+        CHECK(lineas[3].find("horas ocupadas") != std::string::npos);
+        CHECK(lineas[3].find("% ocupacion") != std::string::npos);
+    }
+
+    // LOS DADOS DE BAJA
+    //
+    // La tabla de los medicos es mas ancha que 80 columnas (son las
+    // columnas de la pantalla de medicos): se dibuja en una pantalla ancha.
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('6'));
+    lineas = renderizarLineas(pantalla.renderizar(), 200, 16);
+    CHECK(lineas.size() == 16);
+    if (lineas.size() == 16) {
+        CHECK(lineas[2].find("Pacientes dados de baja") != std::string::npos);
+        CHECK(lineas[4].find("Medicos dados de baja") != std::string::npos);
+        CHECK(lineas[8].find("Caro") != std::string::npos);
+    }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
 
 
