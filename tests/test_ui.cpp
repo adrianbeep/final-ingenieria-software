@@ -142,6 +142,38 @@ std::vector<std::string> renderizarLineas(const ftxui::Element& elemento, int an
     return lineas;
 }
 
+// EL ANCHO NATURAL DE UN ELEMENTO
+//
+// Es el ancho que la vista NECESITA para dibujarse entera: el que tiene que
+// entrar en la terminal.
+//
+// COMO SE MIDE
+//
+// `ftxui::Render` calcula el requerimiento de cada elemento (el ancho minimo
+// con el que se puede dibujar) y lo deja en `requirement()`. Ese ancho es el
+// NATURAL de la vista.
+//
+// POR QUE NO SE MIDE "LA LINEA MAS LARGA" DEL SCREEN
+//
+// Dos cosas lo arruinan: el `ftxui::separator()` dibuja una linea del ANCHO
+// de la pantalla, y `Screen::ToString()` devuelve la pantalla COMPLETA (con
+// el relleno de espacios de la derecha). Las dos cosas hacen que la linea mas
+// larga mida el ancho de la pantalla y no el de la vista.
+//
+// EL ANCHO DE LA PANTALLA
+//
+// Es de 300 columnas a proposito: es mas ancha que cualquier tabla que
+// dibuje la aplicacion, asi que NADA se envuelve y el ancho medido es el
+// natural y no el de un recorte.
+std::size_t anchoNatural(const ftxui::Element& elemento) {
+    ftxui::Screen pantalla = ftxui::Screen::Create(ftxui::Dimension::Fixed(300),
+                                                   ftxui::Dimension::Fixed(60));
+    ftxui::Render(pantalla, elemento);
+
+    const ftxui::Requirement requerimiento = elemento->requirement();
+    return requerimiento.min_x > 0 ? static_cast<std::size_t>(requerimiento.min_x) : 0;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -2547,7 +2579,7 @@ TEST_CASE("el render de la pantalla de turnos se puede dibujar en FTXUI",
 //     turnos que se reemplazaron (en las DOS direcciones).
 // ---------------------------------------------------------------------------
 
-TEST_CASE("listar todos muestra una fila por turno con las diez columnas",
+TEST_CASE("listar todos muestra una fila por turno con las seis columnas",
            turnos_listar) {
     definirNoColor("1");
     ui::Theme::recargarEntorno();
@@ -2570,32 +2602,92 @@ TEST_CASE("listar todos muestra una fila por turno con las diez columnas",
     const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 220, 12);
     CHECK(lineas.size() == 12);
     if (lineas.size() == 12) {
-        // LA FILA 3 ES LA CABECERA: TIENE LAS DIEZ COLUMNAS.
+        // LA FILA 3 ES LA CABECERA: TIENE LAS SEIS COLUMNAS DE LA LISTA.
+        //
+        // La lista se enfoca en lo que hace falta para RECONOCER un turno y
+        // para que la tabla entre en 80 columnas (ver el caso del ancho).
         const std::string cabecera = lineas[3];
         CHECK(cabecera.find("id") != std::string::npos);
+        CHECK(cabecera.find("fecha") != std::string::npos);
+        CHECK(cabecera.find("hora") != std::string::npos);
         CHECK(cabecera.find("paciente") != std::string::npos);
         CHECK(cabecera.find("medico") != std::string::npos);
-        CHECK(cabecera.find("especialidad") != std::string::npos);
-        CHECK(cabecera.find("fecha") != std::string::npos);
-        CHECK(cabecera.find("dia") != std::string::npos);
-        CHECK(cabecera.find("hora") != std::string::npos);
-        CHECK(cabecera.find("duracion") != std::string::npos);
-        CHECK(cabecera.find("consultorio") != std::string::npos);
         CHECK(cabecera.find("estado") != std::string::npos);
+
+        // Y LAS CUATRO QUE QUEDARON AFUERA NO ESTAN.
+        //
+        // `dia` se deduce de la fecha, `especialidad` es la del medico (la
+        // regla 2b), y `duracion` y `consultorio` estan en la ficha.
+        CHECK(cabecera.find("especialidad") == std::string::npos);
+        CHECK(cabecera.find("dia") == std::string::npos);
+        CHECK(cabecera.find("duracion") == std::string::npos);
+        CHECK(cabecera.find("consultorio") == std::string::npos);
 
         // UNA FILA POR TURNO, con los NOMBRES del paciente y del medico.
         CHECK(lineas[5].find("Ana Gomez") != std::string::npos);
         CHECK(lineas[5].find("Beto Perez") != std::string::npos);
-        CHECK(lineas[5].find("Cardiolog") != std::string::npos);
-        CHECK(lineas[5].find("A-1") != std::string::npos);
         CHECK(lineas[5].find("Activo") != std::string::npos);
         CHECK(lineas[6].find("Cancelado") != std::string::npos);
     }
 
-    // Y EN TEXTO PLANO SE VE EL DIA DE LA SEMANA.
+    // Y EN TEXTO PLANO SE VEN LOS MISMOS CAMPOS.
     const std::string texto = pantalla.vistaTextoPlano();
-    CHECK(texto.find(Fecha::nombreDiaSemana(fechaDesplazada(30).diaSemana()))
-          != std::string::npos);
+    CHECK(texto.find("Ana Gomez") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    CHECK(texto.find("Activo") != std::string::npos);
+    CHECK(texto.find("Cancelado") != std::string::npos);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// LA RED DE LAS 80 COLUMNAS
+//
+// LA LISTA TIENE QUE ENTRAR EN UNA TERMINAL DE 80 COLUMNAS
+//
+// `ui::Tabla` no scrollea ni trunca: si la tabla es mas ancha que la
+// terminal, la parte de la derecha (la del `estado`) no se ve. Con las diez
+// columnas de la especificacion, la tabla de la semilla mide 137 columnas.
+//
+// Este caso mide el ANCHO NATURAL de la vista "Listar todos" y falla si pasa
+// de 80. Es la red que hace que esto no se vuelva a romper en silencio.
+//
+// LOS NOMBRES SON LOS MAS LARGOS DE LA SEMILLA
+//
+// La semilla tiene "Ramirez Joaquin" y "Fernandez Diego" (quince letras cada
+// uno). El caso usa nombres de esa longitud para que el ancho que se mide
+// sea el de verdad, y no el de un camino feliz con nombres cortitos.
+// ---------------------------------------------------------------------------
+TEST_CASE("la lista de turnos entra en 80 columnas", turnos_lista_entra_en_80) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioTurnos escenario("turnos_lista_entra_en_80");
+
+    // LOS NOMBRES MAS LARGOS DE LA SEMILLA
+    escenario.pacientes.alta(pacienteDePrueba(1, "Valentina", "Ibarra", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Diego", "Fernandez", "LEG-1001", Especialidad::CARD));
+
+    // Y LOS TURNOS QUE PONEN CADA COLUMNA EN SU ANCHO MAXIMO: la fecha mas
+    // larga, la hora mas larga y el estado mas largo ("Reprogramado").
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "Consultorio 1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 11), Hora(9, 30), 45, "Consultorio 2",
+              EstadoTurno::Reprogramado));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('5'));
+    CHECK(pantalla.vista() == "Listado");
+
+    // EL ANCHO NATURAL DE LA VISTA
+    const std::size_t ancho = anchoNatural(pantalla.renderizar());
+
+    // LA RED
+    CHECK(ancho <= 80);
 
     borrarNoColor();
     ui::Theme::recargarEntorno();
@@ -2646,7 +2738,9 @@ TEST_CASE("buscar es de dos pasos: primero el criterio y despues el valor",
     CHECK(pantalla.vista() == "Resultados");
     const std::string texto = pantalla.vistaTextoPlano();
     CHECK(texto.find("Ana Gomez") != std::string::npos);
-    CHECK(texto.find("A-1") != std::string::npos);
+    // El turno se reconoce por su id: el consultorio ya no es una columna de
+    // la lista (esta en la ficha).
+    CHECK(texto.find("31") != std::string::npos);
 }
 
 TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
@@ -2671,9 +2765,11 @@ TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Resultados");
     const std::string porEstado = pantalla.vistaTextoPlano();
-    CHECK(porEstado.find("A-2") != std::string::npos);
+    // Los turnos se distinguen por su id: el consultorio no es una columna de
+    // la lista.
+    CHECK(porEstado.find("32") != std::string::npos);
     // El otro turno NO aparece: solo las coincidencias.
-    CHECK(porEstado.find("A-1") == std::string::npos);
+    CHECK(porEstado.find("31") == std::string::npos);
 
     // POR CONSULTORIO
     pantalla.manejar(eventoCaracter('0'));
@@ -2683,8 +2779,8 @@ TEST_CASE("buscar por estado y por consultorio devuelve las coincidencias",
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Resultados");
     const std::string porConsultorio = pantalla.vistaTextoPlano();
-    CHECK(porConsultorio.find("A-1") != std::string::npos);
-    CHECK(porConsultorio.find("A-2") == std::string::npos);
+    CHECK(porConsultorio.find("31") != std::string::npos);
+    CHECK(porConsultorio.find("32") == std::string::npos);
 }
 
 TEST_CASE("buscar con un codigo de especialidad que no existe muestra el error del dominio",
@@ -2741,6 +2837,10 @@ TEST_CASE("ver detalle muestra todos los campos del turno", turnos_detalle) {
     CHECK(texto.find("Beto Perez") != std::string::npos);
     CHECK(texto.find("Cardiolog") != std::string::npos);
     CHECK(texto.find(fechaDesplazada(30).aTexto()) != std::string::npos);
+    // El dia de la semana esta en la FICHA (la lista se enfoca en seis
+    // columnas y el dia se deduce de la fecha).
+    CHECK(texto.find(Fecha::nombreDiaSemana(fechaDesplazada(30).diaSemana()))
+          != std::string::npos);
     CHECK(texto.find("10:00") != std::string::npos);
     CHECK(texto.find("45") != std::string::npos);
     CHECK(texto.find("A-1") != std::string::npos);

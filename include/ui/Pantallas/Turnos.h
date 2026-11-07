@@ -222,7 +222,8 @@ private:
     ftxui::Element lineaListado() const;
     ftxui::Element lineaResultados() const;
     ftxui::Element lineaDetalle() const;
-    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas) const;
+    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+                           const std::vector<std::string>& cabeceras) const;
     std::string vacio(const std::string& queFalta) const;
     std::string ayuda() const;
 

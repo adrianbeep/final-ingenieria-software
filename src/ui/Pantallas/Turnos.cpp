@@ -204,23 +204,54 @@ int indiceDeEspecialidad(Especialidad especialidad) {
 // ---------------------------------------------------------------------------
 // LAS COLUMNAS Y LAS FILAS DE UN TURNO
 //
-// LAS DIEZ COLUMNAS DE LA ESPECIFICACION
+// LA LISTA SE ENFOCA EN SEIS COLUMNAS
 //
-// id, paciente, medico, especialidad, fecha, dia, hora, duracion,
-// consultorio y estado. Son las mismas en el listado, en los resultados de
-// una busqueda y en la ficha: una fila de turno es UNA fila de turno.
+// El listado y los resultados de una busqueda muestran SEIS columnas: `id`,
+// `fecha`, `hora`, `paciente`, `medico` y `estado`. Son las que hacen falta
+// para RECONOCER un turno, y son las que entran en un terminal de 80
+// columnas.
 //
-// LA ESPECIALIDAD SE MUESTRA CON SU DESCRIPCION
+// QUE SE SACO DE LA LISTA Y POR QUE
 //
-// Es lo que el usuario lee ("Cardiologia"): el CODIGO ("CARD") es el dato
-// que viaja en el archivo.
+// De las diez columnas de la especificacion (issue #16, seccion 5.4, T5):
 //
-// EL DIA DE LA SEMANA
+//   - `dia` se DEDUCE de la fecha: la fecha sola ya dice si es un dia de
+//     trabajo, y el nombre del dia es un dato DERIVADO;
+//   - `especialidad` es, por la regla 2b, la del MEDICO que lo atiende:
+//     repetirla en cada fila es repetir un dato que ya esta en otra columna;
+//   - `duracion` tiene un rotulo de ocho letras para un dato de dos, y
+//     `consultorio` tampoco ayuda a reconocer un turno.
 //
-// Es el nombre del dia ("miercoles"): la fecha sola no dice si es un dia
-// de trabajo.
+// LAS CUATRO QUE SALEN NO SE PIERDEN
+//
+// La pantalla de DETALLE sigue mostrando las DIEZ columnas de la
+// especificacion: el listado se enfoca, la ficha no.
+//
+// LA MEDIDA
+//
+// Con los datos de la semilla, la tabla de diez columnas mide 137 columnas:
+// 106 de contenido, 20 de padding (dos por columna) y 11 de bordes (el
+// separador que `ui::Tabla` dibuja DESPUES de cada columna). En un terminal
+// de 80 quedaba cortada, y la columna `estado` no se veia.
+//
+// Con las seis columnas de la lista mide 79: 60 de contenido, 12 de padding
+// y 7 de bordes. Entra.
+//
+// Y hay un test que lo verifica: el ancho natural de la vista "Listar todos"
+// no puede pasar de 80 columnas.
 // ---------------------------------------------------------------------------
+
+// LAS COLUMNAS DE LA LISTA
 const std::vector<std::string>& cabecerasDeTurno() {
+    static const std::vector<std::string> cabeceras = {"id", "fecha", "hora", "paciente",
+                                                        "medico", "estado"};
+    return cabeceras;
+}
+
+// LAS COLUMNAS DE LA FICHA
+//
+// Son las DIEZ de la especificacion: la ficha muestra el turno entero.
+const std::vector<std::string>& cabecerasCompletasDeTurno() {
     static const std::vector<std::string> cabeceras = {"id",      "paciente", "medico",
                                                         "especialidad", "fecha",   "dia",
                                                         "hora",   "duracion", "consultorio",
@@ -254,9 +285,36 @@ std::string nombreDelMedico(int id, RepositorioMedicos& medicos) {
     return medico.getNombre() + " " + medico.getApellido();
 }
 
-// LA FILA DE UN TURNO
+// LA FILA DE UN TURNO EN LA LISTA
+//
+// Las celdas van en el MISMO orden que `cabecerasDeTurno()`: si no, la
+// tabla queda desalineada.
 std::vector<std::string> filaDe(const Turno& turno, RepositorioPacientes& pacientes,
                                 RepositorioMedicos& medicos) {
+    return {std::to_string(turno.getId()),
+            turno.getFecha().aTexto(),
+            turno.getHora().aTexto(),
+            nombreDelPaciente(turno.getIdPaciente(), pacientes),
+            nombreDelMedico(turno.getIdMedico(), medicos),
+            estadoATexto(turno.getEstado())};
+}
+
+// LA FILA DE UN TURNO EN LA FICHA
+//
+// Son los DIEZ campos de la especificacion, en el orden de
+// `cabecerasCompletasDeTurno()`.
+//
+// LA ESPECIALIDAD SE MUESTRA CON SU DESCRIPCION
+//
+// Es lo que el usuario lee ("Cardiologia"): el CODIGO ("CARD") es el dato
+// que viaja en el archivo.
+//
+// EL DIA DE LA SEMANA
+//
+// Es el nombre del dia ("miercoles"): la fecha sola no dice si es un dia
+// de trabajo.
+std::vector<std::string> filaCompletaDe(const Turno& turno, RepositorioPacientes& pacientes,
+                                         RepositorioMedicos& medicos) {
     return {std::to_string(turno.getId()),
             nombreDelPaciente(turno.getIdPaciente(), pacientes),
             nombreDelMedico(turno.getIdMedico(), medicos),
@@ -1293,8 +1351,9 @@ ftxui::Element PantallaTurnos::lineaConfirmacion() const {
     return ftxui::vbox(std::move(lineas));
 }
 
-ftxui::Element PantallaTurnos::tablaDe(const std::vector<std::vector<std::string>>& filas) const {
-    Tabla tabla(cabecerasDeTurno());
+ftxui::Element PantallaTurnos::tablaDe(const std::vector<std::vector<std::string>>& filas,
+                                       const std::vector<std::string>& cabeceras) const {
+    Tabla tabla(cabeceras);
     for (const std::vector<std::string>& fila : filas) {
         tabla.agregarFila(fila);
     }
@@ -1309,14 +1368,14 @@ ftxui::Element PantallaTurnos::lineaListado() const {
     if (filas.empty()) {
         return ftxui::text("  " + vacio("turnos"));
     }
-    return tablaDe(filas);
+    return tablaDe(filas, cabecerasDeTurno());
 }
 
 ftxui::Element PantallaTurnos::lineaResultados() const {
     if (_filasResultado.empty()) {
         return ftxui::text("  No hay coincidencias. 0: volver al menu.");
     }
-    return tablaDe(_filasResultado);
+    return tablaDe(_filasResultado, cabecerasDeTurno());
 }
 
 ftxui::Element PantallaTurnos::lineaDetalle() const {
@@ -1329,8 +1388,8 @@ ftxui::Element PantallaTurnos::lineaDetalle() const {
     // Todos los campos del turno, en las diez columnas de la
     // especificacion.
     std::vector<std::vector<std::string>> filas;
-    filas.push_back(filaDe(_turno, _pacientes, _medicos));
-    lineas.push_back(tablaDe(filas));
+    filas.push_back(filaCompletaDe(_turno, _pacientes, _medicos));
+    lineas.push_back(tablaDe(filas, cabecerasCompletasDeTurno()));
 
     // EL TURNO REEMPLAZANTE
     //
@@ -1624,7 +1683,9 @@ std::string PantallaTurnos::textoDeLaVista() const {
         }
         case Vista::Detalle: {
             salida += "  Ficha de turno #" + std::to_string(_turno.getId()) + "\n";
-            const std::vector<std::string> fila = filaDe(_turno, _pacientes, _medicos);
+            // La ficha muestra el turno ENTERO: la fila completa, con las
+            // diez columnas de la especificacion.
+            const std::vector<std::string> fila = filaCompletaDe(_turno, _pacientes, _medicos);
             for (std::size_t i = 0; i < fila.size(); ++i) {
                 if (i > 0) {
                     salida += " | ";
