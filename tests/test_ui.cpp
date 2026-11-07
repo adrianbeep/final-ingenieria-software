@@ -22,6 +22,7 @@
 #include "ui/Pantallas/MenuPrincipal.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
+#include "ui/Pantallas/Reportes.h"
 #include "ui/Pantallas/Turnos.h"
 #include "ui/Tabla.h"
 #include "ui/Terminal.h"
@@ -3091,3 +3092,419 @@ TEST_CASE("el menu principal ofrece la opcion de turnos", menu_principal_turnos)
     menu.manejar(eventoCaracter('3'));
     CHECK(escenario.aplicacion.textoPlanoActual().find("TURNOS") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DE REPORTES
+//
+// QUE SE VERIFICA ACa
+//
+//   - el menu del modulo y su atajo de volver;
+//   - los cuatro reportes de turnos (por fecha, por paciente, por medico y
+//     por especialidad), con su tabla, su total y su mensaje;
+//   - que los reportes muestren los turnos de CUALQUIER estado;
+//   - que las COLUMNAS de cada reporte sean las de la lista de turnos MENOS
+//     la dimension por la que se filtra;
+//   - el estado vacio con su salida;
+//   - un solo formato de error y el '0' que es dato en un campo con texto;
+//   - la RED DE LAS 80 COLUMNAS de las cuatro tablas.
+//
+// LOS ERRORES SON LOS DEL DOMINIO
+//
+// Cada caso de error compara el mensaje COMPLETO (el `what()` de la
+// excepcion del dominio), no una palabra suelta: asi el test falla si la
+// pantalla inventa su propio texto.
+// ---------------------------------------------------------------------------
+namespace {
+
+// El escenario de las pruebas de la pantalla de reportes.
+//
+// Es el mismo esquema que el de turnos: los repositorios de verdad (en un
+// directorio temporal), el servicio de verdad y la pantalla en la pila de la
+// aplicacion, con una pantalla de prueba DEBAJO.
+struct EscenarioReportes {
+    explicit EscenarioReportes(const std::string& nombre)
+        : pacientes(rutaNuevaDePrueba(nombre)),
+          medicos(rutaNuevaDePrueba(nombre + "-medicos")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaReportes>(
+            aplicacion, pacientes, medicos, servicio);
+        puntero = pantalla.get();
+        aplicacion.ir([&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+    }
+
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::Pantallas::PantallaReportes* puntero = nullptr;
+};
+
+// Escribe un texto en la pantalla de reportes (un evento por caracter).
+void escribir(ui::Pantallas::PantallaReportes& pantalla, const std::string& texto) {
+    for (const char caracter : texto) {
+        pantalla.manejar(eventoCaracter(caracter));
+    }
+}
+
+} // namespace
+
+TEST_CASE("el menu de reportes muestra las cuatro acciones y el cero de volver",
+           reportes_menu_inicial) {
+    EscenarioReportes escenario("reportes_menu_inicial");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    CHECK(pantalla.vista() == "Menu");
+    CHECK(pantalla.titulo() == "REPORTES");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("1. Turnos por fecha") != std::string::npos);
+    CHECK(texto.find("2. Turnos por paciente") != std::string::npos);
+    CHECK(texto.find("3. Turnos por medico") != std::string::npos);
+    CHECK(texto.find("4. Turnos por especialidad") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+}
+
+TEST_CASE("el cero del menu de reportes vuelve a la pantalla anterior",
+           reportes_menu_cero_vuelve) {
+    EscenarioReportes escenario("reportes_menu_cero_vuelve");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    pantalla.manejar(eventoCaracter('0'));
+
+    // La pantalla salio de la pila: la pantalla anterior quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() == "pantalla de prueba");
+}
+
+TEST_CASE("el reporte de turnos por fecha muestra la tabla y el total",
+           reportes_turnos_por_fecha) {
+    EscenarioReportes escenario("reportes_turnos_por_fecha");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // Los dos turnos del dia: uno activo y otro cancelado.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(9, 0), 60, "A-2",
+              EstadoTurno::Cancelado));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Campo");
+    escribir(pantalla, "2027-03-10");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Resultado");
+    // EL MENSAJE DEL TOTAL
+    CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s).");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("31") != std::string::npos);
+    CHECK(texto.find("08:00") != std::string::npos);
+    CHECK(texto.find("Ana Gomez") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    // EL REPORTE MUESTRA LOS TURNOS DE CUALQUIER ESTADO
+    CHECK(texto.find("Activo") != std::string::npos);
+    CHECK(texto.find("Cancelado") != std::string::npos);
+    // LA FECHA NO ES UNA COLUMNA: es la dimension por la que se filtra.
+    CHECK(texto.find("2027-03-10") == std::string::npos);
+}
+
+TEST_CASE("el reporte de turnos por paciente no repite el nombre del paciente",
+           reportes_turnos_por_paciente) {
+    EscenarioReportes escenario("reportes_turnos_por_paciente");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Campo");
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s).");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("2027-03-10") != std::string::npos);
+    CHECK(texto.find("08:00") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    // EL PACIENTE NO ES UNA COLUMNA: es la dimension por la que se filtra.
+    CHECK(texto.find("Ana Gomez") == std::string::npos);
+}
+
+TEST_CASE("el reporte de turnos por medico no repite el nombre del medico",
+           reportes_turnos_por_medico) {
+    EscenarioReportes escenario("reportes_turnos_por_medico");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 11), Hora(9, 0), 60, "A-2"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vista() == "Campo");
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s).");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("2027-03-10") != std::string::npos);
+    CHECK(texto.find("Ana Gomez") != std::string::npos);
+    // EL MEDICO NO ES UNA COLUMNA: es la dimension por la que se filtra.
+    CHECK(texto.find("Beto Perez") == std::string::npos);
+}
+
+TEST_CASE("el reporte de turnos por especialidad elige la especialidad de una lista",
+           reportes_turnos_por_especialidad) {
+    EscenarioReportes escenario("reportes_turnos_por_especialidad");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.medicos.alta(
+        medicoConEspecialidad(2, "Caro", "Ruiz", "LEG-1002", Especialidad::PEDI));
+    // Un turno de cada especialidad: el reporte tiene que separar los dos.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(
+        Turno(32, 2, 1, Especialidad::PEDI, Fecha(2027, 3, 10), Hora(9, 0), 60, "A-2"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('4'));
+    CHECK(pantalla.vista() == "Selector");
+
+    // EL SELECTOR MUESTRA LAS DOCE OPCIONES, NUMERADAS.
+    const std::string selector = pantalla.vistaTextoPlano();
+    CHECK(selector.find("1. Cardiolog") != std::string::npos);
+    CHECK(selector.find("12. Neumolog") != std::string::npos);
+
+    // SE ELIGE LA PRIMERA (Cardiologia) Y SE CONFIRMA.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  1 turno(s).");
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("31") != std::string::npos);
+    CHECK(texto.find("Beto Perez") != std::string::npos);
+    // EL TURNO DE PEDIATRIA NO ESTA: el reporte es de Cardiologia.
+    CHECK(texto.find("32") == std::string::npos);
+    CHECK(texto.find("Caro Ruiz") == std::string::npos);
+    // LA ESPECIALIDAD NO ES UNA COLUMNA (es la del medico, por la regla 2b):
+    // el reporte tiene las seis columnas de la lista.
+    CHECK(texto.find("Cardiolog") == std::string::npos);
+}
+
+TEST_CASE("un reporte sin turnos dice que no hay y como volver", reportes_sin_turnos) {
+    EscenarioReportes escenario("reportes_sin_turnos");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    escribir(pantalla, "2027-03-10");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Resultado");
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("No hay turnos para esa fecha") != std::string::npos);
+    CHECK(texto.find("0: volver al menu") != std::string::npos);
+}
+
+TEST_CASE("una fecha que no existe en el calendario muestra el error del dominio",
+           reportes_fecha_inexistente) {
+    EscenarioReportes escenario("reportes_fecha_inexistente");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // El 31 de febrero no existe: el campo solo valida la FORMA.
+    escribir(pantalla, "2027-02-31");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA VISTA NO CAMBIA: el usuario corrige la fecha.
+    CHECK(pantalla.vista() == "Campo");
+    CHECK(escenario.contexto.mensaje().texto()
+          == "ERR Dato invalido en campo 'fecha': '2027-02-31' (se esperaba AAAA-MM-DD con una "
+             "fecha existente)");
+}
+
+TEST_CASE("un id que no existe muestra el error debajo del campo",
+           reportes_id_inexistente) {
+    EscenarioReportes escenario("reportes_id_inexistente");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "9");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Campo");
+    CHECK(pantalla.vistaTextoPlano().find("no existe paciente #9") != std::string::npos);
+}
+
+TEST_CASE("en un campo de un reporte el cero es un dato si ya hay texto",
+           reportes_cero_es_dato) {
+    EscenarioReportes escenario("reportes_cero_es_dato");
+    escenario.pacientes.alta(pacienteDePrueba(10, "Ana", "Gomez", "2020391"));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "1");
+    escribir(pantalla, "0");
+
+    // El cero NO fue "volver": es parte del id.
+    CHECK(pantalla.vista() == "Campo");
+    CHECK(pantalla.vistaTextoPlano().find("Id del paciente: 10|") != std::string::npos);
+}
+
+TEST_CASE("el cero de un campo vacio de reportes vuelve al menu", reportes_cero_vuelve) {
+    EscenarioReportes escenario("reportes_cero_vuelve");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Campo");
+
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+}
+
+TEST_CASE("el escape de los reportes sube un nivel y no sale de la pantalla",
+           reportes_escape_sube_un_nivel) {
+    EscenarioReportes escenario("reportes_escape_sube_un_nivel");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    // La vista del campo: el `Escape` vuelve al menu del modulo.
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Campo");
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(pantalla.vista() == "Menu");
+
+    // La pantalla SIGUE en la pila: la pantalla de prueba no quedo arriba.
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
+
+    // Y en el menu, el `Escape` NO lo consume: lo maneja la aplicacion.
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == false);
+}
+
+// ---------------------------------------------------------------------------
+// LA RED DE LAS 80 COLUMNAS
+//
+// LAS TABLAS DE LOS REPORTES TIENEN QUE ENTRAR EN UNA TERMINAL DE 80 COLUMNAS
+//
+// `ui::Tabla` no scrollea ni trunca: si la tabla es mas ancha que la
+// terminal, la parte de la derecha no se ve. Los reportes usan las columnas
+// de la lista de turnos MENOS la dimension por la que se filtran, asi que
+// entran: pero eso hay que VERIFICARLO, no suponerlo.
+//
+// Este caso mide el ANCHO NATURAL de la vista de cada uno de los cuatro
+// reportes y falla si alguno pasa de 80.
+//
+// LOS NOMBRES SON LOS MAS LARGOS DE LA SEMILLA
+//
+// La semilla tiene "Ramirez Joaquin" y "Fernandez Diego" (quince letras cada
+// uno). El caso usa nombres de esa longitud para que el ancho que se mide
+// sea el de verdad, y no el de un camino feliz con nombres cortitos.
+// ---------------------------------------------------------------------------
+TEST_CASE("las tablas de los reportes de turnos entran en 80 columnas",
+           reportes_las_tablas_entran_en_80) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioReportes escenario("reportes_las_tablas_entran_en_80");
+
+    // LOS NOMBRES MAS LARGOS DE LA SEMILLA
+    escenario.pacientes.alta(pacienteDePrueba(1, "Valentina", "Ibarra", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Diego", "Fernandez", "LEG-1001", Especialidad::CARD));
+
+    // Y LOS TURNOS QUE PONEN CADA COLUMNA EN SU ANCHO MAXIMO: la fecha mas
+    // larga, la hora mas larga y el estado mas largo ("Reprogramado").
+    //
+    // LOS DOS TURNOS SON DEL MISMO DIA
+    //
+    // Asi el reporte por fecha tambien ve el estado mas largo: si uno de los
+    // dos estuviera en otro dia, la columna `estado` de ese reporte mediria
+    // menos y la red no estaria midiendo lo que tiene que medir.
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "Consultorio 1"));
+    escenario.turnos.alta(
+        Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(9, 30), 45, "Consultorio 2",
+              EstadoTurno::Reprogramado));
+
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    // POR FECHA (66 columnas con estos datos)
+    pantalla.manejar(eventoCaracter('1'));
+    escribir(pantalla, "2027-03-10");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    // POR PACIENTE (60 columnas con estos datos)
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('2'));
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    // POR MEDICO (61 columnas con estos datos)
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('3'));
+    escribir(pantalla, "1");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    // POR ESPECIALIDAD (79 columnas con estos datos)
+    pantalla.manejar(eventoCaracter('0'));
+    pantalla.manejar(eventoCaracter('4'));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Resultado");
+    CHECK(anchoNatural(pantalla.renderizar()) <= 80);
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("el menu principal ofrece la opcion de reportes", menu_principal_reportes) {
+    EscenarioReportes escenario("menu_principal_reportes");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    const std::string texto = menu.textoPlano();
+    CHECK(texto.find("1. Pacientes") != std::string::npos);
+    CHECK(texto.find("2. Medicos") != std::string::npos);
+    CHECK(texto.find("3. Turnos") != std::string::npos);
+    CHECK(texto.find("4. Reportes") != std::string::npos);
+    CHECK(texto.find("0. Salir") != std::string::npos);
+
+    // Y EL ATAJO ABRE LA PANTALLA DE REPORTES.
+    menu.manejar(eventoCaracter('4'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("REPORTES") != std::string::npos);
+}
+

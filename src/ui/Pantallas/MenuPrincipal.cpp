@@ -6,6 +6,7 @@
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
+#include "ui/Pantallas/Reportes.h"
 #include "ui/Pantallas/Turnos.h"
 
 #include <ftxui.hpp>
@@ -23,6 +24,7 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     _menu.agregar('1', "Pacientes", [this]() { abrirPacientes(); });
     _menu.agregar('2', "Medicos", [this]() { abrirMedicos(); });
     _menu.agregar('3', "Turnos", [this]() { abrirTurnos(); });
+    _menu.agregar('4', "Reportes", [this]() { abrirReportes(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -60,6 +62,18 @@ void MenuPrincipal::abrirTurnos() {
     _aplicacion.ir([](ui::Aplicacion& app) {
         return crearPantallaTurnos(app, app.contexto().turnos(), app.contexto().pacientes(),
                                    app.contexto().medicos(), app.contexto().servicioTurnos());
+    });
+}
+
+void MenuPrincipal::abrirReportes() {
+    // LA PANTALLA DE REPORTES NECESITA LOS DOS REPOSITORIOS DE PERSONAS
+    //
+    // Los de pacientes y de medicos para resolver los NOMBRES de las
+    // tablas (el turno guarda los ids, no los nombres) y el servicio, que
+    // es donde estan las consultas de los reportes.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaReportes(app, app.contexto().pacientes(), app.contexto().medicos(),
+                                      app.contexto().servicioTurnos());
     });
 }
 
