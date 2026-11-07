@@ -37,7 +37,18 @@ enum class Rol {
     Advertencia,
     TablaHeader,
     TablaCelda,
-    TablaBorde
+    TablaBorde,
+    // LOS NIVELES DEL MAPA DE CALOR DEL CALENDARIO
+    //
+    // Son cuatro, y van de mas frio a mas caliente: el dia con mas turnos se
+    // pinta con el color mas CALIENTE. Son los unicos roles que no son de un
+    // texto de la interfaz: son de una CELDA de la grilla del mes, asi que
+    // el "0 turnos" no tiene color propio (se queda con el de una celda
+    // normal).
+    CalorBajo,
+    CalorMedio,
+    CalorAlto,
+    CalorMaximo
 };
 
 // Los caracteres con los que se dibujan tablas y recuadros.
@@ -84,6 +95,12 @@ public:
     const Color& tablaHeader() const;
     const Color& tablaCelda() const;
     const Color& tablaBorde() const;
+
+    // Los colores del MAPA DE CALOR del calendario (cuatro niveles).
+    const Color& calorBajo() const;
+    const Color& calorMedio() const;
+    const Color& calorAlto() const;
+    const Color& calorMaximo() const;
 
     // Los caracteres de borde de las tablas y los recuadros.
     const Bordes& bordes() const;
