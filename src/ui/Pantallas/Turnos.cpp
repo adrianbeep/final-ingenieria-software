@@ -3,6 +3,7 @@
 #include "domain/Especialidad.h"
 #include "exceptions/ExcepcionesSistema.h"
 #include "ui/CrudPersonas.h"
+#include "ui/NombresDePersonas.h"
 #include "utils/Fecha.h"
 #include "utils/Utils.h"
 
@@ -269,21 +270,11 @@ const std::vector<std::string>& cabecerasCompletasDeTurno() {
 //
 // Se muestra el id con un "#" adelante: un dato que falta tiene que
 // verse, no desaparecer.
-std::string nombreDelPaciente(int id, RepositorioPacientes& pacientes) {
-    Paciente paciente;
-    if (!pacientes.buscarPorId(id, paciente)) {
-        return "#" + std::to_string(id);
-    }
-    return paciente.getNombre() + " " + paciente.getApellido();
-}
-
-std::string nombreDelMedico(int id, RepositorioMedicos& medicos) {
-    Medico medico;
-    if (!medicos.buscarPorId(id, medico)) {
-        return "#" + std::to_string(id);
-    }
-    return medico.getNombre() + " " + medico.getApellido();
-}
+//
+// LA REGLA VIVE EN `ui/NombresDePersonas.h`
+//
+// La usan tambien los reportes: si cada pantalla la escribiera de nuevo,
+// habria dos reglas que se pueden desincronizar.
 
 // LA FILA DE UN TURNO EN LA LISTA
 //
