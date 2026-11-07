@@ -12,6 +12,7 @@
 #include "ui/Mensaje.h"
 #include "ui/Mes.h"
 #include "ui/Pantalla.h"
+#include "ui/Tabla.h"
 #include "ui/Theme.h"
 
 #include <ftxui.hpp>
@@ -95,12 +96,15 @@ public:
     int anio() const;
     int mes() const;
 
+    // Para los tests: el dia de la agenda.
+    int diaDeLaAgenda() const;
+
 private:
     // LAS VISTAS DE LA MAQUINA DE ESTADOS
     //
     // El nombre de cada vista es el que ve el test (`vista()`): por eso son
     // palabras y no numeros.
-    enum class Vista { Menu, Anio, Mes, Grilla };
+    enum class Vista { Menu, Anio, Mes, Grilla, Dia, Detalle, Agenda };
 
     static const std::string& nombreDeVista(Vista vista);
 
@@ -116,19 +120,31 @@ private:
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo,
                       const std::function<void()>& alConfirmar);
     bool manejarGrilla(const Evento& evento);
+    bool manejarDetalle(const Evento& evento);
+    bool manejarAgenda(const Evento& evento);
 
     // --- El arranque de cada vista ---
     void iniciarVerMes();
+    void iniciarDetalleDelDia();
+    void iniciarAgenda();
 
     // --- La confirmacion ---
     void confirmarAnio();
     void confirmarMes();
+    void confirmarDia();
 
     // --- La grilla ---
     void armarGrilla();
     void moverMes(int delta);
     int totalDeTurnosDelMes() const;
     std::vector<SemanaDeGrilla> grilla() const;
+
+    // --- El detalle del dia ---
+    void armarDetalle();
+
+    // --- La agenda ---
+    void armarAgenda();
+    void moverDia(int delta);
 
     // --- Los mensajes ---
     void avisar(const std::string& texto);
@@ -146,11 +162,16 @@ private:
     ftxui::Element lineaBordeGrilla() const;
     ftxui::Element lineaCabeceraGrilla() const;
     ftxui::Element filaDeGrilla(const FilaDeGrilla& fila) const;
+    ftxui::Element lineaDetalle() const;
+    ftxui::Element lineaAgenda() const;
+    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+                           const std::vector<std::string>& cabeceras) const;
     std::string ayuda() const;
 
     // --- El texto plano (lo que se ve sin terminal) ---
     std::string textoDeLaVista() const;
     std::string textoDeLaGrilla() const;
+    std::string textoDeLaTabla() const;
     std::string filaDeGrillaEnTexto(const FilaDeGrilla& fila) const;
 
     Aplicacion& _aplicacion;
@@ -176,19 +197,41 @@ private:
     // esta completo, el mes que se esta viendo NO cambia.
     Fecha _mesEnArma;
 
+    // EL DIA QUE SE ESTA VIENDO EN EL DETALLE
+    //
+    // Es un dia del mes que se esta viendo: la tabla muestra los turnos de
+    // ese dia.
+    Fecha _fechaDelDetalle;
+
+    // EL DIA DE LA AGENDA
+    //
+    // Arranca en HOY (la fecha que recibio la pantalla) y lo mueven las
+    // flechas.
+    Fecha _diaAgenda;
+
     // LA FECHA DE HOY
     //
-    // La que recibio la pantalla. Es el mes con el que arranca el recorrido.
+    // La que recibio la pantalla. Es el mes con el que arranca el recorrido
+    // y el dia con el que arranca la agenda.
     Fecha _hoy;
 
-    // Los campos de las preguntas (el anio y el mes).
+    // Los campos de las preguntas (el anio, el mes y el dia).
     std::unique_ptr<Campo> _campoAnio;
     std::unique_ptr<Campo> _campoMes;
+    std::unique_ptr<Campo> _campoDia;
 
     // LA GRILLA DEL MES
     //
     // Los contadores van por dia del mes: el indice es el dia menos uno.
     std::vector<int> _turnosPorDia;
+
+    // Las filas de la tabla (la del detalle o la de la agenda) y las
+    // columnas con las que se muestran.
+    std::vector<std::vector<std::string>> _filas;
+    std::vector<std::string> _cabeceras;
+
+    // Lo que se dice cuando el dia no tiene turnos.
+    std::string _mensajeVacio;
 };
 
 // La pantalla de calendario, lista para apilarse en la aplicacion.

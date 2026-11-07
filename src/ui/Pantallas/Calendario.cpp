@@ -24,6 +24,19 @@
 // El mes se pide en DOS pasos (el anio y el mes) porque son DOS datos: el
 // anio solo tiene sentido con un mes, y el mes solo con un anio.
 //
+// EL FLUJO DEL "DETALLE DEL DIA"
+//
+//   menu -> (dia) -> tabla
+//
+// El dia se pide dentro del mes que se esta viendo (el que quedo al
+// recorrer la grilla con las flechas).
+//
+// EL FLUJO DE LA "AGENDA"
+//
+//   menu -> tabla
+//
+// La agenda no pregunta nada: arranca en HOY y las flechas cambian de dia.
+//
 // LA GRILLA SE DIBUJA CON LOS CARACTERES DEL TEMA
 //
 // Es la misma idea que `ui::Tabla`: la grilla no usa el `border` de FTXUI
@@ -159,6 +172,81 @@ std::vector<SemanaDeGrilla> semanasDeGrilla(int anio, int mes,
 }
 
 // ---------------------------------------------------------------------------
+// LAS COLUMNAS Y LAS FILAS DE LAS TABLAS
+//
+// EL DETALLE DEL DIA: LAS SEIS COLUMNAS DE LA LISTA
+//
+// Son las mismas que la lista de turnos de la pantalla de turnos (la
+// decision 31): `id`, `fecha`, `hora`, `paciente`, `medico` y `estado`. Con
+// esas seis la tabla entra en una terminal de 80 columnas.
+//
+// LA AGENDA: LA VISTA CRONOLOGICA DEL DIA
+//
+// Es la hora de INICIO, la de FIN, la duracion, la especialidad, el
+// consultorio y el estado. La hora de fin no la guarda el dominio (la
+// guarda la duracion): se deriva.
+//
+// LA ESPECIALIDAD SE MUESTRA CON SU DESCRIPCION
+//
+// Es lo que el usuario lee ("Cardiologia"): el CODIGO ("CARD") es el dato
+// que viaja en el archivo.
+// ---------------------------------------------------------------------------
+const std::vector<std::string>& cabecerasDeDetalle() {
+    static const std::vector<std::string> cabeceras = {"id", "fecha", "hora", "paciente",
+                                                        "medico", "estado"};
+    return cabeceras;
+}
+
+const std::vector<std::string>& cabecerasDeAgenda() {
+    static const std::vector<std::string> cabeceras = {"inicio", "fin", "duracion", "especialidad",
+                                                        "consultorio", "estado"};
+    return cabeceras;
+}
+
+// LA FILA DE UN TURNO EN EL DETALLE DEL DIA
+//
+// Los nombres del paciente y del medico los resuelve el repositorio (el
+// turno guarda solo los ids): es la misma regla que usan las otras
+// pantallas (`ui/NombresDePersonas.h`).
+std::vector<std::string> filaDeDetalle(const Turno& turno, RepositorioPacientes& pacientes,
+                                        RepositorioMedicos& medicos) {
+    return {std::to_string(turno.getId()),
+            turno.getFecha().aTexto(),
+            turno.getHora().aTexto(),
+            nombreDelPaciente(turno.getIdPaciente(), pacientes),
+            nombreDelMedico(turno.getIdMedico(), medicos),
+            estadoATexto(turno.getEstado())};
+}
+
+// LA FILA DE UN TURNO EN LA AGENDA
+std::vector<std::string> filaDeAgenda(const Turno& turno, const std::string& fin) {
+    return {turno.getHora().aTexto(),
+            fin,
+            std::to_string(turno.getDuracionMin()) + " min",
+            descripcionDe(turno.getEspecialidad()),
+            turno.getConsultorio(),
+            estadoATexto(turno.getEstado())};
+}
+
+// ---------------------------------------------------------------------------
+// LA HORA DE FIN DE UN TURNO
+//
+// EL DOMINIO NO LA GUARDA: LA GUARDA LA DURACION
+//
+// Asi que se deriva: la hora de inicio mas la duracion. La cuenta se hace
+// en MINUTOS DESDE LA MEDIANOCHE (que es la unica cuenta que no mezcla
+// horas y minutos) y el resultado se vuelve a horas y minutos.
+//
+// EL SERVICIO GARANTIZA QUE EL TURNO TERMINA DENTRO DEL HORARIO
+//
+// Asi que la hora de fin siempre cae dentro de la ventana de atencion.
+// ---------------------------------------------------------------------------
+std::string horaDeFin(const Turno& turno) {
+    const int fin = turno.getHora().minutosDesdeMedianoche() + turno.getDuracionMin();
+    return Hora(fin / Hora::MINUTOS_POR_HORA, fin % Hora::MINUTOS_POR_HORA).aTexto();
+}
+
+// ---------------------------------------------------------------------------
 // LOS VALIDADORES DE LOS CAMPOS
 //
 // EL RANGO LO DECIDE EL DOMINIO
@@ -212,6 +300,21 @@ Campo::Validador validadorDeMes() {
         const int mes = numeroDeTexto(texto);
         if (mes < 1 || mes > 12) {
             return "el mes tiene que ser un numero entre 1 y 12";
+        }
+        return "";
+    };
+}
+
+// EL VALIDADOR DEL DIA
+//
+// El rango es el del MES QUE SE ESTA VIENDO: no existe el 31 de febrero, y
+// el dia que se escribe tiene que existir en el mes que se va a mostrar.
+Campo::Validador validadorDeDia(int anio, int mes) {
+    const int ultimo = Fecha::diasDelMes(anio, mes);
+    return [ultimo](const std::string& texto) -> std::string {
+        const int dia = numeroDeTexto(texto);
+        if (dia < 1 || dia > ultimo) {
+            return "el dia tiene que ser un numero entre 1 y " + std::to_string(ultimo);
         }
         return "";
     };
@@ -308,6 +411,8 @@ PantallaCalendario::PantallaCalendario(Aplicacion& aplicacion,
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles.
     _menu.agregar('1', "Ver mes", [this]() { iniciarVerMes(); });
+    _menu.agregar('2', "Ver detalle del dia", [this]() { iniciarDetalleDelDia(); });
+    _menu.agregar('3', "Agenda", [this]() { iniciarAgenda(); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -375,6 +480,12 @@ bool PantallaCalendario::manejar(const Evento& evento) {
             return manejarCampo(evento, _campoMes, [this]() { confirmarMes(); });
         case Vista::Grilla:
             return manejarGrilla(evento);
+        case Vista::Dia:
+            return manejarCampo(evento, _campoDia, [this]() { confirmarDia(); });
+        case Vista::Detalle:
+            return manejarDetalle(evento);
+        case Vista::Agenda:
+            return manejarAgenda(evento);
     }
     return false;
 }
@@ -550,6 +661,130 @@ int PantallaCalendario::totalDeTurnosDelMes() const {
 
 std::vector<SemanaDeGrilla> PantallaCalendario::grilla() const {
     return semanasDeGrilla(_anio, _mes, _turnosPorDia);
+}
+
+// ---------------------------------------------------------------------------
+// El detalle del dia
+// ---------------------------------------------------------------------------
+
+bool PantallaCalendario::manejarDetalle(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    // EL `Escape` VUELVE AL MENU DE LA PANTALLA
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    // Las vistas de solo lectura no consumen nada mas.
+    return false;
+}
+
+void PantallaCalendario::iniciarDetalleDelDia() {
+    // EL DIA SE PIDE EN EL MES QUE SE ESTA VIENDO
+    //
+    // El mes que se esta viendo es el estado de la pantalla: si el usuario
+    // recorrio el mes con las flechas, el detalle se ve en ese mes. Si no
+    // lo recorrio, es el mes de HOY (con el que arranca la pantalla).
+    _campoDia = std::make_unique<Campo>("Dia del mes", "", validadorDeDia(_anio, _mes));
+    irA(Vista::Dia);
+}
+
+void PantallaCalendario::confirmarDia() {
+    const int dia = numeroDeTexto(_campoDia->valor());
+    _fechaDelDetalle = Fecha(_anio, _mes, dia);
+
+    armarDetalle();
+    avisarExito(std::to_string(_filas.size()) + " turno(s) el " + _fechaDelDetalle.aTexto() + ".");
+    irA(Vista::Detalle);
+}
+
+void PantallaCalendario::armarDetalle() {
+    _filas.clear();
+    for (const Turno& turno : _servicioTurnos.turnosDeFecha(_fechaDelDetalle)) {
+        _filas.push_back(filaDeDetalle(turno, _pacientes, _medicos));
+    }
+    _cabeceras = cabecerasDeDetalle();
+    _mensajeVacio = "No hay turnos ese dia. 0: volver al menu.";
+}
+
+// ---------------------------------------------------------------------------
+// La agenda
+// ---------------------------------------------------------------------------
+
+bool PantallaCalendario::manejarAgenda(const Evento& evento) {
+    if (esTeclaVolver(evento)) {
+        volverAtras();
+        return true;
+    }
+    // EL `Escape` VUELVE AL MENU DE LA PANTALLA
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+    // LAS FLECHAS CAMBIAN DE DIA
+    //
+    // La agenda es de UN dia: la izquierda va al dia anterior y la derecha
+    // al siguiente.
+    if (evento.tipo == TipoTecla::FlechaIzquierda) {
+        moverDia(-1);
+        return true;
+    }
+    if (evento.tipo == TipoTecla::FlechaDerecha) {
+        moverDia(1);
+        return true;
+    }
+    return false;
+}
+
+void PantallaCalendario::iniciarAgenda() {
+    // LA AGENDA ARRANCA EN HOY
+    //
+    // El dia que se esta viendo es el que recibio la pantalla: el recorrido
+    // con las flechas lo va cambiando.
+    _diaAgenda = _hoy;
+
+    armarAgenda();
+    avisarExito(std::to_string(_filas.size()) + " turno(s) el " + _diaAgenda.aTexto() + ".");
+    irA(Vista::Agenda);
+}
+
+void PantallaCalendario::armarAgenda() {
+    std::vector<Turno> turnos = _servicioTurnos.turnosDeFecha(_diaAgenda);
+
+    // LA AGENDA ES CRONOLOGICA
+    //
+    // Los turnos vienen ordenados por id (es como los da el repositorio), y
+    // la agenda es por HORA DE INICIO. El `stable_sort` conserva el orden
+    // de los turnos que arrancan a la misma hora.
+    std::stable_sort(turnos.begin(), turnos.end(), [](const Turno& uno, const Turno& otro) {
+        return uno.getHora() < otro.getHora();
+    });
+
+    _filas.clear();
+    for (const Turno& turno : turnos) {
+        _filas.push_back(filaDeAgenda(turno, horaDeFin(turno)));
+    }
+    _cabeceras = cabecerasDeAgenda();
+    _mensajeVacio = "No hay turnos ese dia. 0: volver al menu.";
+}
+
+void PantallaCalendario::moverDia(int delta) {
+    const int numero = _diaAgenda.numeroDeDia() + delta;
+
+    // LOS EXTREMOS DEL CALENDARIO DEL DOMINIO
+    //
+    // El dia no da la vuelta: en el borde del calendario el recorrido se
+    // detiene (es la misma regla que el menu, que no da la vuelta al llegar
+    // al extremo).
+    if (numero < 0 || numero > ultimoNumeroDeDia()) {
+        return;
+    }
+
+    _diaAgenda = fechaDesdeNumeroDeDia(numero);
+    armarAgenda();
+    avisarExito(std::to_string(_filas.size()) + " turno(s) el " + _diaAgenda.aTexto() + ".");
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +967,40 @@ ftxui::Element PantallaCalendario::lineaLeyenda() const {
     return ftxui::hbox(std::move(partes));
 }
 
+// LA TABLA DEL DETALLE O DE LA AGENDA
+//
+// Es la MISMA tabla de la aplicacion (`ui::Tabla`): las columnas se miden
+// por su contenido, asi que la tabla se ajusta al dato.
+ftxui::Element PantallaCalendario::tablaDe(const std::vector<std::vector<std::string>>& filas,
+                                           const std::vector<std::string>& cabeceras) const {
+    Tabla tabla(cabeceras);
+    for (const std::vector<std::string>& fila : filas) {
+        tabla.agregarFila(fila);
+    }
+    return tabla.renderizar();
+}
+
+// EL DETALLE DEL DIA
+//
+// EL ESTADO VACIO TIENE SALIDA
+//
+// Un mensaje que dice "no hay nada" y no dice como volver deja al usuario
+// atrapado: el mensaje dice las dos cosas.
+ftxui::Element PantallaCalendario::lineaDetalle() const {
+    if (_filas.empty()) {
+        return ftxui::text("  " + _mensajeVacio);
+    }
+    return tablaDe(_filas, _cabeceras);
+}
+
+// LA AGENDA DEL DIA
+ftxui::Element PantallaCalendario::lineaAgenda() const {
+    if (_filas.empty()) {
+        return ftxui::text("  " + _mensajeVacio);
+    }
+    return tablaDe(_filas, _cabeceras);
+}
+
 std::string PantallaCalendario::ayuda() const {
     // LA AYUDA DICE COMO VOLVER
     //
@@ -743,9 +1012,14 @@ std::string PantallaCalendario::ayuda() const {
             return "Flechas: mover   Enter: elegir   0: volver   Esc: volver";
         case Vista::Anio:
         case Vista::Mes:
+        case Vista::Dia:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Grilla:
             return "Flechas: mes anterior / mes siguiente   0: volver   Esc: volver";
+        case Vista::Detalle:
+            return "0: volver   Esc: volver";
+        case Vista::Agenda:
+            return "Flechas: dia anterior / dia siguiente   0: volver   Esc: volver";
     }
     return "";
 }
@@ -783,11 +1057,30 @@ ftxui::Element PantallaCalendario::renderizar() {
                 lineas.push_back(lineaError(_campoMes->error()));
             }
             break;
+        case Vista::Dia:
+            lineas.push_back(lineaCampo(*_campoDia));
+            if (!_campoDia->error().empty()) {
+                lineas.push_back(lineaError(_campoDia->error()));
+            }
+            break;
         case Vista::Grilla:
             lineas.push_back(ftxui::text("  Mes " + textoDelMes(_anio, _mes)));
             lineas.push_back(lineaGrilla());
             lineas.push_back(ftxui::separator());
             lineas.push_back(lineaLeyenda());
+            break;
+        case Vista::Detalle:
+            lineas.push_back(ftxui::text("  Turnos del " + _fechaDelDetalle.aTexto()));
+            lineas.push_back(lineaDetalle());
+            break;
+        case Vista::Agenda:
+            // EL DIA DE LA SEMANA LO DICE EL DOMINIO
+            //
+            // `Fecha::diaSemana()` es aritmetica sobre el calendario: es
+            // determinista (no sale del reloj del sistema).
+            lineas.push_back(ftxui::text("  Agenda del " + _diaAgenda.aTexto() + " ("
+                                         + Fecha::nombreDiaSemana(_diaAgenda.diaSemana()) + ")"));
+            lineas.push_back(lineaAgenda());
             break;
     }
 
@@ -810,6 +1103,9 @@ const std::string& PantallaCalendario::nombreDeVista(Vista vista) {
     static const std::string anio = "Anio";
     static const std::string mes = "Mes";
     static const std::string grilla = "Grilla";
+    static const std::string dia = "Dia";
+    static const std::string detalle = "Detalle";
+    static const std::string agenda = "Agenda";
 
     switch (vista) {
         case Vista::Menu:
@@ -820,6 +1116,12 @@ const std::string& PantallaCalendario::nombreDeVista(Vista vista) {
             return mes;
         case Vista::Grilla:
             return grilla;
+        case Vista::Dia:
+            return dia;
+        case Vista::Detalle:
+            return detalle;
+        case Vista::Agenda:
+            return agenda;
     }
     return menu;
 }
@@ -834,6 +1136,10 @@ int PantallaCalendario::anio() const {
 
 int PantallaCalendario::mes() const {
     return _mes;
+}
+
+int PantallaCalendario::diaDeLaAgenda() const {
+    return _diaAgenda.dia;
 }
 
 // LA GRILLA EN TEXTO PLANO
@@ -907,7 +1213,51 @@ std::string PantallaCalendario::textoDeLaVista() const {
             salida += "\n";
             return salida;
         }
+        case Vista::Dia: {
+            if (_campoDia) {
+                salida += "  " + _campoDia->etiqueta() + ": " + _campoDia->textoEnPantalla() + "\n";
+                if (!_campoDia->error().empty()) {
+                    salida += "      " + _campoDia->error() + "\n";
+                }
+            }
+            return salida;
+        }
+        case Vista::Detalle: {
+            salida += "  Turnos del " + _fechaDelDetalle.aTexto() + "\n";
+            salida += textoDeLaTabla();
+            return salida;
+        }
+        case Vista::Agenda: {
+            salida += "  Agenda del " + _diaAgenda.aTexto() + " ("
+                + Fecha::nombreDiaSemana(_diaAgenda.diaSemana()) + ")\n";
+            salida += textoDeLaTabla();
+            return salida;
+        }
     }
+    return salida;
+}
+
+// LA TABLA EN TEXTO PLANO
+//
+// Las filas con las celdas unidas por " | " (es lo que usan las otras
+// pantallas). El estado vacio dice lo que dice y como volver.
+std::string PantallaCalendario::textoDeLaTabla() const {
+    std::string salida;
+
+    if (_filas.empty()) {
+        return "  " + _mensajeVacio + "\n";
+    }
+
+    for (const std::vector<std::string>& fila : _filas) {
+        for (std::size_t i = 0; i < fila.size(); ++i) {
+            if (i > 0) {
+                salida += " | ";
+            }
+            salida += fila[i];
+        }
+        salida += "\n";
+    }
+
     return salida;
 }
 
