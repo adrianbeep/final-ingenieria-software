@@ -850,14 +850,6 @@ ftxui::Element PantallaReportes::lineaOpcion(int indice) const {
     return elemento;
 }
 
-ftxui::Element PantallaReportes::lineaOpcionSelector(int indice) const {
-    ftxui::Element elemento = ftxui::text(_selector->lineaDe(indice));
-    if (indice == _selector->seleccion()) {
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
-}
-
 ftxui::Element PantallaReportes::lineaNumeroSelector() const {
     // EL NUMERO QUE SE ESTA ESCRIBIENDO
     //
@@ -990,8 +982,13 @@ ftxui::Element PantallaReportes::renderizar() {
             // La opcion `i` del selector queda en la fila `filaInicial + i`:
             // el hit-testing del raton lo necesita.
             _selector->definirFilaInicial(static_cast<int>(lineas.size()));
-            for (int i = 0; i < _selector->cantidad(); ++i) {
-                lineas.push_back(lineaOpcionSelector(i));
+            // EL DIBUJO DE LA LISTA ES EL COMPARTIDO
+            //
+            // Es el mismo que usa la pantalla de turnos y la del motor CRUD
+            // (ver `ui/RenderDeSelector.h`): asi el resaltado de la opcion
+            // elegida es el mismo en toda la aplicacion.
+            for (ftxui::Element& elemento : lineasDeSelector(*_selector)) {
+                lineas.push_back(elemento);
             }
             if (!_selector->error().empty()) {
                 lineas.push_back(lineaError(_selector->error()));

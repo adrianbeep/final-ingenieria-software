@@ -222,6 +222,70 @@ TEST_CASE("un indice fuera de rango se ignora", selector_indice_fuera_de_rango) 
     CHECK(selector.seleccion() == 3);
 }
 
+TEST_CASE("setOpciones reemplaza la lista y vuelve al estado inicial",
+           selector_set_opciones) {
+    ui::Selector selector("Especialidad", doceOpciones());
+
+    selector.seleccionar(5);
+    CHECK(selector.seleccion() == 5);
+
+    selector.setOpciones({"Uno", "Dos"});
+
+    // LA LISTA ES LA NUEVA.
+    CHECK(selector.cantidad() == 2);
+    CHECK(selector.opciones()[0] == "Uno");
+    CHECK(selector.opciones()[1] == "Dos");
+    // LA SELECCION VUELVE A LA PRIMERA.
+    CHECK(selector.seleccion() == 0);
+    CHECK(selector.error().empty() == true);
+}
+
+TEST_CASE("setOpciones borra el numero digitado", selector_set_opciones_borra_el_numero) {
+    ui::Selector selector("Especialidad", doceOpciones());
+
+    // El usuario esta escribiendo el numero de una opcion.
+    selector.aplicarEvento(eventoCaracter('1'));
+    selector.aplicarEvento(eventoCaracter('2'));
+    CHECK(selector.numeroDigitado() == "12");
+
+    // La lista cambia: el numero "12" ya no apunta a la misma opcion.
+    selector.setOpciones(doceOpciones());
+
+    // EL NUMERO SE BORRA
+    //
+    // Es la misma regla que aplica mover la seleccion con las flechas: si no
+    // se borrara, el "12" escrito llevaria a otra entidad.
+    CHECK(selector.numeroDigitado().empty() == true);
+}
+
+TEST_CASE("setOpciones borra el error de la lista anterior",
+           selector_set_opciones_borra_el_error) {
+    ui::Selector selector("Especialidad", doceOpciones());
+
+    // Un numero que no existe deja el error.
+    selector.aplicarEvento(eventoCaracter('9'));
+    selector.aplicarEvento(eventoCaracter('9'));
+    selector.aplicarEvento(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(selector.error().empty() == false);
+
+    selector.setOpciones(doceOpciones());
+
+    // El error describia la lista anterior: no aplica a la nueva.
+    CHECK(selector.error().empty() == true);
+}
+
+TEST_CASE("setOpciones con una lista vacia deja la seleccion en cero",
+           selector_set_opciones_vacia) {
+    ui::Selector selector("Especialidad", doceOpciones());
+    selector.seleccionar(4);
+
+    selector.setOpciones({});
+
+    CHECK(selector.cantidad() == 0);
+    CHECK(selector.seleccion() == 0);
+    CHECK(selector.numeroDigitado().empty() == true);
+}
+
 TEST_CASE("el Escape no lo consume el selector", selector_escape_no_consumido) {
     ui::Selector selector("Especialidad", doceOpciones());
 
