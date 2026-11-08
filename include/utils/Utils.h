@@ -65,6 +65,30 @@ public:
     // Convierte a minuscula (ASCII y rango Latin-1 Supplement).
     static std::string aMinusculas(const std::string& texto);
 
+    // Quita las TILDES: cada letra acentuada se reemplaza por su letra base
+    // ("García" -> "Garcia", "Cardiología" -> "Cardiologia").
+    //
+    // PARA QUE SIRVE
+    //
+    // Para COMPARAR dos textos que se diferencian SOLO en las tildes. Los
+    // datos de la clinica las tienen ("García", "Gómez", "Muñoz") y el
+    // usuario escribe sin tilde casi siempre: escribir una tilde en una
+    // terminal es incomodo. Sin esta funcion, buscar "garcia" no encuentra
+    // a "García".
+    //
+    // EL RANGO QUE CONVIERTE
+    //
+    // El Latin-1 Supplement (U+00C0..U+00FF), que es el que cubre la
+    // ortografia castellana (a con tilde, e con tilde, i con tilde, o con
+    // tilde, u con tilde, enye y cedilla). Las letras del Latin Extended
+    // ("cz", "sz", "lz") se dejan como estan: no aparecen en los datos.
+    //
+    // COMO SE USA
+    //
+    // Con `aMinusculas` da la forma de comparar sin tildes ni mayusculas:
+    // `sinTildes(aMinusculas(texto))`.
+    static std::string sinTildes(const std::string& texto);
+
     // Indica si el texto TIENE FORMA AAAA-MM-DD.
     // NO valida que la fecha exista en el calendario: "2026-04-31" tiene
     // formato valido pero no es una fecha existente (eso lo decide

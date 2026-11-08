@@ -152,6 +152,41 @@ TEST_CASE("aMinusculas pasa a minuscula el ASCII y el rango Latin-1", utils_a_mi
     CHECK(Utils::aMinusculas("\xC3\xA9") == "\xC3\xA9");
 }
 
+TEST_CASE("sinTildes saca la tilde y deja el resto del texto igual",
+           utils_sin_tildes) {
+    // LAS LETRAS DE LA ORTOGRAFIA CASTELLANA
+    //
+    // Los escapes hexadecimales son el UTF-8 del caracter: "García" con tilde
+    // es "Garc\xC3\xADa".
+    CHECK(Utils::sinTildes("Garc\xC3\xAD" "a") == "Garcia");
+    CHECK(Utils::sinTildes("G\xC3\xB3" "mez") == "Gomez");
+    CHECK(Utils::sinTildes("Mu\xC3\xB1" "oz") == "Munoz");
+    CHECK(Utils::sinTildes("Sof\xC3\xAD" "a") == "Sofia");
+    CHECK(Utils::sinTildes("Cardiolog\xC3\xAD" "a") == "Cardiologia");
+    CHECK(Utils::sinTildes("Mart\xC3\xAD" "n") == "Martin");
+    // Y las de la mayuscula: la base conserva la caja.
+    CHECK(Utils::sinTildes("\xC3\x81" "lvarez") == "Alvarez");
+    CHECK(Utils::sinTildes("\xC3\x89") == "E");
+
+    // LO QUE NO TIENE TILDE NO CAMBIA
+    CHECK(Utils::sinTildes("Ana Gomez") == "Ana Gomez");
+    CHECK(Utils::sinTildes("") == "");
+    // Y el texto plano (con espacios y digitos) tampoco.
+    CHECK(Utils::sinTildes("Consultorio 2") == "Consultorio 2");
+}
+
+TEST_CASE("sinTildes no rompe los caracteres que no son letras del Latin-1",
+           utils_sin_tildes_rango) {
+    // Los simbolos que viven dentro del rango y NO son letras se copian
+    // tal cual (el signo de multiplicacion y el de division).
+    CHECK(Utils::sinTildes("\xC3\x97") == "\xC3\x97");
+    CHECK(Utils::sinTildes("\xC3\xB7") == "\xC3\xB7");
+    // Un emoji (4 bytes) se copia entero.
+    CHECK(Utils::sinTildes("\xF0\x9F\x98\x80") == "\xF0\x9F\x98\x80");
+    // Y un texto malformado no se pierde: los bytes se copian.
+    CHECK(Utils::sinTildes("a\xFF" "b") == "a\xFF" "b");
+}
+
 TEST_CASE("esFormatoFecha acepta solo el formato AAAA-MM-DD", utils_formato_fecha) {
     CHECK(Utils::esFormatoFecha("2026-03-15"));
     CHECK(!Utils::esFormatoFecha("2026-3-15"));

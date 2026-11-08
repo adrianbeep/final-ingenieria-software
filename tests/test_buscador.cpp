@@ -180,6 +180,29 @@ TEST_CASE("elegir escribiendo el numero", buscador_elegir_con_numero) {
     CHECK(buscador.idElegido() == 12);
 }
 
+TEST_CASE("el elegido es POR EVENTO: la tecla siguiente no vuelve a elegir",
+           buscador_elegido_es_por_evento) {
+    ui::Buscador buscador("Buscar paciente", "Nombre, apellido o DNI",
+                          busquedaFija(tresCoincidencias()));
+
+    escribir(buscador, "a");
+    buscador.aplicarEvento(eventoTecla(ui::TipoTecla::Enter));
+
+    // El Enter elige.
+    CHECK(buscador.aplicarEvento(eventoTecla(ui::TipoTecla::Enter)) == true);
+    CHECK(buscador.elegido() == true);
+    CHECK(buscador.idElegido() == 7);
+
+    // EL ELEGIDO SE REINICIA EN CADA EVENTO
+    //
+    // El flag dice "elegido en ESTE evento". Si quedara prendido, al volver a
+    // la vista (por ejemplo, del "No" de una confirmacion) la siguiente tecla
+    // volveria a disparar la accion.
+    CHECK(buscador.aplicarEvento(eventoTecla(ui::TipoTecla::FlechaAbajo)) == true);
+    CHECK(buscador.elegido() == false);
+    CHECK(buscador.idElegido() == -1);
+}
+
 TEST_CASE("un numero que no existe deja el error y no elige", buscador_numero_invalido) {
     ui::Buscador buscador("Buscar paciente", "Nombre, apellido o DNI",
                           busquedaFija(tresCoincidencias()));

@@ -25,18 +25,33 @@
 //
 // EL FLUJO DE UNA ACCION
 //
-// Todas las acciones empiezan en el menu y pasan por el id (salvo
-// "agendar", que no tiene id: el turno es nuevo). De ahi salen dos
+// Todas las acciones empiezan en el menu y pasan por el BUSCADOR (salvo
+// "agendar", que no tiene turno: el turno es nuevo). De ahi salen dos
 // caminos:
 //
-//   - el camino CORTO (cancelar): id -> confirmacion -> la accion.
+//   - el camino CORTO (cancelar): buscador -> confirmacion -> la accion.
 //
-//   - el camino LARGO (agendar, reprogramar, modificar): id -> formulario
+//   - el camino LARGO (agendar, reprogramar, modificar): buscador -> formulario
 //     -> [selector] -> la accion.
 //
 // El paso del SELECTOR es opcional: solo lo tienen las acciones en las que
 // la especialidad se ELIGE (agendar y modificar). Es el mismo criterio que
 // usa el motor CRUD con los medicos.
+//
+// EL TURNO SE BUSCA, NO SE ESCRIBE
+//
+// Antes se pedia el id del turno en un campo de texto: un dato que nadie
+// tiene en la cabeza (es una clave de un archivo, no un dato del
+// consultorio). Ahora se escribe un dato que el usuario CONOCE (el nombre
+// del paciente, el del medico, la especialidad, el consultorio, el estado o
+// la fecha) y se elige una de las coincidencias.
+//
+// LA BUSQUEDA ES POR LO QUE EL TURNO MUESTRA
+//
+// El texto tiene que aparecer (sin distinguir mayusculas) en la FILA
+// COMPLETA del turno: es la regla "lo que ves es lo que buscás", y es
+// distinta de la de la pantalla "Buscar" (que es de dos pasos: criterio y
+// valor). Ver `coincidenciasDelBuscador`.
 //
 // LA PANTALLA NO REIMPLEMENTA NINGUNA REGLA
 //
@@ -333,6 +348,45 @@ std::string resumenDe(const Turno& turno) {
 }
 
 // ---------------------------------------------------------------------------
+// LA FILA COMPLETA COMO UNA SOLA LINEA
+//
+// Es la fila por la que se BUSCA en el buscador de turnos: el texto escrito
+// tiene que aparecer en ella.
+//
+// EL SEPARADOR ES EL DE LAS CELDAS
+//
+// Las celdas se unen con el mismo punto que usa el `ui::Buscador` para
+// mostrar una coincidencia: asi la linea que se busca es la misma que la
+// que se ve, y no dos formatos distintos.
+const char* SEPARADOR_CELDAS = " · ";
+
+// LA FILA COMPLETA DEL TURNO, EN UNA LINEA
+//
+// Son los DIEZ datos de `filaCompletaDe` (el id, el paciente, el medico, la
+// especialidad, la fecha, el dia, la hora, la duracion, el consultorio y el
+// estado): la fila que muestra la ficha.
+//
+// QUE SEA LA FILA COMPLETA Y NO LA DE LA LISTA
+//
+// La lista se enfoca en SEIS columnas (decision 31) y deja afuera la
+// especialidad, el dia, la duracion y el consultorio. Si se buscara en la
+// fila de la lista, "Cardiologia" y "Consultorio 2" no encontrarian nada:
+// son datos que el turno MUESTRA en su ficha, y el buscador busca por lo
+// que el turno muestra.
+std::string filaCompletaComoTexto(const Turno& turno, RepositorioPacientes& pacientes,
+                                   RepositorioMedicos& medicos) {
+    const std::vector<std::string> celdas = filaCompletaDe(turno, pacientes, medicos);
+    std::string linea;
+    for (std::size_t i = 0; i < celdas.size(); ++i) {
+        if (i > 0) {
+            linea += SEPARADOR_CELDAS;
+        }
+        linea += celdas[i];
+    }
+    return linea;
+}
+
+// ---------------------------------------------------------------------------
 // EL AVISO DE LA ESPECIALIDAD
 //
 // LA ESPECIALIDAD DEL TURNO Y LA DEL MEDICO SON DOS COSAS
@@ -391,12 +445,12 @@ PantallaTurnos::PantallaTurnos(Aplicacion& aplicacion,
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles.
     _menu.agregar('1', "Agendar turno", [this]() { iniciarAgendar(); });
-    _menu.agregar('2', "Cancelar turno", [this]() { iniciarConId(Accion::Cancelar); });
-    _menu.agregar('3', "Reprogramar turno", [this]() { iniciarConId(Accion::Reprogramar); });
-    _menu.agregar('4', "Modificar turno", [this]() { iniciarConId(Accion::Modificar); });
+    _menu.agregar('2', "Cancelar turno", [this]() { abrirBuscador(Accion::Cancelar); });
+    _menu.agregar('3', "Reprogramar turno", [this]() { abrirBuscador(Accion::Reprogramar); });
+    _menu.agregar('4', "Modificar turno", [this]() { abrirBuscador(Accion::Modificar); });
     _menu.agregar('5', "Listar todos", [this]() { irA(Vista::Listado); });
     _menu.agregar('6', "Buscar", [this]() { abrirCriterio(); });
-    _menu.agregar('7', "Ver detalle", [this]() { iniciarConId(Accion::Detalle); });
+    _menu.agregar('7', "Ver detalle", [this]() { abrirBuscador(Accion::Detalle); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 
     // EL MENU DE CRITERIOS
@@ -440,7 +494,7 @@ void PantallaTurnos::volverAtras() {
     //
     //   - desde el menu de la pantalla, se sale de la pantalla (el menu
     //     principal esta en la pila de la aplicacion);
-    //   - desde la confirmacion, se vuelve a la vista del id;
+    //   - desde la confirmacion, se vuelve a la vista del buscador;
     //   - desde el selector, se vuelve al formulario (el selector es un
     //     paso del formulario, no un nivel del menu);
     //   - desde el valor de la busqueda, se vuelve al menu de criterios
@@ -451,7 +505,7 @@ void PantallaTurnos::volverAtras() {
             _aplicacion.volver();
             return;
         case Vista::Confirmar:
-            irA(Vista::Id);
+            irA(Vista::Busqueda);
             return;
         case Vista::Selector:
             irA(Vista::Formulario);
@@ -510,8 +564,8 @@ bool PantallaTurnos::manejar(const Evento& evento) {
     switch (_vista) {
         case Vista::Menu:
             return manejarMenu(evento);
-        case Vista::Id:
-            return manejarCampo(evento, _campoId, [this]() { confirmarId(); });
+        case Vista::Busqueda:
+            return manejarBusqueda(evento);
         case Vista::Formulario:
             return manejarFormulario(evento);
         case Vista::Selector:
@@ -673,12 +727,90 @@ bool PantallaTurnos::manejarSelector(const Evento& evento) {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// El buscador de turnos
+//
+// EL TURNO SE BUSCA, NO SE ESCRIBE
+//
+// El `ui::Buscador` tiene DOS focos: el TEXTO (lo que se escribe) y la LISTA
+// (las coincidencias). El `Escape` y el '0' los atiende la pantalla; el resto
+// lo atiende el widget.
+//
+// EL ENTER BUSCA Y EL ENTER ELIGE
+//
+// El primer Enter corre la busqueda y pasa el foco a la lista; el segundo
+// elige la coincidencia resaltada. Es el mismo flujo del motor CRUD.
+// ---------------------------------------------------------------------------
+
+bool PantallaTurnos::manejarBusqueda(const Evento& evento) {
+    if (!_buscador) {
+        return false;
+    }
+
+    // EL `Escape` VUELVE AL MENU DE LA PANTALLA
+    //
+    // El buscador NO lo consume (el `Escape` es una tecla de navegacion, no
+    // un dato): lo atiende la pantalla, que sube un nivel.
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+
+    // EL '0' ES "VOLVER" SOLO SI EL TEXTO ESTA VACIO
+    //
+    // Con algo escrito el '0' es un dato (un id puede ser 10) y se lo queda
+    // el campo. Y solo cuando el foco esta en el TEXTO: en la lista el '0' es
+    // el numero de una opcion.
+    if (_buscador->focoEnElTexto() && esTeclaVolver(evento) && _buscador->filtro().empty()) {
+        volverAtras();
+        return true;
+    }
+
+    // EL RATON MUEVE EL RESALTADO, NO CONFIRMA
+    //
+    // Un clic elige la fila, pero la confirmacion es el Enter: un clic
+    // accidental no cancela un turno.
+    if (evento.esMouse()) {
+        if (!evento.esClic()) {
+            return false;
+        }
+        const int indice = _buscador->coincidenciaEnFila(evento.y, _buscador->filaInicial());
+        if (indice < 0) {
+            // El clic cae fuera de las coincidencias: no se consume.
+            return false;
+        }
+        _buscador->seleccionar(indice);
+        return true;
+    }
+
+    if (!_buscador->aplicarEvento(evento)) {
+        return false;
+    }
+
+    // EL ENTER ELIGE LA COINCIDENCIA
+    //
+    // Con un numero escrito que no existe, el buscador deja el error y el
+    // numero en la pantalla: el usuario lo corrige. Sin error, el turno
+    // elegido es el que estaba resaltado.
+    //
+    // EL "ELEGIDO" DEL BUSCADOR ES POR EVENTO
+    //
+    // Si el usuario vuelve al buscador (el "No" de la confirmacion) y mueve
+    // el resaltado con una flecha, esa flecha no puede volver a disparar la
+    // accion: el buscador reinicia el "elegido" en cada evento (ver
+    // `ui::Buscador::aplicarEvento`).
+    if (_buscador->elegido()) {
+        confirmarId();
+    }
+    return true;
+}
+
 bool PantallaTurnos::manejarConfirmacion(const Evento& evento) {
     if (esTeclaVolver(evento)) {
         volverAtras();
         return true;
     }
-    // EL `Escape` VUELVE A LA VISTA DEL ID
+    // EL `Escape` VUELVE A LA VISTA DEL BUSCADOR
     if (esTeclaEscape(evento)) {
         volverAtras();
         return true;
@@ -699,8 +831,8 @@ bool PantallaTurnos::manejarConfirmacion(const Evento& evento) {
     if (_confirmacion->confirmo()) {
         ejecutarCancelacion();
     } else {
-        // Si NO confirma, se vuelve a la vista anterior (la del id).
-        irA(Vista::Id);
+        // Si NO confirma, se vuelve a la vista anterior (la del buscador).
+        irA(Vista::Busqueda);
     }
     return true;
 }
@@ -847,12 +979,6 @@ void PantallaTurnos::iniciarAgendar() {
     abrirFormulario(std::move(campos));
 }
 
-void PantallaTurnos::iniciarConId(Accion accion) {
-    _accion = accion;
-    _campoId = std::make_unique<Campo>("Id", "", validadorDeId());
-    irA(Vista::Id);
-}
-
 void PantallaTurnos::abrirFormulario(std::vector<std::unique_ptr<Campo>> campos) {
     _campos = std::move(campos);
     _indiceCampo = 0;
@@ -978,11 +1104,130 @@ void PantallaTurnos::confirmarSeleccion() {
 }
 
 // ---------------------------------------------------------------------------
-// El id
+// El buscador de turnos
+//
+// EL TURNO SE BUSCA, NO SE ESCRIBE
+//
+// El `ui::Buscador` corre la regla de la pantalla y devuelve el id del turno
+// elegido. La coincidencia DEVUELVE el id CON su fila: el id no se deduce de
+// la posicion de una columna, porque la columna del id puede cambiar de lugar
+// y el buscador devolveria el turno equivocado.
+//
+// LA REGLA DE LA BUSQUEDA
+//
+// El texto se busca en la FILA COMPLETA del turno (los diez datos de la
+// ficha) y la comparacion no distingue mayusculas ni tildes: es la regla "lo
+// que ves es lo que buscás". "Ana" encuentra el turno de Ana, "Cardiologia"
+// los de cardiologia, "Consultorio 2" los de ese consultorio, "Cancelado"
+// los cancelados, "2026-11-20" los de ese dia y "31" el de id 31.
+//
+// LAS TILDES NO CUENTAN
+//
+// Los datos de la clinica las tienen ("García", "Gómez", "Cardiología") y el
+// usuario escribe sin tilde casi siempre (en una terminal, escribir una
+// tilde es incomodo). Por eso la comparacion las ignora: "garcia" encuentra
+// a "García". Es la misma forma de comparar que usa `Utils::sinTildes` con
+// `Utils::aMinusculas`.
+//
+// POR QUE NO SON LOS CRITERIOS DE LA PANTALLA "BUSCAR"
+//
+// La pantalla "Buscar" es de DOS PASOS (criterio y valor) y sus criterios
+// son por id, por el id del paciente, por el id del medico, por el codigo de
+// la especialidad, por consultorio y por estado: para buscar por el
+// paciente hay que saber su id, y para buscar por la especialidad hay que
+// saber su codigo. El buscador es de UN paso y el texto se escribe como se
+// escribe en un buscador de verdad. Son dos interacciones distintas, con
+// propositos distintos: la primera INFORMA, la segunda ELIGE.
+//
+// CON EL TEXTO VACIO SE LISTAN LOS TURNOS QUE LA ACCION PUEDE OPERAR
+//
+// "Ver detalle" muestra TODOS los turnos (un cancelado se puede ver: es su
+// historia) y las tres acciones que cambian el turno muestran solo los
+// `Activo`: es la misma regla del dominio (`cancelar`, `reprogramar` y
+// `modificarTurno` rechazan un turno que no esta `Activo`), y mostrar solo
+// los que se pueden usar evita que el usuario elija uno y el error le
+// vuelva.
+// ---------------------------------------------------------------------------
+
+void PantallaTurnos::abrirBuscador(Accion accion) {
+    _accion = accion;
+    _buscador = std::make_unique<Buscador>(
+        "Buscar turno",
+        "Paciente, medico, especialidad, consultorio, estado o fecha",
+        [this](const std::string& texto) { return coincidenciasDelBuscador(texto); });
+    irA(Vista::Busqueda);
+}
+
+std::vector<Buscador::Coincidencia> PantallaTurnos::coincidenciasDelBuscador(
+    const std::string& texto) {
+    std::vector<Buscador::Coincidencia> coincidencias;
+
+    // EL TEXTO VACIO Y EL TEXTO BUSCADO SON DOS CAMINOS
+    //
+    // Con el texto vacio se listan los turnos que la accion puede operar; con
+    // un texto, se busca en la fila completa de TODOS los turnos (el texto
+    // puede ser el estado: "Cancelado" tiene que encontrar los cancelados).
+    const std::string buscado = Utils::sinTildes(Utils::aMinusculas(Utils::trim(texto)));
+    const bool sinTexto = buscado.empty();
+
+    for (const Turno& turno : _turnos.listar()) {
+        if (sinTexto) {
+            if (!laAccionPuedeOperar(turno)) {
+                continue;
+            }
+        } else if (!laFilaContiene(turno, buscado)) {
+            continue;
+        }
+        // LA COINCIDENCIA DEVUELVE EL ID CON LA FILA DE LA LISTA
+        //
+        // Las celdas son las SEIS de `filaDe` (id, fecha, hora, paciente,
+        // medico y estado): son las que hacen falta para reconocer el turno
+        // en una linea.
+        coincidencias.push_back({turno.getId(), filaDe(turno, _pacientes, _medicos)});
+    }
+    return coincidencias;
+}
+
+bool PantallaTurnos::laAccionPuedeOperar(const Turno& turno) const {
+    // EL DETALLE PUEDE VER CUALQUIER TURNO
+    //
+    // Un turno cancelado se puede VER: es su historia. Lo que no se puede es
+    // operarlo.
+    if (_accion == Accion::Detalle) {
+        return true;
+    }
+
+    // LAS TRES ACCIONES QUE CAMBIAN EL TURNO SOLO OPERAN TURNOS ACTIVOS
+    //
+    // Es la misma regla del dominio: `ServicioTurnos::cancelar`,
+    // `reprogramar` y `modificarTurno` rechazan un turno que no esta
+    // `Activo` ("solo un turno activo se puede..."). Mostrar solo los que se
+    // pueden usar evita que el usuario elija uno y el error le vuelva.
+    return turno.getEstado() == EstadoTurno::Activo;
+}
+
+bool PantallaTurnos::laFilaContiene(const Turno& turno, const std::string& buscado) const {
+    // LA FILA COMPLETA DEL TURNO, EN MINUSCULAS Y SIN TILDES
+    //
+    // El texto buscado ya viene en esa forma: la comparacion no distingue
+    // mayusculas ("ana" encuentra "Ana García") ni tildes ("garcia" encuentra
+    // "García", "Cardiologia" encuentra "Cardiología").
+    const std::string fila = Utils::sinTildes(
+        Utils::aMinusculas(filaCompletaComoTexto(turno, _pacientes, _medicos)));
+    return fila.find(buscado) != std::string::npos;
+}
+
+// ---------------------------------------------------------------------------
+// El turno elegido
 // ---------------------------------------------------------------------------
 
 void PantallaTurnos::confirmarId() {
-    const int id = idDesdeTexto(_campoId->valor());
+    // EL ID VIENE DEL BUSCADOR
+    //
+    // El buscador solo ofrece turnos que EXISTEN (los busca en el
+    // repositorio), asi que el chequeo de abajo no deberia disparar nunca.
+    // Se deja igual: es la red de contencion contra un dato raro.
+    const int id = _buscador ? _buscador->idElegido() : -1;
     Turno turno;
     if (id < 0 || !_turnos.buscarPorId(id, turno)) {
         // EL TURNO NO EXISTE
@@ -1001,8 +1246,9 @@ void PantallaTurnos::confirmarId() {
         case Accion::Cancelar:
             // LA CANCELACION PIDE CONFIRMACION
             //
-            // Son dos pasos: primero el id, despues la confirmacion. El
-            // turno se cancela SOLO cuando el usuario dice "Si".
+            // Son dos pasos: primero se elige el turno, despues la
+            // confirmacion. El turno se cancela SOLO cuando el usuario dice
+            // "Si".
             _confirmacion = std::make_unique<Confirmacion>("Cancelar el turno #"
                                                            + std::to_string(id) + "?");
             // La confirmacion se dibuja en unas filas conocidas: se lo dice
@@ -1050,7 +1296,7 @@ void PantallaTurnos::confirmarId() {
             return;
 
         case Accion::Agendar:
-            // No deberia llegar aca: "agendar" no pasa por el id.
+            // No deberia llegar aca: "agendar" no pasa por el buscador.
             irA(Vista::Menu);
             return;
     }
@@ -1155,10 +1401,10 @@ void PantallaTurnos::ejecutarCancelacion() {
         // EL ERROR ES EL DEL SERVICIO
         //
         // Un turno que no esta activo no se puede cancelar: el mensaje es
-        // el del servicio y la pantalla vuelve a la vista del id, que es
-        // donde se elige otro turno.
+        // el del servicio y la pantalla vuelve a la vista del buscador, que
+        // es donde se elige otro turno.
         avisar(error.what());
-        irA(Vista::Id);
+        irA(Vista::Busqueda);
     }
 }
 
@@ -1408,6 +1654,18 @@ ftxui::Element PantallaTurnos::lineaCampo(const Campo& campo, bool enfocado) con
     return elemento;
 }
 
+ftxui::Element PantallaTurnos::lineaBuscador() const {
+    // EL CAMPO DEL BUSCADOR
+    //
+    // Se invierte cuando el foco esta en el TEXTO: es la misma convencion
+    // de los demas campos (el foco se ve invertido).
+    ftxui::Element elemento = ftxui::text("  " + _buscador->lineaDelCampo());
+    if (_buscador->focoEnElTexto()) {
+        elemento = elemento | ftxui::inverted;
+    }
+    return elemento;
+}
+
 ftxui::Element PantallaTurnos::lineaError(const std::string& texto) const {
     ftxui::Element elemento = ftxui::text("      " + texto);
     if (const auto color = _tema.colorDe(Rol::Error)) {
@@ -1586,9 +1844,28 @@ ftxui::Element PantallaTurnos::renderizar() {
             }
             lineas.push_back(ftxui::separator());
             break;
-        case Vista::Id:
-            lineas.push_back(lineaCampo(*_campoId, true));
+        case Vista::Busqueda: {
+            if (!_buscador) {
+                break;
+            }
+            lineas.push_back(ftxui::text("  " + _buscador->titulo()));
+            lineas.push_back(lineaBuscador());
+            // La coincidencia `i` queda en la fila `filaInicial + i`: el
+            // hit-testing del raton lo necesita.
+            _buscador->definirFilaInicial(static_cast<int>(lineas.size()));
+            // EL DIBUJO DE LA LISTA ES EL COMPARTIDO
+            //
+            // Es el mismo que usa el motor CRUD (ver `ui/RenderDeSelector.h`):
+            // asi el resaltado de la opcion elegida es el mismo en toda la
+            // aplicacion.
+            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+                lineas.push_back(elemento);
+            }
+            if (!_buscador->error().empty()) {
+                lineas.push_back(lineaError(_buscador->error()));
+            }
             break;
+        }
         case Vista::Formulario:
             lineas.push_back(lineaFormulario());
             break;
@@ -1681,7 +1958,15 @@ std::string PantallaTurnos::ayuda() const {
         case Vista::Selector:
             return "Flechas: mover   Numero: elegir   Enter: confirmar   "
                    "Esc: volver al formulario";
-        case Vista::Id:
+        case Vista::Busqueda:
+            // LA AYUDA DE UN BUSCADOR DICE LOS DOS PASOS
+            //
+            // El buscador tiene dos focos: se escribe el texto (Enter busca)
+            // y se elige de la lista (flechas o numero). El '0' vuelve SOLO
+            // con el texto vacio, como en cualquier otro campo de texto (con
+            // algo escrito el '0' es un dato).
+            return "Enter: buscar   Flechas: elegir   Retroceso: corregir   "
+                   "0: volver   Esc: volver";
         case Vista::Valor:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Confirmar:
@@ -1711,7 +1996,7 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
     // pantallas y la referencia que se devuelve tiene que vivir mas que la
     // llamada.
     static const std::string menu = "Menu";
-    static const std::string id = "Id";
+    static const std::string busqueda = "Busqueda";
     static const std::string formulario = "Formulario";
     static const std::string selector = "Selector";
     static const std::string confirmar = "Confirmar";
@@ -1725,8 +2010,8 @@ const std::string& PantallaTurnos::nombreDeVista(Vista vista) {
     switch (vista) {
         case Vista::Menu:
             return menu;
-        case Vista::Id:
-            return id;
+        case Vista::Busqueda:
+            return busqueda;
         case Vista::Formulario:
             return formulario;
         case Vista::Selector:
@@ -1771,13 +2056,12 @@ std::string PantallaTurnos::textoDeLaVista() const {
             }
             return salida;
         }
-        case Vista::Id: {
-            if (!_campoId) {
-                return salida;
-            }
-            salida += "  " + _campoId->etiqueta() + ": " + _campoId->textoEnPantalla() + "\n";
-            if (!_campoId->error().empty()) {
-                salida += "      " + _campoId->error() + "\n";
+        case Vista::Busqueda: {
+            if (_buscador) {
+                // La vista en texto plano tiene el MISMO orden que la
+                // dibujada: el titulo, el campo y las lineas de las
+                // coincidencias.
+                salida += _buscador->textoPlano();
             }
             return salida;
         }
