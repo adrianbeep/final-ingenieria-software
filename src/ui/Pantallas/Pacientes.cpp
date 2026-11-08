@@ -137,8 +137,9 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
 
     // LOS CRITERIOS DE BUSQUEDA
     //
-    // Cada criterio devuelve las FILAS de las coincidencias: las mete en la
-    // tabla de resultados sin volver a preguntar nada.
+    // Cada criterio devuelve las COINCIDENCIAS: el id de la entidad y sus
+    // celdas. La pantalla "Buscar" muestra las celdas (en una tabla) y el
+    // buscador usa el id (para elegir la entidad).
     //
     // LAS REGLAS SON LAS DEL REPOSITORIO
     //
@@ -151,38 +152,47 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     // pueden desincronizar.
     config.criterios = {
         {"id", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              const int id = idDesdeTexto(valor);
              if (id < 0) {
-                 return filas;
+                 return coincidencias;
              }
              Paciente paciente;
              if (repositorio.buscarPorId(id, paciente)) {
-                 filas.push_back(filaDe(paciente));
+                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
              }
-             return filas;
+             return coincidencias;
          }},
         {"nombre o apellido", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              for (const Paciente& paciente : repositorio.buscarPorNombre(valor)) {
-                 filas.push_back(filaDe(paciente));
+                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
              }
-             return filas;
+             return coincidencias;
          }},
         {"dni", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              // El repositorio devuelve el id del paciente que tiene el
              // dni: con ese id se arma la fila.
              int id = -1;
              if (!repositorio.existeDni(valor, id)) {
-                 return filas;
+                 return coincidencias;
              }
              Paciente paciente;
              if (repositorio.buscarPorId(id, paciente)) {
-                 filas.push_back(filaDe(paciente));
+                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
              }
-             return filas;
+             return coincidencias;
          }}};
+
+    // EL BUSCADOR DE PACIENTES
+    //
+    // Las columnas que muestra el buscador son las que AYUDAN a reconocer a
+    // la persona: el apellido y el nombre (que es como se la llama) y el dni
+    // (que es lo que la distingue de los homonimos). El id va primero: es lo
+    // que el buscador devuelve.
+    config.columnasBuscador = {"id", "apellido", "nombre", "dni"};
+    config.pistaBuscador = "Nombre, apellido o DNI";
 
     // EL ROTULO DE LA FICHA
     //
