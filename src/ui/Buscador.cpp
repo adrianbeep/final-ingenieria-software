@@ -50,6 +50,17 @@ Buscador::Buscador(std::string titulo, std::string pista, Busqueda buscar)
 }
 
 bool Buscador::aplicarEvento(const Evento& evento) {
+    // EL "ELEGIDO" ES POR EVENTO
+    //
+    // Significa "elegido EN ESTE EVENTO", no "elegido alguna vez". Si el flag
+    // quedara prendido, al volver a la vista (por ejemplo, del "No" de una
+    // confirmacion) la siguiente tecla volveria a disparar la accion.
+    //
+    // Por eso se reinicia ACa, antes de atender el evento: la eleccion que
+    // cuenta es la de este evento, no la de uno anterior.
+    _elegido = false;
+    _idElegido = -1;
+
     // EL RATON NO LO MANEJA EL BUSCADOR
     //
     // El hit-testing lo hace la pantalla, que es la que sabe en que fila

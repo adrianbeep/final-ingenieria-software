@@ -6,6 +6,7 @@
 #include "repositories/RepositorioTurnos.h"
 #include "services/ServicioTurnos.h"
 #include "ui/Aplicacion.h"
+#include "ui/Buscador.h"
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
@@ -102,7 +103,7 @@ private:
     // palabras y no numeros.
     enum class Vista {
         Menu,
-        Id,
+        Busqueda,
         Formulario,
         Selector,
         Confirmar,
@@ -116,9 +117,9 @@ private:
 
     // Que se hace con el turno que se elige
     //
-    // El id es el PRIMER paso de cuatro de las acciones: el mismo campo
-    // sirve para cancelar, reprogramar, modificar y ver el detalle, y lo
-    // que cambia despues es lo que se hace con el turno encontrado.
+    // El TURNO es el PRIMER paso de cuatro de las acciones: el mismo
+    // buscador sirve para cancelar, reprogramar, modificar y ver el detalle,
+    // y lo que cambia despues es lo que se hace con el turno encontrado.
     enum class Accion { Agendar, Cancelar, Reprogramar, Modificar, Detalle };
 
     // LOS CRITERIOS DE BUSQUEDA
@@ -167,6 +168,7 @@ private:
     bool manejarMenu(const Evento& evento);
     bool manejarFormulario(const Evento& evento);
     bool manejarSelector(const Evento& evento);
+    bool manejarBusqueda(const Evento& evento);
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo,
                       const std::function<void()>& alConfirmar);
     bool manejarConfirmacion(const Evento& evento);
@@ -177,15 +179,24 @@ private:
 
     // --- Las acciones ---
     void iniciarAgendar();
-    void iniciarConId(Accion accion);
     void abrirFormulario(std::vector<std::unique_ptr<Campo>> campos);
     void confirmarFormulario();
     void moverFoco(int delta);
     DatosFormulario datosDelFormulario() const;
     bool laAccionTieneSelector() const;
 
-    // --- El id ---
+    // --- El buscador de turnos ---
+    //
+    // EL TURNO SE BUSCA, NO SE ESCRIBE
+    //
+    // El turno ya NO se pide por id: se BUSCA. El `ui::Buscador` corre la
+    // regla de la pantalla (el texto se busca en la fila completa del turno)
+    // y devuelve el id del turno elegido.
+    void abrirBuscador(Accion accion);
     void confirmarId();
+    std::vector<Buscador::Coincidencia> coincidenciasDelBuscador(const std::string& texto);
+    bool laAccionPuedeOperar(const Turno& turno) const;
+    bool laFilaContiene(const Turno& turno, const std::string& buscado) const;
 
     // --- El selector ---
     void abrirSelector();
@@ -226,6 +237,7 @@ private:
     ftxui::Element lineaOpcion(const Menu& menu, int indice) const;
     ftxui::Element lineaNumeroSelector() const;
     ftxui::Element lineaCampo(const Campo& campo, bool enfocado) const;
+    ftxui::Element lineaBuscador() const;
     ftxui::Element lineaError(const std::string& texto) const;
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaFormulario() const;
@@ -285,8 +297,9 @@ private:
     // especialidad que habia elegido siga siendo la que arranca elegida.
     int _indiceEspecialidad = 0;
 
-    // El campo del id.
-    std::unique_ptr<Campo> _campoId;
+    // El buscador de turnos (el de "Cancelar", "Reprogramar", "Modificar" y
+    // "Ver detalle").
+    std::unique_ptr<Buscador> _buscador;
 
     // El campo del valor que se busca.
     std::unique_ptr<Campo> _campoValor;

@@ -2184,6 +2184,30 @@ TEST_CASE("la baja de un medico pasa por el buscador y termina en la confirmacio
     CHECK(medico.esActivo() == false);
 }
 
+TEST_CASE("volver de la confirmacion al buscador NO vuelve a disparar la accion",
+           crud_buscador_volver_no_re_dispara) {
+    Escenario escenario("crud_buscador_volver_no_re_dispara");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('3'));  // Baja / Reactivar
+    CHECK(motor.vista() == "Busqueda");
+    elegirEnElBuscador(motor, "Gomez");
+    CHECK(motor.vista() == "Confirmar");
+
+    // El "No" de la confirmacion vuelve al buscador.
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Busqueda");
+
+    // LA FLECHA NO VUELVE A ABRIR LA CONFIRMACION
+    //
+    // El "elegido" del buscador es POR EVENTO: la eleccion que cuenta es la
+    // de la ultima tecla, no la de una anterior. Sin eso, el "No" de la
+    // confirmacion y despues una flecha volvian a disparar la baja.
+    motor.manejar(eventoTecla(ui::TipoTecla::FlechaAbajo));
+    CHECK(motor.vista() == "Busqueda");
+}
+
 TEST_CASE("la ficha de un medico pasa por el buscador", crud_buscador_medicos_ficha) {
     EscenarioMedicos escenario("crud_buscador_medicos_ficha");
     escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
@@ -2395,6 +2419,19 @@ void escribir(ui::Pantallas::PantallaTurnos& pantalla, const std::string& texto)
     for (const char caracter : texto) {
         pantalla.manejar(eventoCaracter(caracter));
     }
+}
+
+// Elige un turno en el BUSCADOR de la pantalla de turnos.
+//
+// EL FLUJO SON DOS PASOS
+//
+// Se escribe el texto (el Enter BUSCA) y despues se elige la coincidencia
+// (el Enter ELIGE la que esta resaltada). Es el flujo que hace la pantalla
+// con el `ui::Buscador`.
+void elegirTurnoEnElBuscador(ui::Pantallas::PantallaTurnos& pantalla, const std::string& texto) {
+    escribir(pantalla, texto);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
 }
 
 // Un medico valido con la especialidad que se le pide.
@@ -2701,17 +2738,16 @@ TEST_CASE("cancelar un turno pide confirmacion y sin confirmar no toca nada",
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('2'));
-    CHECK(pantalla.vista() == "Id");
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    elegirTurnoEnElBuscador(pantalla, "31");
 
     // LA CONFIRMACION DE DOS PASOS
     CHECK(pantalla.vista() == "Confirmar");
     CHECK(pantalla.vistaTextoPlano().find("Cancelar el turno #31?") != std::string::npos);
 
-    // "No": vuelve a la vista del id y NO toca nada.
+    // "No": vuelve a la vista del buscador y NO toca nada.
     pantalla.manejar(eventoCaracter('2'));
-    CHECK(pantalla.vista() == "Id");
+    CHECK(pantalla.vista() == "Busqueda");
 
     Turno turno;
     CHECK(escenario.turnos.buscarPorId(31, turno) == true);
@@ -2726,8 +2762,7 @@ TEST_CASE("cancelar un turno confirmado lo deja cancelado", turnos_cancelar) {
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('2'));
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirTurnoEnElBuscador(pantalla, "31");
     CHECK(pantalla.vista() == "Confirmar");
 
     // "Si": ahora si se cancela.
@@ -2757,9 +2792,8 @@ TEST_CASE("reprogramar crea el turno nuevo y deja el viejo como Reprogramado",
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('3'));
-    CHECK(pantalla.vista() == "Id");
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    elegirTurnoEnElBuscador(pantalla, "31");
 
     // LA FECHA Y LA HORA NUEVAS
     CHECK(pantalla.vista() == "Formulario");
@@ -2801,9 +2835,8 @@ TEST_CASE("modificar un turno cambia el consultorio, la duracion y la especialid
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('4'));
-    CHECK(pantalla.vista() == "Id");
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    elegirTurnoEnElBuscador(pantalla, "31");
 
     // EL FORMULARIO ARRANCA CON LOS DATOS VIEJOS
     CHECK(pantalla.vista() == "Formulario");
@@ -2854,8 +2887,7 @@ TEST_CASE("modificar un turno cambia el consultorio, la duracion y la especialid
     CHECK(modificado.getIdPaciente() == 1);
 }
 
-TEST_CASE("un turno que no existe se rechaza con el error del dominio",
-           turnos_id_inexistente) {
+TEST_CASE("un turno que no existe no se puede elegir", turnos_id_inexistente) {
     EscenarioTurnos escenario("turnos_id_inexistente");
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
@@ -2863,11 +2895,15 @@ TEST_CASE("un turno que no existe se rechaza con el error del dominio",
     escribir(pantalla, "99");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
 
-    CHECK(pantalla.vista() == "Menu");
-    CHECK(escenario.contexto.mensaje().texto() == "ERR No existe la entidad #99 (Turno)");
+    // NO HAY NADA QUE ELEGIR: el buscador lo dice y la vista no cambia.
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("no hay coincidencias") != std::string::npos);
+    // Y NO se elige ningun turno: la pantalla sigue en el buscador.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
 }
 
-TEST_CASE("en un campo de texto de turnos el cero es un dato si ya hay texto",
+TEST_CASE("en el texto del buscador de turnos el cero es un dato si ya hay texto",
            turnos_cero_es_dato) {
     EscenarioTurnos escenario("turnos_cero_es_dato");
     escenario.turnos.alta(
@@ -2879,18 +2915,18 @@ TEST_CASE("en un campo de texto de turnos el cero es un dato si ya hay texto",
     escribir(pantalla, "31");
     escribir(pantalla, "0");
 
-    // El cero NO fue "volver": es parte del id.
-    CHECK(pantalla.vista() == "Id");
-    CHECK(pantalla.vistaTextoPlano().find("Id: 310|") != std::string::npos);
+    // El cero NO fue "volver": es parte del texto.
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("estado o fecha: 310|") != std::string::npos);
 }
 
-TEST_CASE("el cero de un campo de texto vacio de turnos vuelve al menu",
+TEST_CASE("el cero del texto vacio del buscador de turnos vuelve al menu",
            turnos_cero_vuelve) {
     EscenarioTurnos escenario("turnos_cero_vuelve");
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('2'));
-    CHECK(pantalla.vista() == "Id");
+    CHECK(pantalla.vista() == "Busqueda");
 
     pantalla.manejar(eventoCaracter('0'));
     CHECK(pantalla.vista() == "Menu");
@@ -2902,7 +2938,7 @@ TEST_CASE("el escape de los turnos sube un nivel y no sale de la pantalla",
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('2'));
-    CHECK(pantalla.vista() == "Id");
+    CHECK(pantalla.vista() == "Busqueda");
     CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
     CHECK(pantalla.vista() == "Menu");
 
@@ -2931,6 +2967,337 @@ TEST_CASE("el render de la pantalla de turnos se puede dibujar en FTXUI",
         // El "0. Volver" es la OCTAVA opcion del menu (la fila 9).
         CHECK(lineas[9].find("0. Volver") != std::string::npos);
     }
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE TURNOS
+//
+// Las cuatro acciones que operan sobre un turno existente (cancelar,
+// reprogramar, modificar y ver detalle) eligen el turno con un `ui::Buscador`
+// y no escribiendo su id.
+//
+// QUE SE VERIFICA ACa
+//
+//   - que con el texto VACIO se listen los turnos que la ACCION puede
+//     operar (los `Activo` para las tres acciones que cambian el turno, TODOS
+//     para "ver detalle": un cancelado se puede ver, es su historia);
+//   - que la busqueda sea POR LO QUE EL TURNO MUESTRA: el texto tiene que
+//     aparecer en la FILA COMPLETA del turno (los diez datos de la ficha);
+//   - que la comparacion sea insensible a mayusculas y a tildes;
+//   - que un texto que no coincide diga "no hay coincidencias";
+//   - que la linea de la coincidencia sea la de las SEIS columnas de la
+//     lista;
+//   - que el raton mueva el resaltado y NO confirme;
+//   - que las cuatro acciones lleguen a donde llegaban antes, y que el prompt
+//     "Id:" no aparezca mas.
+//
+// LA REGLA DE LA COMPARACION
+//
+// No distingue MAYUSCULAS ni TILDES, como el resto de la aplicacion (los
+// repositorios comparan los nombres con `Utils::aMinusculas`) y como hace
+// falta con los datos de la semilla: "García", "Gómez" y "Cardiología" las
+// tienen, y escribir una tilde en una terminal es incomodo.
+// ---------------------------------------------------------------------------
+
+// El escenario del BUSCADOR de turnos: una paciente y un medico (con
+// nombres CON tilde, como los de la semilla) y dos turnos: uno ACTIVO y uno
+// CANCELADO.
+namespace {
+
+struct EscenarioBuscadorTurnos {
+    explicit EscenarioBuscadorTurnos(const std::string& nombre)
+        : pacientes(rutaNuevaDePrueba(nombre)),
+          medicos(rutaNuevaDePrueba(nombre + "-medicos")),
+          turnos(rutaNuevaDePrueba(nombre + "-turnos")),
+          servicio(pacientes, medicos, turnos),
+          contexto(pacientes, medicos, turnos, servicio),
+          aplicacion("Prueba", contexto) {
+        pacientes.cargar();
+        medicos.cargar();
+        turnos.cargar();
+
+        aplicacion.ir([](ui::Aplicacion&) { return std::make_unique<PantallaDePrueba>(); });
+
+        auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
+            aplicacion, turnos, pacientes, medicos, servicio);
+        puntero = pantalla.get();
+        aplicacion.ir([&pantalla](ui::Aplicacion&) { return std::move(pantalla); });
+
+        pacientes.alta(pacienteDePrueba(1, "Ana", "García", "2020391"));
+        pacientes.alta(pacienteDePrueba(2, "Bruno", "Soto", "2020392"));
+        medicos.alta(
+            medicoConEspecialidad(1, "Laura", "Gómez", "LEG-1001", Especialidad::CARD));
+        medicos.alta(
+            medicoConEspecialidad(2, "Carla", "Ruiz", "LEG-1002", Especialidad::PEDI));
+
+        // El turno ACTIVO: el unico que se puede cancelar, reprogramar o
+        // modificar.
+        turnos.alta(
+            Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(9, 0), 45,
+                  "Consultorio 2"));
+        // Y el CANCELADO: se puede VER (es su historia), pero no se puede
+        // operar.
+        turnos.alta(
+            Turno(32, 2, 2, Especialidad::PEDI, Fecha(2027, 3, 11), Hora(10, 30), 30,
+                  "Consultorio 3", EstadoTurno::Cancelado));
+    }
+
+    RepositorioPacientes pacientes;
+    RepositorioMedicos medicos;
+    RepositorioTurnos turnos;
+    ServicioTurnos servicio;
+    ui::Contexto contexto;
+    ui::Aplicacion aplicacion;
+    ui::Pantallas::PantallaTurnos* puntero = nullptr;
+};
+
+// Busca un texto en el BUSCADOR de turnos y devuelve lo que se ve.
+//
+// El buscador se abre de nuevo en cada busqueda (el `Escape` vuelve al
+// menu), asi que cada busqueda arranca con el texto vacio.
+//
+// La accion es "ver detalle" (la '7'): con el texto escrito la busqueda no
+// filtra por estado, asi que da el mismo resultado en las cuatro acciones.
+std::string buscarEnElBuscadorDeTurnos(ui::Pantallas::PantallaTurnos& pantalla,
+                                        const std::string& texto) {
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));  // vuelve al menu
+    pantalla.manejar(eventoCaracter('7'));                 // "Ver detalle"
+    escribir(pantalla, texto);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));   // busca
+    return pantalla.vistaTextoPlano();
+}
+
+} // namespace
+
+TEST_CASE("con el texto vacio el buscador de turnos lista los turnos que la accion puede operar",
+           turnos_buscador_texto_vacio) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_texto_vacio");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // CANCELAR: solo los ACTIVOS (un cancelado no se puede cancelar).
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Busqueda");
+    const std::string paraCancelar = pantalla.vistaTextoPlano();
+    CHECK(paraCancelar.find("31 · ") != std::string::npos);
+    CHECK(paraCancelar.find("32 · ") == std::string::npos);
+
+    // REPROGRAMAR Y MODIFICAR: la misma regla (son las dos acciones mas).
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vistaTextoPlano().find("32 · ") == std::string::npos);
+
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    pantalla.manejar(eventoCaracter('4'));
+    CHECK(pantalla.vistaTextoPlano().find("32 · ") == std::string::npos);
+
+    // VER DETALLE: TODOS (un cancelado se puede ver: es su historia).
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    pantalla.manejar(eventoCaracter('7'));
+    const std::string paraVer = pantalla.vistaTextoPlano();
+    CHECK(paraVer.find("31 · ") != std::string::npos);
+    CHECK(paraVer.find("32 · ") != std::string::npos);
+}
+
+TEST_CASE("el buscador de turnos busca en la fila completa del turno",
+           turnos_buscador_busca_en_la_fila) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_busca_en_la_fila");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // POR EL NOMBRE DEL PACIENTE
+    std::string texto = buscarEnElBuscadorDeTurnos(pantalla, "Ana");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // POR EL APELLIDO DEL PACIENTE (con tilde)
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "García");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // POR EL APELLIDO DEL PACIENTE (SIN tilde: la comparacion las ignora)
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "Garcia");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // POR EL NOMBRE DEL MEDICO (con tilde)
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "Gómez");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // POR LA ESPECIALIDAD
+    //
+    // El catalogo escribe "Cardiología" y el buscador no distingue tildes:
+    // "Cardiologia" (sin tilde) lo encuentra igual.
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "Cardiologia");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // POR EL CONSULTORIO
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "Consultorio 3");
+    CHECK(texto.find("32 · ") != std::string::npos);
+    CHECK(texto.find("31 · ") == std::string::npos);
+
+    // POR EL ESTADO
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "Cancelado");
+    CHECK(texto.find("32 · ") != std::string::npos);
+    CHECK(texto.find("31 · ") == std::string::npos);
+
+    // POR LA FECHA
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "2027-03-11");
+    CHECK(texto.find("32 · ") != std::string::npos);
+    CHECK(texto.find("31 · ") == std::string::npos);
+
+    // POR EL ID
+    texto = buscarEnElBuscadorDeTurnos(pantalla, "31");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+}
+
+TEST_CASE("el buscador de turnos no distingue mayusculas", turnos_buscador_mayusculas) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_mayusculas");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // "ana" encuentra a "Ana García".
+    const std::string texto = buscarEnElBuscadorDeTurnos(pantalla, "ana");
+    CHECK(texto.find("31 · ") != std::string::npos);
+    CHECK(texto.find("32 · ") == std::string::npos);
+
+    // Y "ANA" tambien (las mayusculas no cuentan).
+    const std::string mayusculas = buscarEnElBuscadorDeTurnos(pantalla, "ANA");
+    CHECK(mayusculas.find("31 · ") != std::string::npos);
+    CHECK(mayusculas.find("32 · ") == std::string::npos);
+}
+
+TEST_CASE("un texto que no coincide dice que no hay coincidencias",
+           turnos_buscador_sin_coincidencias) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_sin_coincidencias");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('7'));
+    escribir(pantalla, "zzzz");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("no hay coincidencias") != std::string::npos);
+    // Y NO se elige ningun turno: la vista no cambia.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+}
+
+TEST_CASE("la linea de la coincidencia del buscador de turnos tiene las seis columnas de la lista",
+           turnos_buscador_linea_de_la_coincidencia) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_linea_de_la_coincidencia");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('7'));
+    escribir(pantalla, "Ana");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // ID · FECHA · HORA · PACIENTE · MEDICO · ESTADO
+    //
+    // Son las seis columnas de la lista (`filaDe`), no las diez de la ficha.
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("31 · 2027-03-10 · 09:00 · Ana García · Laura Gómez · Activo")
+          != std::string::npos);
+}
+
+TEST_CASE("las cuatro acciones de turnos llegan a su destino con el buscador",
+           turnos_buscador_las_cuatro_acciones) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_las_cuatro_acciones");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // CANCELAR: la confirmacion.
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Busqueda");
+    // EL PROMPT DEL ID DESAPARECIO: ahora hay un buscador.
+    CHECK(pantalla.vistaTextoPlano().find("Id:") == std::string::npos);
+    elegirTurnoEnElBuscador(pantalla, "31");
+    CHECK(pantalla.vista() == "Confirmar");
+
+    // VOLVER AL MENU (la confirmacion vuelve al buscador, y el buscador al
+    // menu).
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    CHECK(pantalla.vista() == "Menu");
+
+    // REPROGRAMAR: el formulario de la fecha y la hora nuevas.
+    pantalla.manejar(eventoCaracter('3'));
+    elegirTurnoEnElBuscador(pantalla, "31");
+    CHECK(pantalla.vista() == "Formulario");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+
+    // MODIFICAR: el formulario del consultorio y la duracion.
+    pantalla.manejar(eventoCaracter('4'));
+    elegirTurnoEnElBuscador(pantalla, "31");
+    CHECK(pantalla.vista() == "Formulario");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+
+    // VER DETALLE: la ficha del turno.
+    pantalla.manejar(eventoCaracter('7'));
+    elegirTurnoEnElBuscador(pantalla, "31");
+    CHECK(pantalla.vista() == "Detalle");
+    CHECK(pantalla.vistaTextoPlano().find("Ficha de turno #31") != std::string::npos);
+}
+
+TEST_CASE("volver al buscador despues de no confirmar deja elegir otro turno",
+           turnos_buscador_vuelve_al_buscador) {
+    EscenarioBuscadorTurnos escenario("turnos_buscador_vuelve_al_buscador");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // Se elige el turno ACTIVO y se cancela la confirmacion con el "No".
+    pantalla.manejar(eventoCaracter('2'));
+    elegirTurnoEnElBuscador(pantalla, "31");
+    CHECK(pantalla.vista() == "Confirmar");
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Busqueda");
+
+    // EL RESALTADO SE MUEVE SIN VOLVER A LA CONFIRMACION
+    //
+    // El "No" deja el buscador como estaba: el usuario tiene que poder
+    // seguir eligiendo un turno sin que la flecha le vuelva a abrir la
+    // confirmacion del que ya habia elegido.
+    pantalla.manejar(eventoTecla(ui::TipoTecla::FlechaAbajo));
+    CHECK(pantalla.vista() == "Busqueda");
+}
+
+TEST_CASE("el raton mueve el resaltado del buscador de turnos y no confirma",
+           turnos_buscador_raton) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    EscenarioBuscadorTurnos escenario("turnos_buscador_raton");
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // "Ver detalle": la lista tiene los DOS turnos (el activo y el cancelado).
+    pantalla.manejar(eventoCaracter('7'));
+
+    // EL DIBUJO LE DICE AL BUSCADOR EN QUE FILA ARRANCA LA LISTA
+    //
+    // Sin esto, el hit-testing del raton no sabria que coincidencia se toco.
+    const std::vector<std::string> lineas = renderizarLineas(pantalla.renderizar(), 120, 20);
+    CHECK(lineas.size() == 20);
+    if (lineas.size() == 20) {
+        // EL TITULO, EL CAMPO Y LAS DOS COINCIDENCIAS.
+        CHECK(lineas[2].find("Buscar turno") != std::string::npos);
+        CHECK(lineas[3].find("Paciente, medico, especialidad") != std::string::npos);
+        CHECK(lineas[4].find("1. 31 · ") != std::string::npos);
+        CHECK(lineas[5].find("2. 32 · ") != std::string::npos);
+    }
+
+    // UN CLIC EN LA SEGUNDA COINCIDENCIA
+    ui::Evento clic;
+    clic.boton = ui::BotonMouse::Izquierdo;
+    clic.x = 4;
+    clic.y = 5;
+    pantalla.manejar(clic);
+
+    // EL CLIC NO ELIGE: la confirmacion es el Enter.
+    CHECK(pantalla.vista() == "Busqueda");
+    // Pero el resaltado se movio a la segunda coincidencia.
+    CHECK(lineaDeLaOpcionElegida(pantalla.vistaTextoPlano()).find("32 · ")
+          != std::string::npos);
 
     borrarNoColor();
     ui::Theme::recargarEntorno();
@@ -3201,9 +3568,8 @@ TEST_CASE("ver detalle muestra todos los campos del turno", turnos_detalle) {
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('7'));
-    CHECK(pantalla.vista() == "Id");
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    elegirTurnoEnElBuscador(pantalla, "31");
     CHECK(pantalla.vista() == "Detalle");
 
     const std::string texto = pantalla.vistaTextoPlano();
@@ -3239,8 +3605,7 @@ TEST_CASE("la ficha de un turno reprogramado muestra el reemplazo en las dos dir
     // LA FICHA DEL VIEJO: el `idTurnoReemplazante` y el turno que lo
     // reemplazo.
     pantalla.manejar(eventoCaracter('7'));
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirTurnoEnElBuscador(pantalla, "31");
     CHECK(pantalla.vista() == "Detalle");
 
     const std::string delViejo = pantalla.vistaTextoPlano();
@@ -3253,8 +3618,7 @@ TEST_CASE("la ficha de un turno reprogramado muestra el reemplazo en las dos dir
     // LA FICHA DEL NUEVO: el turno al que reemplazo.
     pantalla.manejar(eventoCaracter('0'));
     pantalla.manejar(eventoCaracter('7'));
-    escribir(pantalla, "32");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirTurnoEnElBuscador(pantalla, "32");
     CHECK(pantalla.vista() == "Detalle");
 
     const std::string delNuevo = pantalla.vistaTextoPlano();
@@ -3291,8 +3655,7 @@ TEST_CASE("el detalle de un turno avisa cuando su especialidad no es la que atie
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('7'));
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirTurnoEnElBuscador(pantalla, "31");
     CHECK(pantalla.vista() == "Detalle");
 
     // EN TEXTO PLANO
@@ -3327,8 +3690,7 @@ TEST_CASE("el detalle de un turno no avisa cuando su especialidad es la que atie
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('7'));
-    escribir(pantalla, "31");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirTurnoEnElBuscador(pantalla, "31");
     CHECK(pantalla.vista() == "Detalle");
 
     // SIN AVISO EN TEXTO PLANO
@@ -6067,6 +6429,7 @@ TEST_CASE("toda baja y toda cancelacion pide confirmacion de dos pasos",
 
         turnos.manejar(eventoCaracter('2'));
         turnos.manejar(eventoCaracter('1'));
+        turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
         turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
 
         CHECK(turnos.vista() == "Confirmar");
