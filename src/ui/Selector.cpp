@@ -114,6 +114,18 @@ int Selector::cantidad() const {
     return static_cast<int>(_opciones.size());
 }
 
+void Selector::setOpciones(std::vector<std::string> opciones) {
+    // EL ESTADO INICIAL
+    //
+    // La seleccion vuelve a la primera opcion, el numero que se estaba
+    // escribiendo se borra (el por que esta en `include/ui/Selector.h`) y el
+    // error tambien: describia la lista anterior.
+    _opciones = std::move(opciones);
+    _seleccion = 0;
+    _numeroDigitado.clear();
+    _error.clear();
+}
+
 const std::string& Selector::titulo() const {
     return _titulo;
 }

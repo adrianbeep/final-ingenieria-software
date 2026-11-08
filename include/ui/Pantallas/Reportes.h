@@ -10,6 +10,7 @@
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
+#include "ui/RenderDeSelector.h"
 #include "ui/Selector.h"
 #include "ui/Tabla.h"
 #include "ui/Theme.h"
@@ -150,7 +151,6 @@ private:
     // --- El dibujo ---
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(int indice) const;
-    ftxui::Element lineaOpcionSelector(int indice) const;
     ftxui::Element lineaNumeroSelector() const;
     ftxui::Element lineaCampo(const Campo& campo) const;
     ftxui::Element lineaError(const std::string& texto) const;

@@ -1071,6 +1071,20 @@ void escribir(ui::CrudPersonas<T>& pantalla, const std::string& texto) {
     }
 }
 
+// Elige una entidad con el BUSCADOR.
+//
+// EL FLUJO SON DOS PASOS
+//
+// Se escribe el texto (el Enter BUSCA) y despues se elige la coincidencia
+// (el Enter ELIGE la que esta resaltada). Es el flujo que hace la pantalla
+// con el `ui::Buscador`.
+template <class T>
+void elegirEnElBuscador(ui::CrudPersonas<T>& pantalla, const std::string& texto) {
+    escribir(pantalla, texto);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
+}
+
 // Un paciente valido, para las pruebas que necesitan uno ya cargado.
 Paciente pacienteDePrueba(int id, const std::string& nombre, const std::string& apellido,
                       const std::string& dni) {
@@ -1198,10 +1212,10 @@ TEST_CASE("modificar cambia el dato y lo deja en el repositorio", crud_modificar
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    CHECK(motor.vista() == "Id");
+    CHECK(motor.vista() == "Busqueda");
 
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    // Se busca por el id (el criterio "id") y se elige la coincidencia.
+    elegirEnElBuscador(motor, "1");
 
     // El formulario arranca con los datos de la entidad que se edita.
     CHECK(motor.vista() == "Formulario");
@@ -1236,17 +1250,16 @@ TEST_CASE("la baja pide confirmacion y sin confirmar no toca nada",
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
-    CHECK(motor.vista() == "Id");
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Busqueda");
+    elegirEnElBuscador(motor, "1");
 
     // La vista de confirmacion pregunta QUE va a pasar.
     CHECK(motor.vista() == "Confirmar");
     CHECK(motor.vistaTextoPlano().find("Dar de baja al paciente #1?") != std::string::npos);
 
-    // "No": vuelve a la vista anterior (la del id) y NO toca nada.
+    // "No": vuelve a la vista anterior (la del buscador) y NO toca nada.
     motor.manejar(eventoCaracter('2'));
-    CHECK(motor.vista() == "Id");
+    CHECK(motor.vista() == "Busqueda");
 
     Paciente paciente;
     CHECK(escenario.pacientes.buscarPorId(1, paciente) == true);
@@ -1263,8 +1276,7 @@ TEST_CASE("la baja confirmada deja al paciente inactivo y la reactivation lo act
 
     // LA BAJA
     motor.manejar(eventoCaracter('3'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     motor.manejar(eventoCaracter('1'));  // "Si"
 
     CHECK(motor.vista() == "Menu");
@@ -1274,8 +1286,7 @@ TEST_CASE("la baja confirmada deja al paciente inactivo y la reactivation lo act
 
     // LA REACTIVACION
     motor.manejar(eventoCaracter('3'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     // Ahora la accion es la contraria: la pregunta lo dice.
     CHECK(motor.vistaTextoPlano().find("Reactivar al paciente #1?") != std::string::npos);
     motor.manejar(eventoCaracter('1'));  // "Si"
@@ -1372,9 +1383,8 @@ TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('6'));
-    CHECK(motor.vista() == "Id");
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Busqueda");
+    elegirEnElBuscador(motor, "1");
 
     CHECK(motor.vista() == "Ficha");
     const std::string texto = motor.vistaTextoPlano();
@@ -1392,17 +1402,20 @@ TEST_CASE("la ficha muestra los datos de la persona y sus turnos", crud_ficha) {
     CHECK(texto.find("*") == std::string::npos);
 }
 
-TEST_CASE("un id que no existe muestra el error debajo del campo", crud_id_inexistente) {
-    Escenario escenario("crud_id_inexistente");
+TEST_CASE("una busqueda sin coincidencias dice que no hay y vuelve al texto",
+           crud_busqueda_sin_coincidencias) {
+    Escenario escenario("crud_busqueda_sin_coincidencias");
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
     escribir(motor, "9");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
 
-    // La vista NO cambia: el usuario corrige el id.
-    CHECK(motor.vista() == "Id");
-    CHECK(motor.vistaTextoPlano().find("no existe paciente #9") != std::string::npos);
+    // La vista NO cambia: el usuario corrige el texto.
+    CHECK(motor.vista() == "Busqueda");
+    CHECK(motor.vistaTextoPlano().find("no hay coincidencias") != std::string::npos);
+    // El texto NO se borra: el usuario lo corrige, no lo vuelve a escribir.
+    CHECK(motor.vistaTextoPlano().find("9|") != std::string::npos);
 }
 
 TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
@@ -1416,9 +1429,9 @@ TEST_CASE("en un campo de texto el cero es un dato si ya hay texto escrito",
     escribir(motor, "1");
     escribir(motor, "0");
 
-    // El cero NO fue "volver": es parte del id.
-    CHECK(motor.vista() == "Id");
-    CHECK(motor.vistaTextoPlano().find("Id: 10|") != std::string::npos);
+    // El cero NO fue "volver": es parte del texto de la busqueda.
+    CHECK(motor.vista() == "Busqueda");
+    CHECK(motor.vistaTextoPlano().find("Nombre, apellido o DNI: 10|") != std::string::npos);
 }
 
 TEST_CASE("el cero de un campo vacio vuelve al menu del motor", crud_cero_vuelve) {
@@ -1426,7 +1439,7 @@ TEST_CASE("el cero de un campo vacio vuelve al menu del motor", crud_cero_vuelve
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    CHECK(motor.vista() == "Id");
+    CHECK(motor.vista() == "Busqueda");
 
     motor.manejar(eventoCaracter('0'));
     CHECK(motor.vista() == "Menu");
@@ -1440,8 +1453,7 @@ TEST_CASE("un clic en el encabezado de la confirmacion no confirma nada",
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Confirmar");
 
     // Un clic en el ENCABEZADO (la fila 0): cae fuera de las opciones y no
@@ -1490,6 +1502,45 @@ TEST_CASE("el render del motor se puede dibujar en una pantalla de FTXUI",
     ui::Theme::recargarEntorno();
 }
 
+TEST_CASE("el render del buscador se puede dibujar en una pantalla de FTXUI",
+           crud_buscador_render) {
+    definirNoColor("1");
+    ui::Theme::recargarEntorno();
+
+    Escenario escenario("crud_buscador_render");
+    escenario.pacientes.alta(pacienteDePrueba(7, "Ana", "Garcia", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "Garcia");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    const std::vector<std::string> lineas = renderizarLineas(motor.renderizar(), 60, 12);
+    CHECK(lineas.size() == 12);
+    if (lineas.size() == 12) {
+        // EL TITULO, EL CAMPO Y LA LINEA DE LA COINCIDENCIA.
+        CHECK(lineas[2].find("Buscar paciente") != std::string::npos);
+        CHECK(lineas[3].find("Nombre, apellido o DNI: Garcia|") != std::string::npos);
+        CHECK(lineas[4].find("1. 7 · Garcia · Ana · 2020391") != std::string::npos);
+    }
+
+    // UN CLIC EN LA FILA DE UNA COINCIDENCIA LA ELIGE
+    //
+    // El hit-testing del raton necesita que la pantalla se haya DIBUJADO: el
+    // motor le avisa al buscador en que fila arranca la lista cuando dibuja.
+    ui::Evento clic;
+    clic.boton = ui::BotonMouse::Izquierdo;
+    clic.x = 4;
+    clic.y = 4;
+    motor.manejar(clic);
+
+    // El clic NO elige: la confirmacion es el Enter.
+    CHECK(motor.vista() == "Busqueda");
+
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+}
+
 // ---------------------------------------------------------------------------
 // EL `Escape` DENTRO DEL MOTOR
 //
@@ -1502,9 +1553,9 @@ TEST_CASE("el escape del motor sube un nivel y no sale de la pantalla",
     Escenario escenario("crud_escape_sube_un_nivel");
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
-    // La vista del id: el `Escape` vuelve al menu del motor.
+    // La vista del buscador: el `Escape` vuelve al menu del motor.
     motor.manejar(eventoCaracter('2'));
-    CHECK(motor.vista() == "Id");
+    CHECK(motor.vista() == "Busqueda");
     CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
     CHECK(motor.vista() == "Menu");
 
@@ -1524,19 +1575,18 @@ TEST_CASE("el escape del menu del motor no lo consume (lo maneja la aplicacion)"
     CHECK(motor.vista() == "Menu");
 }
 
-TEST_CASE("el escape de la confirmacion vuelve a la vista del id",
+TEST_CASE("el escape de la confirmacion vuelve a la vista del buscador",
            crud_escape_de_la_confirmacion) {
     Escenario escenario("crud_escape_de_la_confirmacion");
     escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
     ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('3'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Confirmar");
 
     CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
-    CHECK(motor.vista() == "Id");
+    CHECK(motor.vista() == "Busqueda");
 }
 
 TEST_CASE("el escape de los resultados vuelve al menu del motor",
@@ -1553,6 +1603,143 @@ TEST_CASE("el escape de los resultados vuelve al menu del motor",
 
     CHECK(motor.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
     CHECK(motor.vista() == "Menu");
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE ENTIDADES
+//
+// LA ENTIDAD SE BUSCA, NO SE ESCRIBE
+//
+// Las tres acciones que asktaban por un id (Modificar, Baja/Reactivar y Ver
+// ficha) ahora pasan por el `ui::Buscador`: se escribe un dato que el
+// usuario CONOCE y se elige una de las coincidencias.
+//
+// Lo que se verifica aca:
+//
+//   - que el prompt del id DESAPARECIO de la pantalla;
+//   - que la lista muestra las columnas que declara la configuracion;
+//   - que con el texto vacio se ven los activos;
+//   - que las tres acciones terminan donde terminaban antes.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la pantalla del buscador ya no pide el id", crud_buscador_sin_prompt_de_id) {
+    Escenario escenario("crud_buscador_sin_prompt_de_id");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    CHECK(motor.vista() == "Busqueda");
+
+    const std::string texto = motor.vistaTextoPlano();
+    // EL CAMPO ES EL DE LA BUSQUEDA, NO EL DEL ID.
+    CHECK(texto.find("Nombre, apellido o DNI:") != std::string::npos);
+    CHECK(texto.find("Id:") == std::string::npos);
+    CHECK(texto.find("Buscar paciente") != std::string::npos);
+}
+
+TEST_CASE("el buscador muestra las columnas que declara la configuracion",
+           crud_buscador_muestra_las_columnas) {
+    Escenario escenario("crud_buscador_muestra_las_columnas");
+    escenario.pacientes.alta(pacienteDePrueba(7, "Ana", "García", "2020391"));
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "García");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // LA LINEA DE LA COINCIDENCIA
+    //
+    // Son las celdas de las columnas del buscador (id, apellido, nombre y
+    // dni), en ese orden y unidas por un punto.
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("7 · García · Ana · 2020391") != std::string::npos);
+}
+
+TEST_CASE("con el texto vacio el buscador muestra los activos",
+           crud_buscador_muestra_los_activos) {
+    Escenario escenario("crud_buscador_muestra_los_activos");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.pacientes.alta(pacienteDePrueba(2, "Beto", "Diaz", "2020392"));
+    // Uno dado de baja: no es un paciente que se pueda usar.
+    escenario.pacientes.alta(pacienteDePrueba(3, "Caro", "Sosa", "2020393"));
+    escenario.pacientes.bajaLogica(3);
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    // El Enter con el texto vacio busca: se ven los activos.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Ana") != std::string::npos);
+    CHECK(texto.find("Beto") != std::string::npos);
+    CHECK(texto.find("Caro") == std::string::npos);
+}
+
+TEST_CASE("una entidad que no existe no se puede elegir con el buscador",
+           crud_buscador_no_hay_entidades) {
+    Escenario escenario("crud_buscador_no_hay_entidades");
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "9");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // NO HAY COINCIDENCIAS: no se elige nada y el foco vuelve al texto.
+    CHECK(motor.vista() == "Busqueda");
+    CHECK(motor.vistaTextoPlano().find("no hay coincidencias") != std::string::npos);
+
+    // Y el siguiente Enter tampoco elige: la lista sigue vacia.
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Busqueda");
+}
+
+TEST_CASE("la busqueda del buscador no repite la misma entidad",
+           crud_buscador_sin_repetidos) {
+    // DOS CRITERIOS QUE DEVUELVEN LA MISMA ENTIDAD
+    //
+    // El buscador corre TODOS los criterios de la configuracion y une los
+    // resultados: si dos criterios devuelven la misma entidad, en la lista
+    // tiene que aparecer UNA vez (el primero que aparece gana).
+    Escenario escenario("crud_buscador_sin_repetidos");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+
+    ui::CrudPersonas<Paciente>::Config config;
+    config.singular = "paciente";
+    config.plural = "pacientes";
+    config.cabeceras = {"id", "nombre", "apellido", "dni"};
+    config.fila = [](const Paciente& paciente) {
+        return std::vector<std::string>{std::to_string(paciente.getId()), paciente.getNombre(),
+                                        paciente.getApellido(), paciente.getDni()};
+    };
+    config.esActivo = [](const Paciente&) { return true; };
+    config.columnasBuscador = {"id", "apellido", "nombre", "dni"};
+    config.pistaBuscador = "Nombre, apellido o DNI";
+
+    // LOS DOS CRITERIOS DEVUELVEN EL MISMO PACIENTE.
+    const auto mismo = [&escenario](const std::string&) {
+        std::vector<ui::Coincidencia> coincidencias;
+        Paciente paciente;
+        if (escenario.pacientes.buscarPorId(1, paciente)) {
+            coincidencias.push_back({paciente.getId(),
+                                      {std::to_string(paciente.getId()), paciente.getNombre(),
+                                       paciente.getApellido(), paciente.getDni()}});
+        }
+        return coincidencias;
+    };
+    config.criterios = {{"uno", mismo}, {"dos", mismo}};
+
+    ui::CrudPersonas<Paciente> motor(escenario.aplicacion, escenario.pacientes,
+                                     escenario.pacientes, config);
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "Gomez");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // UNA SOLA LINEA: la entidad no puede aparecer dos veces.
+    const std::string texto = motor.vistaTextoPlano();
+    const std::size_t primera = texto.find("1 · Gomez · Ana · 2020391");
+    CHECK(primera != std::string::npos);
+    CHECK(texto.find("1 · Gomez · Ana · 2020391", primera + 1) == std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -1781,9 +1968,8 @@ TEST_CASE("modificar un medico elige la especialidad de una lista",
 
     // SE ABRE "MODIFICAR" Y SE ELIGE EL MEDICO #1.
     motor.manejar(eventoCaracter('2'));
-    CHECK(motor.vista() == "Id");
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Busqueda");
+    elegirEnElBuscador(motor, "1");
 
     // EL FORMULARIO SE ABRE CON LOS DATOS DEL MEDICO.
     CHECK(motor.vista() == "Formulario");
@@ -1842,8 +2028,7 @@ TEST_CASE("modificar un medico elige la especialidad escribiendo el numero",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Formulario");
 
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -1872,8 +2057,7 @@ TEST_CASE("un numero de especialidad que no existe no guarda el medico",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(motor.vista() == "Selector");
 
@@ -1901,8 +2085,7 @@ TEST_CASE("el render del selector se puede dibujar en una pantalla de FTXUI",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(motor.vista() == "Selector");
 
@@ -1941,8 +2124,7 @@ TEST_CASE("el escape del selector vuelve al formulario con lo escrito",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('2'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Formulario");
 
     motor.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -1955,6 +2137,67 @@ TEST_CASE("el escape del selector vuelve al formulario con lo escrito",
     const std::string formulario = motor.vistaTextoPlano();
     CHECK(formulario.find("nombre: Ana|") != std::string::npos);
     CHECK(formulario.find("legajo: LEG-1001|") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE MEDICOS
+//
+// Las tres acciones de medicos pasan por el mismo `ui::Buscador` que las de
+// pacientes: el motor es el mismo y lo unico que cambia son los datos.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el buscador de medicos muestra las columnas que declara la configuracion",
+           crud_buscador_medicos_muestra_las_columnas) {
+    EscenarioMedicos escenario("crud_buscador_medicos_muestra_las_columnas");
+    // El medico #3 de la semilla: Camila Sosa, de traumatologia.
+    escenario.medicos.alta(Medico(3, "Camila", "Sosa", "camila.sosa@unlp.edu.ar", "2214556699",
+                                   "LEG-1003", Especialidad::TRAU));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('2'));
+    escribir(motor, "Sosa");
+    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+
+    // ID, APELLIDO, NOMBRE, ESPECIALIDAD Y LEGAJO.
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("3 · Sosa · Camila · Traumatología · LEG-1003") != std::string::npos);
+}
+
+TEST_CASE("la baja de un medico pasa por el buscador y termina en la confirmacion",
+           crud_buscador_medicos_baja) {
+    EscenarioMedicos escenario("crud_buscador_medicos_baja");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('3'));
+    CHECK(motor.vista() == "Busqueda");
+
+    elegirEnElBuscador(motor, "Gomez");
+
+    CHECK(motor.vista() == "Confirmar");
+    CHECK(motor.vistaTextoPlano().find("Dar de baja al medico #1?") != std::string::npos);
+
+    motor.manejar(eventoCaracter('1'));  // "Si"
+    CHECK(motor.vista() == "Menu");
+    Medico medico;
+    CHECK(escenario.medicos.buscarPorId(1, medico) == true);
+    CHECK(medico.esActivo() == false);
+}
+
+TEST_CASE("la ficha de un medico pasa por el buscador", crud_buscador_medicos_ficha) {
+    EscenarioMedicos escenario("crud_buscador_medicos_ficha");
+    escenario.medicos.alta(medicoDePrueba(1, "Ana", "Gomez", "LEG-1001"));
+    ui::CrudPersonas<Medico>& motor = *escenario.puntero;
+
+    motor.manejar(eventoCaracter('6'));
+    CHECK(motor.vista() == "Busqueda");
+
+    elegirEnElBuscador(motor, "Gomez");
+
+    CHECK(motor.vista() == "Ficha");
+    const std::string texto = motor.vistaTextoPlano();
+    CHECK(texto.find("Ficha de medico #1") != std::string::npos);
+    CHECK(texto.find("Turnos vigentes") != std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -1981,8 +2224,7 @@ TEST_CASE("el formulario de modificar se precarga con los datos de la entidad",
         ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
         motor.manejar(eventoCaracter('2'));
-        escribir(motor, "1");
-        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+        elegirEnElBuscador(motor, "1");
         CHECK(motor.vista() == "Formulario");
 
         const std::string formulario = motor.vistaTextoPlano();
@@ -2000,8 +2242,7 @@ TEST_CASE("el formulario de modificar se precarga con los datos de la entidad",
         ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
         motor.manejar(eventoCaracter('2'));
-        escribir(motor, "1");
-        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+        elegirEnElBuscador(motor, "1");
         CHECK(motor.vista() == "Formulario");
 
         const std::string formulario = motor.vistaTextoPlano();
@@ -2053,9 +2294,8 @@ TEST_CASE("la ficha de un medico marca los turnos que ya no son de su especialid
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('6'));
-    CHECK(motor.vista() == "Id");
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(motor.vista() == "Busqueda");
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Ficha");
 
     const std::string texto = motor.vistaTextoPlano();
@@ -2087,8 +2327,7 @@ TEST_CASE("la ficha de un medico sin turnos divergentes no muestra la leyenda",
     ui::CrudPersonas<Medico>& motor = *escenario.puntero;
 
     motor.manejar(eventoCaracter('6'));
-    escribir(motor, "1");
-    motor.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirEnElBuscador(motor, "1");
     CHECK(motor.vista() == "Ficha");
 
     const std::string texto = motor.vistaTextoPlano();
@@ -5795,7 +6034,9 @@ TEST_CASE("toda baja y toda cancelacion pide confirmacion de dos pasos",
         ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
 
         motor.manejar(eventoCaracter('3'));
+        // El buscador: se escribe el texto, el Enter busca y el Enter elige.
         motor.manejar(eventoCaracter('1'));
+        motor.manejar(eventoTecla(ui::TipoTecla::Enter));
         motor.manejar(eventoTecla(ui::TipoTecla::Enter));
 
         // La vista de confirmacion: los DOS pasos (el '1' y el '2').

@@ -224,6 +224,10 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
 
     // LOS CRITERIOS DE BUSQUEDA
     //
+    // Cada criterio devuelve las COINCIDENCIAS: el id de la entidad y sus
+    // celdas. La pantalla "Buscar" muestra las celdas (en una tabla) y el
+    // buscador usa el id (para elegir la entidad).
+    //
     // LAS REGLAS SON LAS DEL REPOSITORIO
     //
     // La pantalla NO tiene reglas de busqueda propias: las pregunta al
@@ -234,38 +238,47 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     // unicidad).
     config.criterios = {
         {"id", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              const int id = idDesdeTexto(valor);
              if (id < 0) {
-                 return filas;
+                 return coincidencias;
              }
              Medico medico;
              if (repositorio.buscarPorId(id, medico)) {
-                 filas.push_back(filaDe(medico));
+                 coincidencias.push_back({medico.getId(), filaDe(medico)});
              }
-             return filas;
+             return coincidencias;
          }},
         {"nombre o apellido", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              for (const Medico& medico : repositorio.buscarPorNombre(valor)) {
-                 filas.push_back(filaDe(medico));
+                 coincidencias.push_back({medico.getId(), filaDe(medico)});
              }
-             return filas;
+             return coincidencias;
          }},
         {"legajo", [&repositorio](const std::string& valor) {
-             std::vector<std::vector<std::string>> filas;
+             std::vector<Coincidencia> coincidencias;
              // El repositorio devuelve el id del medico que tiene el legajo:
              // con ese id se arma la fila.
              int id = -1;
              if (!repositorio.existeLegajo(valor, id)) {
-                 return filas;
+                 return coincidencias;
              }
              Medico medico;
              if (repositorio.buscarPorId(id, medico)) {
-                 filas.push_back(filaDe(medico));
+                 coincidencias.push_back({medico.getId(), filaDe(medico)});
              }
-             return filas;
+             return coincidencias;
          }}};
+
+    // EL BUSCADOR DE MEDICOS
+    //
+    // Las columnas que muestra el buscador son las que AYUDAN a reconocer al
+    // medico: el apellido y el nombre, la especialidad (que es lo que
+    // distingue a dos medicos con el mismo nombre) y el legajo (que es lo que
+    // lo identifica). El id va primero: es lo que el buscador devuelve.
+    config.columnasBuscador = {"id", "apellido", "nombre", "especialidad", "legajo"};
+    config.pistaBuscador = "Nombre, apellido, legajo o especialidad";
 
     // EL ROTULO DE LA FICHA
     //

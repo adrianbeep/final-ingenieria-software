@@ -104,6 +104,23 @@ public:
     // pantalla.
     void seleccionar(int indice);
 
+    // Reemplaza las opciones y vuelve al estado inicial.
+    //
+    // EL NUMERO DIGITADO SE BORRA
+    //
+    // El numero que se esta escribiendo ya no apunta a la misma opcion: la
+    // lista cambio. Es la misma regla que ya aplica cuando se mueve la
+    // seleccion con las flechas (mover la seleccion borra el numero
+    // digitado). Sin esto, escribir "12" y que la lista cambie llevaria a
+    // elegir otra entidad.
+    //
+    // TAMBIEN SE BORRA EL ERROR
+    //
+    // El error describia el ultimo intento sobre la lista ANTERIOR: con la
+    // lista nueva, ese numero puede existir o no. Se deja que el siguiente
+    // intento diga la verdad.
+    void setOpciones(std::vector<std::string> opciones);
+
     // Cuantas opciones hay.
     int cantidad() const;
 

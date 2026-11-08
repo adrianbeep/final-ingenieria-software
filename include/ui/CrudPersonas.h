@@ -3,6 +3,7 @@
 #include "repositories/IRepositorio.h"
 #include "repositories/IRepositorioBajaLogica.h"
 #include "ui/Aplicacion.h"
+#include "ui/Buscador.h"
 #include "ui/Campo.h"
 #include "ui/CargarEjemplo.h"
 #include "ui/ColorFtxui.h"
@@ -10,6 +11,7 @@
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
+#include "ui/RenderDeSelector.h"
 #include "ui/Selector.h"
 #include "ui/Tabla.h"
 #include "ui/Theme.h"
@@ -55,11 +57,11 @@
 //
 // EL 'Escape' SUBE UN NIVEL DENTRO DEL MOTOR
 //
-// El motor consume el `Escape` en sus vistas internas: desde la vista del id
-// se vuelve a su menu, desde el formulario se vuelve a su menu, y desde la
-// confirmacion se vuelve a la vista del id. En el menu CRUD el `Escape` NO
-// se consume: ahi lo maneja la aplicacion, que saca la pantalla entera de la
-// pila (y vuelve al menu principal).
+// El motor consume el `Escape` en sus vistas internas: desde la vista del
+// buscador se vuelve a su menu, desde el formulario se vuelve a su menu, y
+// desde la confirmacion se vuelve a la vista del buscador. En el menu CRUD el
+// `Escape` NO se consume: ahi lo maneja la aplicacion, que saca la pantalla
+// entera de la pila (y vuelve al menu principal).
 //
 // O sea: los dos caminos de vuelta tienen alcances DISTINTOS y CONOCIDOS. El
 // '0' sube un nivel del motor; el `Escape` sube un nivel del motor y, en su
@@ -106,16 +108,32 @@ struct TurnosDePersona {
     std::function<std::string(int)> nota;
 };
 
+// Una coincidencia de una busqueda: el id de la entidad y sus celdas.
+//
+// EL ID VIAJA CON LA FILA
+//
+// El id NO se deduce de la posicion de una columna: la columna del id puede
+// cambiar de lugar y el buscador devolveria la entidad equivocada. El que
+// busca ya tiene la entidad en la mano, asi que el id lo devuelve con la
+// fila.
+//
+// ES EL MISMO TIPO QUE EL DEL BUSCADOR
+//
+// El `ui::Buscador` devuelve las coincidencias de la misma manera: se reusa
+// su tipo en vez de escribir dos veces la misma definicion.
+using Coincidencia = Buscador::Coincidencia;
+
 // Un criterio de busqueda: como se llama y que devuelve.
 //
-// DEVUELVE LAS FILAS
+// DEVUELVE LAS COINCIDENCIAS
 //
-// El resultado de una busqueda son VARIAS filas (una por coincidencia), y
-// cada fila son las celdas de las columnas. Por eso el tipo es
-// `vector<vector<string>>`: el motor las mete en una `ui::Tabla` tal cual.
+// El resultado de una busqueda son VARIAS coincidencias, y cada coincidencia
+// son las celdas de las columnas MAS el id de la entidad. La pantalla
+// "Buscar" las mete en una `ui::Tabla` (con las celdas) y el buscador elige
+// una (con el id).
 struct CriterioBusqueda {
     std::string etiqueta;
-    std::function<std::vector<std::vector<std::string>>(const std::string&)> buscar;
+    std::function<std::vector<Coincidencia>(const std::string&)> buscar;
 };
 
 // El texto en mayusculas.
@@ -185,6 +203,18 @@ public:
         std::function<bool(const T&)> esActivo;      // esta activa?
         TurnosDePersona turnos;                      // los turnos de la ficha
 
+        // LAS COLUMNAS QUE MUESTRA EL BUSCADOR, por NOMBRE (no por
+        // posicion). La del id tiene que estar: es la que el buscador
+        // devuelve.
+        //
+        // Se buscan por nombre dentro de `cabeceras`, asi que el orden de las
+        // columnas de la entidad puede cambiar sin que el buscador muestre
+        // otra cosa.
+        std::vector<std::string> columnasBuscador;
+
+        // La pista del campo del buscador ("Nombre, apellido o DNI").
+        std::string pistaBuscador;
+
         // EL SELECTOR DEL FORMULARIO
         //
         // Un dato que se ELIGE de una lista en vez de escribirse. Es
@@ -230,7 +260,7 @@ private:
         Menu,
         Formulario,
         Selector,
-        Id,
+        Busqueda,
         Confirmar,
         Listado,
         Criterio,
@@ -268,6 +298,7 @@ private:
     bool manejarMenu(const Evento& evento);
     bool manejarFormulario(const Evento& evento);
     bool manejarSelector(const Evento& evento);
+    bool manejarBusqueda(const Evento& evento);
     bool manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo);
     bool manejarConfirmacion(const Evento& evento);
     bool manejarConfirmacionEjemplo(const Evento& evento);
@@ -296,9 +327,14 @@ private:
     void guardar(std::vector<std::string> valores);
 
     // --- El id ---
-    void abrirCampoId(Accion accion);
-    Campo::Validador validadorDeId();
+    //
+    // La entidad ya NO se pide por id: se BUSCA. El `ui::Buscador` corre los
+    // criterios de la configuracion y devuelve el id de la entidad elegida.
+    void abrirBuscador(Accion accion);
     void confirmarId();
+    std::vector<Coincidencia> coincidenciasDelBuscador(const std::string& texto);
+    std::vector<std::string> celdasDelBuscador(const std::vector<std::string>& fila) const;
+    bool yaEstaEnLasCoincidencias(const std::vector<Coincidencia>& coincidencias, int id) const;
 
     // --- La baja y la reactivation ---
     std::string preguntaDeBaja(const T& entidad) const;
@@ -327,9 +363,9 @@ private:
     // --- El dibujo ---
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(const Menu& menu, int indice) const;
-    ftxui::Element lineaOpcionSelector(int indice) const;
     ftxui::Element lineaNumeroSelector() const;
     ftxui::Element lineaCampo(const Campo& campo, bool enfocado) const;
+    ftxui::Element lineaBuscador() const;
     ftxui::Element lineaError(const std::string& texto) const;
     ftxui::Element lineaMensaje() const;
     ftxui::Element lineaFormulario() const;
@@ -393,9 +429,11 @@ private:
     std::unique_ptr<Selector> _selector;
     std::vector<std::string> _valoresPendientes;
 
-    // El campo del id y el del valor de busqueda.
-    std::unique_ptr<Campo> _campoId;
+    // El campo del valor de busqueda (el de la pantalla "Buscar").
     std::unique_ptr<Campo> _campoValor;
+
+    // El buscador de la entidad (el de "Modificar", "Baja" y "Ficha").
+    std::unique_ptr<Buscador> _buscador;
 
     // La confirmacion de la baja.
     std::unique_ptr<Confirmacion> _confirmacion;
@@ -486,7 +524,7 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
     static const std::string menu = "Menu";
     static const std::string formulario = "Formulario";
     static const std::string selector = "Selector";
-    static const std::string id = "Id";
+    static const std::string busqueda = "Busqueda";
     static const std::string confirmacion = "Confirmar";
     static const std::string listado = "Listado";
     static const std::string criterio = "Criterio";
@@ -502,8 +540,8 @@ const std::string& CrudPersonas<T>::nombreDeVista(Vista vista) {
             return formulario;
         case Vista::Selector:
             return selector;
-        case Vista::Id:
-            return id;
+        case Vista::Busqueda:
+            return busqueda;
         case Vista::Confirmar:
             return confirmacion;
         case Vista::Listado:
@@ -568,15 +606,15 @@ void CrudPersonas<T>::volverAtras() {
     //
     //   - desde el menu CRUD, se sale de la pantalla (el menu anterior es el
     //     menu principal, que esta en la pila de la aplicacion);
-    //   - desde la confirmacion, se vuelve a la vista ANTERIOR (la del id),
-    //     que es lo que dice la especificacion;
+    //   - desde la confirmacion, se vuelve a la vista ANTERIOR (la del
+    //     buscador), que es lo que dice la especificacion;
     //   - desde cualquier otra vista, se vuelve al menu CRUD.
     switch (_vista) {
         case Vista::Menu:
             _aplicacion.volver();
             return;
         case Vista::Confirmar:
-            irA(Vista::Id);
+            irA(Vista::Busqueda);
             return;
         case Vista::ConfirmarEjemplo:
             irA(Vista::Listado);
@@ -600,8 +638,8 @@ bool CrudPersonas<T>::manejar(const Evento& evento) {
             return manejarFormulario(evento);
         case Vista::Selector:
             return manejarSelector(evento);
-        case Vista::Id:
-            return manejarCampo(evento, _campoId);
+        case Vista::Busqueda:
+            return manejarBusqueda(evento);
         case Vista::Confirmar:
             return manejarConfirmacion(evento);
         case Vista::ConfirmarEjemplo:
@@ -760,6 +798,73 @@ bool CrudPersonas<T>::manejarSelector(const Evento& evento) {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// El buscador
+//
+// LA ENTIDAD SE BUSCA, NO SE ESCRIBE
+//
+// El `ui::Buscador` tiene DOS focos: el TEXTO (lo que se escribe) y la LISTA
+// (las coincidencias). El `Escape` y el '0' los atiende la pantalla; el
+// resto lo atiende el widget.
+// ---------------------------------------------------------------------------
+
+template <class T>
+bool CrudPersonas<T>::manejarBusqueda(const Evento& evento) {
+    if (!_buscador) {
+        return false;
+    }
+
+    // EL `Escape` VUELVE AL MENU DEL MOTOR
+    //
+    // El buscador NO lo consume (el `Escape` es una tecla de navegacion, no
+    // un dato): lo atiende la pantalla, que sube un nivel.
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+
+    // EL '0' ES "VOLVER" SOLO SI EL TEXTO ESTA VACIO
+    //
+    // Con algo escrito el '0' es un dato (un dni puede empezar con un cero) y
+    // se lo queda el campo. Y solo cuando el foco esta en el TEXTO: en la
+    // lista el '0' es el numero de una opcion.
+    if (_buscador->focoEnElTexto() && esTeclaVolver(evento) && _buscador->filtro().empty()) {
+        volverAtras();
+        return true;
+    }
+
+    // EL RATON MUEVE EL RESALTADO, NO CONFIRMA
+    //
+    // Un clic elige la fila, pero la confirmacion es el Enter: un clic
+    // accidental no da de baja a un paciente.
+    if (evento.esMouse()) {
+        if (!evento.esClic()) {
+            return false;
+        }
+        const int indice = _buscador->coincidenciaEnFila(evento.y, _buscador->filaInicial());
+        if (indice < 0) {
+            // El clic cae fuera de las coincidencias: no se consume.
+            return false;
+        }
+        _buscador->seleccionar(indice);
+        return true;
+    }
+
+    if (!_buscador->aplicarEvento(evento)) {
+        return false;
+    }
+
+    // EL ENTER ELIGE LA COINCIDENCIA
+    //
+    // Con un numero escrito que no existe, el buscador deja el error y el
+    // numero en la pantalla: el usuario lo corrige. Sin error, la entidad
+    // elegida es la que estaba resaltada.
+    if (_buscador->elegido()) {
+        confirmarId();
+    }
+    return true;
+}
+
 template <class T>
 bool CrudPersonas<T>::manejarCampo(const Evento& evento, const std::unique_ptr<Campo>& campo) {
     if (!campo) {
@@ -773,20 +878,15 @@ bool CrudPersonas<T>::manejarCampo(const Evento& evento, const std::unique_ptr<C
             // El campo ya mostro el error debajo: no se sigue adelante.
             return true;
         }
-        if (_vista == Vista::Id) {
-            confirmarId();
-        } else {
-            confirmarValor();
-        }
+        confirmarValor();
         return true;
     }
 
     // EL `Escape` SUBE UN NIVEL
     //
     // El motor consume el `Escape` en sus vistas internas: desde la vista del
-    // id o del valor se vuelve al menu CRUD. El `Escape` es una tecla de
-    // navegacion, no un dato: se atiende aunque el campo tenga texto
-    // escrito.
+    // valor se vuelve al menu CRUD. El `Escape` es una tecla de navegacion, no
+    // un dato: se atiende aunque el campo tenga texto escrito.
     if (esTeclaEscape(evento)) {
         volverAtras();
         return true;
@@ -810,10 +910,10 @@ bool CrudPersonas<T>::manejarConfirmacion(const Evento& evento) {
         volverAtras();
         return true;
     }
-    // EL `Escape` VUELVE A LA VISTA DEL ID
+    // EL `Escape` VUELVE A LA VISTA DEL BUSCADOR
     //
     // `volverAtras()` desde la confirmacion vuelve a la vista anterior (la
-    // del id), que es lo que dice la especificacion.
+    // del buscador), que es lo que dice la especificacion.
     if (esTeclaEscape(evento)) {
         volverAtras();
         return true;
@@ -834,8 +934,8 @@ bool CrudPersonas<T>::manejarConfirmacion(const Evento& evento) {
     if (_confirmacion->confirmo()) {
         ejecutarBaja();
     } else {
-        // Si NO confirma, se vuelve a la vista anterior (la del id).
-        irA(Vista::Id);
+        // Si NO confirma, se vuelve a la vista anterior (la del buscador).
+        irA(Vista::Busqueda);
     }
     return true;
 }
@@ -973,24 +1073,128 @@ void CrudPersonas<T>::iniciarRegistro() {
 
 template <class T>
 void CrudPersonas<T>::iniciarModificacion() {
-    abrirCampoId(Accion::Modificar);
+    abrirBuscador(Accion::Modificar);
 }
 
 template <class T>
 void CrudPersonas<T>::iniciarBaja() {
-    abrirCampoId(Accion::Baja);
+    abrirBuscador(Accion::Baja);
 }
 
 template <class T>
 void CrudPersonas<T>::iniciarFicha() {
-    abrirCampoId(Accion::Ficha);
+    abrirBuscador(Accion::Ficha);
+}
+
+// ---------------------------------------------------------------------------
+// El buscador de la entidad
+//
+// LA ENTIDAD SE BUSCA, NO SE ESCRIBE
+//
+// Antes se pedia el id en un campo de texto: un dato que nadie tiene en la
+// cabeza (es una clave de un archivo, no un dato del consultorio). Ahora se
+// escribe un dato que el usuario CONOCE (el nombre, el apellido, el dni) y
+// se elige una de las coincidencias.
+//
+// LAS REGLAS DE BUSQUEDA SON LAS DE LA CONFIGURACION
+//
+// El buscador NO escribe reglas propias: corre los mismos criterios que usa
+// la pantalla "Buscar" (los de `config.criterios`), que a su vez preguntan al
+// repositorio. Si el buscador buscara distinto, habria dos reglas que se
+// pueden desincronizar.
+// ---------------------------------------------------------------------------
+
+template <class T>
+void CrudPersonas<T>::abrirBuscador(Accion accion) {
+    _accion = accion;
+    _buscador = std::make_unique<Buscador>(
+        "Buscar " + _config.singular,
+        _config.pistaBuscador,
+        [this](const std::string& texto) { return coincidenciasDelBuscador(texto); });
+    irA(Vista::Busqueda);
 }
 
 template <class T>
-void CrudPersonas<T>::abrirCampoId(Accion accion) {
-    _accion = accion;
-    _campoId = std::make_unique<Campo>("Id", "", validadorDeId());
-    irA(Vista::Id);
+std::vector<Coincidencia> CrudPersonas<T>::coincidenciasDelBuscador(const std::string& texto) {
+    std::vector<Coincidencia> coincidencias;
+
+    // CON EL TEXTO VACIO SE MUESTRAN LOS ACTIVOS
+    //
+    // Los criterios NO encuentran nada con un texto vacio: el repositorio
+    // define que una busqueda sin texto no encuentra nada (`buscarPorNombre`
+    // devuelve una lista vacia) y el dni (y el legajo) se comparan EXACTOS,
+    // asi que un texto vacio no es el dni de nadie.
+    //
+    // Pero el usuario que abre el buscador quiere VER la lista: si no, el
+    // buscador arranca vacio y no dice nada. Por eso, con el texto vacio, se
+    // muestran las entidades ACTIVAS: son las que se pueden usar, y son las
+    // que el usuario espera ver al abrir el buscador.
+    //
+    // (Las dadas de baja se siguen BUSCANDO por nombre, dni o legajo: los
+    // criterios las encuentran, asi que la reactivacion se puede hacer
+    // escribiendo el nombre.)
+    if (!Utils::esNoVacio(texto)) {
+        for (const T& entidad : _repositorio.listar()) {
+            const bool activa = _config.esActivo ? _config.esActivo(entidad) : true;
+            if (!activa) {
+                continue;
+            }
+            coincidencias.push_back({entidad.getId(), celdasDelBuscador(_config.fila(entidad))});
+        }
+        return coincidencias;
+    }
+
+    // SE CORREN LOS CRITERIOS Y SE UNEN LOS RESULTADOS
+    //
+    // Sin repetir: el mismo paciente puede coincidir en "nombre o apellido" y
+    // en "dni", y en la lista tiene que aparecer UNA vez. Gana el primero que
+    // aparece (el orden de los criterios es el de la configuracion).
+    for (const CriterioBusqueda& criterio : _config.criterios) {
+        if (!criterio.buscar) {
+            continue;
+        }
+        for (const Coincidencia& coincidencia : criterio.buscar(texto)) {
+            if (yaEstaEnLasCoincidencias(coincidencias, coincidencia.first)) {
+                continue;
+            }
+            coincidencias.push_back(
+                {coincidencia.first, celdasDelBuscador(coincidencia.second)});
+        }
+    }
+    return coincidencias;
+}
+
+template <class T>
+bool CrudPersonas<T>::yaEstaEnLasCoincidencias(const std::vector<Coincidencia>& coincidencias,
+                                                 int id) const {
+    for (const Coincidencia& coincidencia : coincidencias) {
+        if (coincidencia.first == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+template <class T>
+std::vector<std::string> CrudPersonas<T>::celdasDelBuscador(
+    const std::vector<std::string>& fila) const {
+    // LAS CELDAS QUE MUESTRA EL BUSCADOR
+    //
+    // Son las de las columnas que declara la configuracion, buscadas por
+    // NOMBRE dentro de `cabeceras`: asi el buscador muestra lo que dice la
+    // configuracion y no lo que quede en una posicion. Una columna que no
+    // existe queda vacia (nunca se lee una celda de otro lado).
+    std::vector<std::string> celdas;
+    celdas.reserve(_config.columnasBuscador.size());
+    for (const std::string& nombre : _config.columnasBuscador) {
+        const int columna = indiceDeColumna(nombre);
+        if (columna >= 0 && static_cast<std::size_t>(columna) < fila.size()) {
+            celdas.push_back(fila[static_cast<std::size_t>(columna)]);
+        } else {
+            celdas.push_back("");
+        }
+    }
+    return celdas;
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,31 +1353,20 @@ void CrudPersonas<T>::guardar(std::vector<std::string> valores) {
 }
 
 // ---------------------------------------------------------------------------
-// El id
+// El id elegido
 // ---------------------------------------------------------------------------
 
 template <class T>
-Campo::Validador CrudPersonas<T>::validadorDeId() {
-    return [this](const std::string& texto) -> std::string {
-        const int id = idDesdeTexto(texto);
-        if (id < 0) {
-            return "el id tiene que ser un numero entero mayor que cero";
-        }
-        T entidad;
-        if (!_repositorio.buscarPorId(id, entidad)) {
-            return "no existe " + _config.singular + " #" + texto;
-        }
-        return "";
-    };
-}
-
-template <class T>
 void CrudPersonas<T>::confirmarId() {
-    const int id = idDesdeTexto(_campoId->valor());
+    // EL ID VIENE DEL BUSCADOR
+    //
+    // El buscador solo ofrece entidades que EXISTEN (las busca en el
+    // repositorio), asi que el chequeo de abajo no deberia disparar nunca.
+    // Se deja igual: es la red de contencion contra un dato raro.
+    const int id = _buscador ? _buscador->idElegido() : -1;
     T entidad;
     if (id < 0 || !_repositorio.buscarPorId(id, entidad)) {
-        // No deberia pasar: el validador del campo ya lo comprobo.
-        avisar("no existe " + _config.singular + " #" + _campoId->texto());
+        avisar("no existe " + _config.singular + " #" + std::to_string(id));
         irA(Vista::Menu);
         return;
     }
@@ -1280,8 +1473,17 @@ template <class T>
 void CrudPersonas<T>::confirmarValor() {
     const std::string valor = _campoValor->valor();
     const CriterioBusqueda& criterio = _config.criterios[_criterioElegido];
-    _filasResultado =
-        criterio.buscar ? criterio.buscar(valor) : std::vector<std::vector<std::string>>();
+    _filasResultado.clear();
+    if (criterio.buscar) {
+        // LA PANTALLA "BUSCAR" MUESTRA LAS CELDAS
+        //
+        // El criterio devuelve el id junto con la fila (el id lo usa el
+        // buscador, para elegir la entidad). Aca el id no hace falta: lo que
+        // se muestra es una TABLA de las coincidencias.
+        for (const Coincidencia& coincidencia : criterio.buscar(valor)) {
+            _filasResultado.push_back(coincidencia.second);
+        }
+    }
     irA(Vista::Resultados);
 }
 
@@ -1365,17 +1567,36 @@ ftxui::Element CrudPersonas<T>::renderizar() {
             // La opcion `i` del selector queda en la fila `filaInicial + i`:
             // el hit-testing del raton lo necesita.
             _selector->definirFilaInicial(static_cast<int>(lineas.size()));
-            for (int i = 0; i < _selector->cantidad(); ++i) {
-                lineas.push_back(lineaOpcionSelector(i));
+            // EL DIBUJO DE LA LISTA ES EL COMPARTIDO
+            //
+            // Es el mismo que usa la pantalla de turnos (ver
+            // `ui/RenderDeSelector.h`): asi el resaltado de la opcion
+            // elegida es el mismo en toda la aplicacion.
+            for (ftxui::Element& elemento : lineasDeSelector(*_selector)) {
+                lineas.push_back(elemento);
             }
             if (!_selector->error().empty()) {
                 lineas.push_back(lineaError(_selector->error()));
             }
             break;
         }
-        case Vista::Id:
-            lineas.push_back(lineaCampo(*_campoId, true));
+        case Vista::Busqueda: {
+            if (!_buscador) {
+                break;
+            }
+            lineas.push_back(ftxui::text("  " + _buscador->titulo()));
+            lineas.push_back(lineaBuscador());
+            // La coincidencia `i` queda en la fila `filaInicial + i`: el
+            // hit-testing del raton lo necesita.
+            _buscador->definirFilaInicial(static_cast<int>(lineas.size()));
+            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+                lineas.push_back(elemento);
+            }
+            if (!_buscador->error().empty()) {
+                lineas.push_back(lineaError(_buscador->error()));
+            }
             break;
+        }
         case Vista::Valor:
             lineas.push_back(lineaCampo(*_campoValor, true));
             break;
@@ -1440,17 +1661,6 @@ ftxui::Element CrudPersonas<T>::lineaOpcion(const Menu& menu, int indice) const 
 }
 
 template <class T>
-ftxui::Element CrudPersonas<T>::lineaOpcionSelector(int indice) const {
-    ftxui::Element elemento = ftxui::text(_selector->lineaDe(indice));
-    if (indice == _selector->seleccion()) {
-        // El resaltado de la opcion elegida. `inverted` funciona SIN color,
-        // asi que el selector se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
-}
-
-template <class T>
 ftxui::Element CrudPersonas<T>::lineaNumeroSelector() const {
     // EL NUMERO QUE SE ESTA ESCRIBIENDO
     //
@@ -1465,6 +1675,19 @@ ftxui::Element CrudPersonas<T>::lineaCampo(const Campo& campo, bool enfocado) co
     ftxui::Element elemento =
         ftxui::text("  " + campo.etiqueta() + ": " + campo.textoEnPantalla());
     if (enfocado) {
+        elemento = elemento | ftxui::inverted;
+    }
+    return elemento;
+}
+
+template <class T>
+ftxui::Element CrudPersonas<T>::lineaBuscador() const {
+    // EL CAMPO DEL BUSCADOR
+    //
+    // Se invierte cuando el foco esta en el TEXTO: es la misma convencion
+    // de los demas campos (el foco se ve invertido).
+    ftxui::Element elemento = ftxui::text("  " + _buscador->lineaDelCampo());
+    if (_buscador->focoEnElTexto()) {
         elemento = elemento | ftxui::inverted;
     }
     return elemento;
@@ -1650,7 +1873,15 @@ std::string CrudPersonas<T>::ayuda() const {
         case Vista::Selector:
             return "Flechas: mover   Numero: elegir   Enter: confirmar   "
                    "Esc: volver al formulario";
-        case Vista::Id:
+        case Vista::Busqueda:
+            // LA AYUDA DE UN BUSCADOR DICE LOS DOS PASOS
+            //
+            // El buscador tiene dos focos: se escribe el texto (Enter busca)
+            // y se elige de la lista (flechas o numero). El '0' vuelve SOLO
+            // con el texto vacio, como en cualquier otro campo de texto (con
+            // algo escrito el '0' es un dato).
+            return "Enter: buscar   Flechas: elegir   Retroceso: corregir   "
+                   "0: volver   Esc: volver";
         case Vista::Valor:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
         case Vista::Confirmar:
@@ -1760,12 +1991,15 @@ std::string CrudPersonas<T>::textoDeLaVista() const {
             }
             return salida;
         }
-        case Vista::Id:
-            salida += "  " + _campoId->etiqueta() + ": " + _campoId->textoEnPantalla() + "\n";
-            if (!_campoId->error().empty()) {
-                salida += "      " + _campoId->error() + "\n";
+        case Vista::Busqueda: {
+            if (_buscador) {
+                // La vista en texto plano tiene el MISMO orden que la
+                // dibujada: el titulo, el campo y las lineas de las
+                // coincidencias.
+                salida += _buscador->textoPlano();
             }
             return salida;
+        }
         case Vista::Valor:
             salida +=
                 "  " + _campoValor->etiqueta() + ": " + _campoValor->textoEnPantalla() + "\n";
