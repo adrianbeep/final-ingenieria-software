@@ -2434,6 +2434,19 @@ void elegirTurnoEnElBuscador(ui::Pantallas::PantallaTurnos& pantalla, const std:
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
 }
 
+// Elige una PERSONA en el buscador de "agendar".
+//
+// EL FLUJO SON DOS PASOS
+//
+// Se escribe el texto (el Enter BUSCA) y despues se elige la coincidencia
+// (el Enter ELIGE la que esta resaltada). El texto es un dato que el usuario
+// CONOCE (el nombre, el apellido, el dni, el legajo): el id no se escribe.
+void elegirPersonaEnElBuscador(ui::Pantallas::PantallaTurnos& pantalla, const std::string& texto) {
+    escribir(pantalla, texto);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
+}
+
 // Un medico valido con la especialidad que se le pide.
 //
 // El overload de cuatro argumentos (el de mas arriba) deja al medico con
@@ -2454,21 +2467,25 @@ Turno turnoDeRelleno(int id) {
     return Turno(id, 99, 99, Especialidad::CARD, fechaDesplazada(30), Hora(8, 0), 45, "A-1");
 }
 
-// Llena el formulario de AGENDAR con los datos de un turno valido.
+// AGENDA UN TURNO: ELIGE LAS PERSONAS Y LLENA EL FORMULARIO
 //
-// Los ids del paciente y del medico son parametros: hay tests en los que
-// el horario esta ocupado por OTRO turno, y para que el control de
-// solapamiento se dispare hay que apuntar al mismo paciente o al mismo
-// medico.
+// "AGENDAR" TIENE TRES PASOS
+//
+//   1. se elige el PACIENTE con el buscador;
+//   2. se elige el MEDICO con el buscador;
+//   3. se llena el formulario (la fecha, la hora, la duracion y el
+//      consultorio).
+//
+// Los dos ids NO se escriben: se buscan. Los textos son los que escribiria
+// el usuario (el nombre o el apellido).
 //
 // Devuelve sin hacer nada: el llamador confirma el formulario.
-void llenarFormularioDeAgendar(ui::Pantallas::PantallaTurnos& pantalla, const std::string& idPaciente,
-                                const std::string& idMedico, const std::string& fecha,
-                                const std::string& hora, const std::string& duracion = "45") {
-    escribir(pantalla, idPaciente);
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
-    escribir(pantalla, idMedico);
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+void agendarConLasPersonasElegidas(ui::Pantallas::PantallaTurnos& pantalla,
+                                    const std::string& textoPaciente,
+                                    const std::string& textoMedico, const std::string& fecha,
+                                    const std::string& hora, const std::string& duracion = "45") {
+    elegirPersonaEnElBuscador(pantalla, textoPaciente);
+    elegirPersonaEnElBuscador(pantalla, textoMedico);
     escribir(pantalla, fecha);
     pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
     escribir(pantalla, hora);
@@ -2523,9 +2540,13 @@ TEST_CASE("agendar un turno lo deja en el repositorio", turnos_agendar) {
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('1'));
-    CHECK(pantalla.vista() == "Formulario");
+    // EL PRIMER PASO ES EL BUSCADOR DEL PACIENTE
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("Buscar paciente") != std::string::npos);
 
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+    // EL PACIENTE Y EL MEDICO SE ELIGEN CON EL BUSCADOR
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "10:00");
+    CHECK(pantalla.vista() == "Formulario");
 
     // EL FORMULARIO SE CONFIRMA: SE ABRE EL SELECTOR DE LA ESPECIALIDAD.
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -2565,7 +2586,7 @@ TEST_CASE("agendar con una especialidad que el medico no atiende muestra el erro
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('1'));
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "10:00");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Selector");
     // Se elige la PRIMERA especialidad (Cardiologia), que no es la del medico.
@@ -2599,7 +2620,7 @@ TEST_CASE("agendar a un horario ocupado muestra el error del servicio",
     pantalla.manejar(eventoCaracter('1'));
     // El turno nuevo es del MISMO paciente y del MISMO medico que el #12:
     // es lo que hace que el horario este ocupado.
-    llenarFormularioDeAgendar(pantalla, "8", "3", fechaDesplazada(30).aTexto(), "10:00");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "10:00");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Selector");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -2623,7 +2644,7 @@ TEST_CASE("agendar con una fecha que ya paso muestra el error del servicio",
     pantalla.manejar(eventoCaracter('1'));
     // La fecha EXISTE (la valida el campo), pero ya paso: esa regla la
     // aplica el servicio.
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(-5).aTexto(), "10:00");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(-5).aTexto(), "10:00");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Selector");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -2646,7 +2667,7 @@ TEST_CASE("agendar con una hora fuera del horario de atencion muestra el error d
 
     pantalla.manejar(eventoCaracter('1'));
     // Las 07:00 estan FUERA del horario de atencion (08:00 a 22:00).
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "07:00");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "07:00");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Selector");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -2672,7 +2693,8 @@ TEST_CASE("agendar con una duracion que no es multiplo de 15 muestra el error de
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('1'));
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "10:00", "7");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "10:00",
+                                  "7");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
     CHECK(pantalla.vista() == "Selector");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
@@ -2694,7 +2716,7 @@ TEST_CASE("un campo de texto con la forma equivocada muestra el error debajo del
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('1'));
-    llenarFormularioDeAgendar(pantalla, "1", "1", fechaDesplazada(30).aTexto(), "8:00");
+    agendarConLasPersonasElegidas(pantalla, "Ana", "Beto", fechaDesplazada(30).aTexto(), "8:00");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
 
     // LA FORMA ESTA MAL: el error va DEBAJO del campo y la vista NO cambia.
@@ -2714,13 +2736,13 @@ TEST_CASE("en el campo de la hora el cero es un dato y no un volver", turnos_cer
     ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('1'));
+
+    // EL PACIENTE Y EL MEDICO SE ELIGEN PRIMERO
+    elegirPersonaEnElBuscador(pantalla, "Ana");
+    elegirPersonaEnElBuscador(pantalla, "Beto");
     CHECK(pantalla.vista() == "Formulario");
 
     // Se llega al campo de la hora y se escribe "09:00".
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
     escribir(pantalla, fechaDesplazada(30).aTexto());
     pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
     escribir(pantalla, "09:00");
@@ -2728,6 +2750,181 @@ TEST_CASE("en el campo de la hora el cero es un dato y no un volver", turnos_cer
     // El primer cero NO fue "volver": la hora SIEMPRE empieza con un cero.
     CHECK(pantalla.vista() == "Formulario");
     CHECK(pantalla.vistaTextoPlano().find("hora: 09:00|") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE PERSONAS DE "AGENDAR"
+//
+// EL PACIENTE Y EL MEDICO SE BUSCAN, NO SE ESCRIBEN
+//
+// Lo que se verifica aca:
+//
+//   - que la pantalla de agendar ya NO pide los ids (ni el del paciente ni
+//     el del medico);
+//   - que el turno creado tiene el paciente y el medico ELEGIDOS;
+//   - que las columnas del buscador son las mismas que usan las pantallas de
+//     pacientes y de medicos;
+//   - que con el texto vacio se listan los ACTIVOS (un medico dado de baja
+//     no se puede atender);
+//   - que el '0' y el `Escape` en cualquiera de los dos pasos vuelven al
+//     menu del modulo.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la pantalla de agendar ya no pide el id del paciente ni del medico",
+           turnos_agendar_sin_prompt_de_id) {
+    EscenarioTurnos escenario("turnos_agendar_sin_prompt_de_id");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+
+    // EL PRIMER PASO ES EL BUSCADOR DEL PACIENTE
+    CHECK(pantalla.vista() == "Busqueda");
+    std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Buscar paciente") != std::string::npos);
+    CHECK(texto.find("Nombre, apellido o DNI:") != std::string::npos);
+    CHECK(texto.find("id paciente") == std::string::npos);
+    CHECK(texto.find("id medico") == std::string::npos);
+
+    // EL SEGUNDO PASO ES EL BUSCADOR DEL MEDICO
+    elegirPersonaEnElBuscador(pantalla, "Ana");
+    CHECK(pantalla.vista() == "Busqueda");
+    texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Buscar medico") != std::string::npos);
+    CHECK(texto.find("Nombre, apellido, legajo o especialidad:") != std::string::npos);
+    CHECK(texto.find("id paciente") == std::string::npos);
+    CHECK(texto.find("id medico") == std::string::npos);
+
+    // Y EL FORMULARIO TIENE SOLO LOS DATOS DEL TURNO
+    elegirPersonaEnElBuscador(pantalla, "Beto");
+    CHECK(pantalla.vista() == "Formulario");
+    texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("fecha:") != std::string::npos);
+    CHECK(texto.find("hora:") != std::string::npos);
+    CHECK(texto.find("duracion:") != std::string::npos);
+    CHECK(texto.find("consultorio:") != std::string::npos);
+    CHECK(texto.find("id paciente") == std::string::npos);
+    CHECK(texto.find("id medico") == std::string::npos);
+}
+
+TEST_CASE("el turno agendado tiene el paciente y el medico ELEGIDOS",
+           turnos_agendar_las_personas_elegidas) {
+    EscenarioTurnos escenario("turnos_agendar_las_personas_elegidas");
+    // DOS PACIENTES Y DOS MEDICOS: el que se elige es el que queda en el turno.
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.pacientes.alta(pacienteDePrueba(2, "Caro", "Sosa", "2020392"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.medicos.alta(
+        medicoConEspecialidad(2, "Dani", "Ruiz", "LEG-1002", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // EL SEGUNDO PACIENTE Y EL SEGUNDO MEDICO
+    elegirPersonaEnElBuscador(pantalla, "Sosa");
+    elegirPersonaEnElBuscador(pantalla, "Ruiz");
+
+    escribir(pantalla, fechaDesplazada(30).aTexto());
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "10:00");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "45");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Tabulador));
+    escribir(pantalla, "A-2");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // confirma el formulario
+    CHECK(pantalla.vista() == "Selector");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige la especialidad
+    CHECK(pantalla.vista() == "Menu");
+
+    // EL TURNO TIENE A LOS ELEGIDOS
+    Turno agendado;
+    CHECK(escenario.turnos.buscarPorId(1, agendado) == true);
+    CHECK(agendado.getIdPaciente() == 2);
+    CHECK(agendado.getIdMedico() == 2);
+}
+
+TEST_CASE("el buscador de agendar muestra las mismas columnas que las pantallas de personas",
+           turnos_agendar_las_columnas_del_buscador) {
+    EscenarioTurnos escenario("turnos_agendar_las_columnas_del_buscador");
+    escenario.pacientes.alta(pacienteDePrueba(7, "Ana", "García", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(3, "Beto", "Pérez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // EL PACIENTE: id, apellido, nombre y dni
+    pantalla.manejar(eventoCaracter('1'));
+    escribir(pantalla, "García");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    CHECK(pantalla.vistaTextoPlano().find("7 · García · Ana · 2020391") != std::string::npos);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
+
+    // EL MEDICO: id, apellido, nombre, especialidad y legajo
+    escribir(pantalla, "Pérez");
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("3 · Pérez · Beto · ") != std::string::npos);
+    CHECK(texto.find("LEG-1001") != std::string::npos);
+}
+
+TEST_CASE("con el texto vacio el buscador de agendar muestra los activos",
+           turnos_agendar_muestra_los_activos) {
+    EscenarioTurnos escenario("turnos_agendar_muestra_los_activos");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    // UN PACIENTE Y UN MEDICO DADOS DE BAJA: no se pueden atender.
+    escenario.pacientes.alta(pacienteDePrueba(2, "Caro", "Sosa", "2020392"));
+    escenario.pacientes.bajaLogica(2);
+    escenario.medicos.alta(
+        medicoConEspecialidad(2, "Dani", "Ruiz", "LEG-1002", Especialidad::CARD));
+    escenario.medicos.bajaLogica(2);
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    pantalla.manejar(eventoCaracter('1'));
+    // LA LISTA INICIAL ES LA BUSQUEDA DEL TEXTO VACIO: los ACTIVOS.
+    std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Ana") != std::string::npos);
+    // EL PACIENTE DADO DE BAJA NO APARECE: no se puede atender.
+    CHECK(texto.find("Caro") == std::string::npos);
+
+    // Y EL MEDICO DADO DE BAJA TAMPOCO.
+    elegirPersonaEnElBuscador(pantalla, "Ana");
+    texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Beto") != std::string::npos);
+    CHECK(texto.find("Dani") == std::string::npos);
+}
+
+TEST_CASE("el cero y el escape en cualquiera de los dos pasos vuelven al menu",
+           turnos_agendar_cancelar_vuelve_al_menu) {
+    EscenarioTurnos escenario("turnos_agendar_cancelar_vuelve_al_menu");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& pantalla = *escenario.puntero;
+
+    // EL CERO EN EL PRIMER PASO (el del paciente)
+    pantalla.manejar(eventoCaracter('1'));
+    CHECK(pantalla.vista() == "Busqueda");
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(pantalla.vista() == "Menu");
+
+    // EL ESCAPE EN EL SEGUNDO PASO (el del medico)
+    pantalla.manejar(eventoCaracter('1'));
+    elegirPersonaEnElBuscador(pantalla, "Ana");
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.manejar(eventoTecla(ui::TipoTecla::Escape)) == true);
+    CHECK(pantalla.vista() == "Menu");
+
+    // Y LA PANTALLA SIGUE EN LA PILA: el menu del modulo, no la pantalla
+    // anterior.
+    CHECK(escenario.aplicacion.textoPlanoActual() != "pantalla de prueba");
 }
 
 TEST_CASE("cancelar un turno pide confirmacion y sin confirmar no toca nada",
@@ -3784,6 +3981,20 @@ void escribir(ui::Pantallas::PantallaReportes& pantalla, const std::string& text
     }
 }
 
+// Elige una PERSONA en el buscador de los reportes.
+//
+// EL FLUJO SON DOS PASOS
+//
+// Se escribe el texto (el Enter BUSCA) y despues se elige la coincidencia
+// (el Enter ELIGE la que esta resaltada). El texto es un dato que el usuario
+// CONOCE (el nombre, el apellido, el dni, el legajo): el id no se escribe.
+void elegirPersonaEnElBuscador(ui::Pantallas::PantallaReportes& pantalla,
+                                const std::string& texto) {
+    escribir(pantalla, texto);
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // busca
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));  // elige
+}
+
 // La fila esperada de la tabla de ocupacion.
 //
 // El nombre del dia lo pone el DOMINIO (`Fecha::nombreDiaSemana`), asi que
@@ -3877,10 +4088,11 @@ TEST_CASE("el reporte de turnos por paciente no repite el nombre del paciente",
 
     ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
 
+    // EL PACIENTE SE ELIGE CON EL BUSCADOR
     pantalla.manejar(eventoCaracter('2'));
-    CHECK(pantalla.vista() == "Campo");
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("Buscar paciente") != std::string::npos);
+    elegirPersonaEnElBuscador(pantalla, "Ana");
 
     CHECK(pantalla.vista() == "Resultado");
     CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s).");
@@ -3906,10 +4118,11 @@ TEST_CASE("el reporte de turnos por medico no repite el nombre del medico",
 
     ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
 
+    // EL MEDICO SE ELIGE CON EL BUSCADOR
     pantalla.manejar(eventoCaracter('3'));
-    CHECK(pantalla.vista() == "Campo");
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("Buscar medico") != std::string::npos);
+    elegirPersonaEnElBuscador(pantalla, "Beto");
 
     CHECK(pantalla.vista() == "Resultado");
     CHECK(escenario.contexto.mensaje().texto() == "OK  2 turno(s).");
@@ -3993,17 +4206,41 @@ TEST_CASE("una fecha que no existe en el calendario muestra el error del dominio
              "fecha existente)");
 }
 
-TEST_CASE("un id que no existe muestra el error debajo del campo",
-           reportes_id_inexistente) {
-    EscenarioReportes escenario("reportes_id_inexistente");
+TEST_CASE("un texto que no coincide dice que no hay coincidencias",
+           reportes_buscador_sin_coincidencias) {
+    EscenarioReportes escenario("reportes_buscador_sin_coincidencias");
     ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
 
     pantalla.manejar(eventoCaracter('2'));
-    escribir(pantalla, "9");
+    escribir(pantalla, "Zzz");
     pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
 
-    CHECK(pantalla.vista() == "Campo");
-    CHECK(pantalla.vistaTextoPlano().find("no existe paciente #9") != std::string::npos);
+    // NO HAY COINCIDENCIAS: no se elige nada y el foco vuelve al texto.
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("no hay coincidencias") != std::string::npos);
+}
+
+TEST_CASE("la pantalla de reportes ya no pide el id de la persona",
+           reportes_buscador_sin_prompt_de_id) {
+    EscenarioReportes escenario("reportes_buscador_sin_prompt_de_id");
+    ui::Pantallas::PantallaReportes& pantalla = *escenario.puntero;
+
+    // EL REPORTE POR PACIENTE
+    pantalla.manejar(eventoCaracter('2'));
+    CHECK(pantalla.vista() == "Busqueda");
+    std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Buscar paciente") != std::string::npos);
+    CHECK(texto.find("Nombre, apellido o DNI:") != std::string::npos);
+    CHECK(texto.find("Id del paciente") == std::string::npos);
+
+    // EL REPORTE POR MEDICO
+    pantalla.manejar(eventoTecla(ui::TipoTecla::Escape));
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(pantalla.vista() == "Busqueda");
+    texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("Buscar medico") != std::string::npos);
+    CHECK(texto.find("Nombre, apellido, legajo o especialidad:") != std::string::npos);
+    CHECK(texto.find("Id del medico") == std::string::npos);
 }
 
 TEST_CASE("en un campo de un reporte el cero es un dato si ya hay texto",
@@ -4017,9 +4254,9 @@ TEST_CASE("en un campo de un reporte el cero es un dato si ya hay texto",
     escribir(pantalla, "1");
     escribir(pantalla, "0");
 
-    // El cero NO fue "volver": es parte del id.
-    CHECK(pantalla.vista() == "Campo");
-    CHECK(pantalla.vistaTextoPlano().find("Id del paciente: 10|") != std::string::npos);
+    // El cero NO fue "volver": es parte del texto.
+    CHECK(pantalla.vista() == "Busqueda");
+    CHECK(pantalla.vistaTextoPlano().find("Nombre, apellido o DNI: 10|") != std::string::npos);
 }
 
 TEST_CASE("el cero de un campo vacio de reportes vuelve al menu", reportes_cero_vuelve) {
@@ -4108,16 +4345,14 @@ TEST_CASE("las tablas de los reportes de turnos entran en 80 columnas",
     // POR PACIENTE (60 columnas con estos datos)
     pantalla.manejar(eventoCaracter('0'));
     pantalla.manejar(eventoCaracter('2'));
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirPersonaEnElBuscador(pantalla, "Valentina");
     CHECK(pantalla.vista() == "Resultado");
     CHECK(anchoNatural(pantalla.renderizar()) <= 80);
 
     // POR MEDICO (61 columnas con estos datos)
     pantalla.manejar(eventoCaracter('0'));
     pantalla.manejar(eventoCaracter('3'));
-    escribir(pantalla, "1");
-    pantalla.manejar(eventoTecla(ui::TipoTecla::Enter));
+    elegirPersonaEnElBuscador(pantalla, "Diego");
     CHECK(pantalla.vista() == "Resultado");
     CHECK(anchoNatural(pantalla.renderizar()) <= 80);
 
@@ -6484,7 +6719,7 @@ TEST_CASE("los errores que la aplicacion produce usan el formato unico",
             medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::GAST));
 
         turnos.manejar(eventoCaracter('1'));
-        llenarFormularioDeAgendar(turnos, "1", "1", fechaDesplazada(30).aTexto(), "10:00");
+        agendarConLasPersonasElegidas(turnos, "Ana", "Beto", fechaDesplazada(30).aTexto(), "10:00");
         turnos.manejar(eventoTecla(ui::TipoTecla::Enter));
         // El formulario tiene un selector de especialidad: se elige la
         // primera (Cardiologia), que no es la del medico.

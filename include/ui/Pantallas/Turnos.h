@@ -122,6 +122,19 @@ private:
     // y lo que cambia despues es lo que se hace con el turno encontrado.
     enum class Accion { Agendar, Cancelar, Reprogramar, Modificar, Detalle };
 
+    // EL PASO DEL BUSCADOR
+    //
+    // El buscador de TURNOS elige un turno (cancelar, reprogramar, modificar
+    // y ver el detalle). El de AGENDAR elige a una PERSONA, y lo hace en DOS
+    // pasos: primero el PACIENTE y despues el MEDICO.
+    //
+    // UN SOLO BUSCADOR PARA LOS TRES
+    //
+    // Los pasos son consecutivos: cuando se elige el paciente, el buscador se
+    // vuelve a abrir para el medico. Un solo widget alcanza: lo que cambia
+    // es DE QUIEN se esta eligiendo.
+    enum class PasoDelBuscador { Turno, Paciente, Medico };
+
     // LOS CRITERIOS DE BUSQUEDA
     //
     // Son seis: el id, el paciente, el medico, la especialidad, el
@@ -136,8 +149,12 @@ private:
     // sueltos, agregar un campo a un formulario movia los valores de otro
     // sin que nadie lo notara.
     struct DatosFormulario {
-        std::string idPaciente;
-        std::string idMedico;
+        // EL PACIENTE Y EL MEDICO ELEGIDOS CON EL BUSCADOR
+        //
+        // No son campos del formulario: los eligio el usuario en los dos
+        // buscadores de "agendar" (-1 si no se eligio ninguno).
+        int idPaciente = -1;
+        int idMedico = -1;
         std::string fecha;
         std::string hora;
         std::string duracion;
@@ -184,6 +201,26 @@ private:
     void moverFoco(int delta);
     DatosFormulario datosDelFormulario() const;
     bool laAccionTieneSelector() const;
+
+    // --- El buscador de personas ---
+    //
+    // EL PACIENTE Y EL MEDICO SE BUSCAN, NO SE ESCRIBEN
+    //
+    // Los dos ids que pedia "agendar" son claves de un archivo: el usuario
+    // no las tiene en la cabeza. Se escriben los datos que el usuario CONOCE
+    // (el nombre, el apellido, el dni, el legajo) y se elige UNA de las
+    // coincidencias.
+    //
+    // LAS MISMAS REGLAS QUE LAS PANTALLAS DE PACIENTES Y DE MEDICOS
+    //
+    // Los criterios son los compartidos (ver `ui::CriteriosDePersonas.h`):
+    // buscar un paciente tiene que comportarse igual en todas las pantallas.
+    void abrirBuscadorDePacientes();
+    void abrirBuscadorDeMedicos();
+    void confirmarPersona();
+    void abrirFormularioDeAgendar();
+    std::vector<Buscador::Coincidencia> coincidenciasDePacientes(const std::string& texto);
+    std::vector<Buscador::Coincidencia> coincidenciasDeMedicos(const std::string& texto);
 
     // --- El buscador de turnos ---
     //
@@ -298,8 +335,19 @@ private:
     int _indiceEspecialidad = 0;
 
     // El buscador de turnos (el de "Cancelar", "Reprogramar", "Modificar" y
-    // "Ver detalle").
+    // "Ver detalle"), y el de las personas (el de "Agendar turno").
     std::unique_ptr<Buscador> _buscador;
+
+    // De que se esta eligiendo la entidad en el buscador.
+    PasoDelBuscador _pasoDelBuscador = PasoDelBuscador::Turno;
+
+    // EL PACIENTE Y EL MEDICO ELEGIDOS CON EL BUSCADOR
+    //
+    // Son los ids que van al turno agendado. Los elige el usuario en los dos
+    // buscadores de "agendar": son claves de un archivo, no un dato que
+    // alguien pueda escribir.
+    int _idPacienteElegido = -1;
+    int _idMedicoElegido = -1;
 
     // El campo del valor que se busca.
     std::unique_ptr<Campo> _campoValor;
