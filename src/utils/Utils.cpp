@@ -49,6 +49,31 @@ constexpr std::uint32_t TABLA_MINUSCULA_LATIN1[] = {
 constexpr std::uint32_t LATIN1_MAYUSCULA_INICIO = 0x00C0;
 constexpr std::uint32_t LATIN1_MAYUSCULA_FIN = 0x00DE;
 
+// Tabla de la LETRA BASE de cada letra acentuada del rango Latin-1
+// Supplement (U+00C0..U+00FF). El indice es (codepoint - 0x00C0).
+//
+// EL VALOR 0 SIGNIFICA "SIN BASE"
+//
+// Son los dos simbolos que viven dentro del rango y no son letras (el signo
+// de multiplicacion y el de division): se copian tal cual.
+//
+// LA MITAD DE ARRIBA ES MAYUSCULA Y LA DE ABAJO MINUSCULA
+//
+// La funcion NO cambia la caja de la letra: solo le saca el signo
+// ("Á" -> "A", "á" -> "a"). El paso a minuscula es de `aMinusculas`.
+constexpr char TABLA_SIN_TILDES[] = {
+    'A', 'A', 'A', 'A', 'A', 'A', 'A', 'C',  // A con... y C con cedilla
+    'E', 'E', 'E', 'E', 'I', 'I', 'I', 'I',  // E con... e I con...
+    'D', 'N', 'O', 'O', 'O', 'O', 'O', '\0', // D con... y el signo de multiplicacion
+    'O', 'U', 'U', 'U', 'U', 'Y', 'P', 'S',  // O con... y U con...
+    'a', 'a', 'a', 'a', 'a', 'a', 'a', 'c',  // a con... y c con cedilla
+    'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i',  // e con... e i con...
+    'd', 'n', 'o', 'o', 'o', 'o', 'o', '\0', // d con... y el signo de division
+    'o', 'u', 'u', 'u', 'u', 'y', 'p', 'y'   // o con... e u con...
+};
+constexpr std::uint32_t LATIN1_TILDES_INICIO = 0x00C0;
+constexpr std::uint32_t LATIN1_TILDES_FIN = 0x00FF;
+
 // Decodifica el codepoint UTF-8 que arranca en la posicion `inicio`.
 // Devuelve true si la secuencia es valida, escribiendo el codepoint y la
 // cantidad de bytes que ocupa. Devuelve false ante cualquier secuencia
@@ -338,6 +363,46 @@ std::string Utils::aMinusculas(const std::string& texto) {
         } else {
             resultado.append(codepointAUtf8(destino));
         }
+        i += largo;
+    }
+
+    return resultado;
+}
+
+std::string Utils::sinTildes(const std::string& texto) {
+    std::string resultado;
+    resultado.reserve(texto.size());
+
+    std::size_t i = 0;
+    while (i < texto.size()) {
+        std::uint32_t codepoint = 0;
+        std::size_t largo = 0;
+        if (!decodificarUtf8(texto, i, codepoint, largo)) {
+            // Secuencia malformada: se copia tal cual para no perder datos.
+            resultado.push_back(texto[i]);
+            ++i;
+            continue;
+        }
+
+        // LA LETRA BASE, SI EL RANGO LA TIENE
+        //
+        // La tabla tiene UNA entrada por codepoint del Latin-1 Supplement, y
+        // el valor 0 dice "esta letra no tiene base" (los dos signos).
+        if (codepoint >= LATIN1_TILDES_INICIO && codepoint <= LATIN1_TILDES_FIN) {
+            const char base = TABLA_SIN_TILDES[codepoint - LATIN1_TILDES_INICIO];
+            if (base != '\0') {
+                resultado.push_back(base);
+                i += largo;
+                continue;
+            }
+        }
+
+        // CUALQUIER OTRO CARACTER SE COPIA TAL CUAL
+        //
+        // El texto no se decodifica y se vuelve a codificar: se copia el
+        // tramo original, asi que un caracter de tres o cuatro bytes no
+        // cambia de forma.
+        resultado.append(texto, i, largo);
         i += largo;
     }
 
