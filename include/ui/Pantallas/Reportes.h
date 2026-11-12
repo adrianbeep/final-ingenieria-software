@@ -5,6 +5,7 @@
 #include "repositories/RepositorioPacientes.h"
 #include "services/ServicioTurnos.h"
 #include "ui/Aplicacion.h"
+#include "ui/Buscador.h"
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Menu.h"
@@ -87,7 +88,7 @@ private:
     //
     // El nombre de cada vista es el que ve el test (`vista()`): por eso son
     // palabras y no numeros.
-    enum class Vista { Menu, Campo, Selector, Resultado, Ocupacion, Bajas };
+    enum class Vista { Menu, Campo, Busqueda, Selector, Resultado, Ocupacion, Bajas };
 
     // QUE REPORTE SE ESTA ARMANDO
     //
@@ -124,6 +125,7 @@ private:
     // --- Los manejadores de cada vista ---
     bool manejarMenu(const Evento& evento);
     bool manejarCampo(const Evento& evento);
+    bool manejarBusqueda(const Evento& evento);
     bool manejarSelector(const Evento& evento);
     bool manejarLectura(const Evento& evento);
 
@@ -134,6 +136,23 @@ private:
     void iniciarOcupacion();
     void mostrarBajas();
     void abrirSelector();
+
+    // --- El buscador de la persona del reporte ---
+    //
+    // EL PACIENTE Y EL MEDICO SE BUSCAN, NO SE ESCRIBEN
+    //
+    // Los ids que pidian los dos reportes de personas son claves de un
+    // archivo: el usuario no las tiene en la cabeza. Se escriben los datos
+    // que CONOCE (el nombre, el apellido, el dni, el legajo) y se elige una
+    // de las coincidencias.
+    //
+    // LOS MISMOS CRITERIOS QUE LAS PANTALLAS DE PACIENTES Y DE MEDICOS
+    //
+    // Los criterios son los compartidos (ver `ui::CriteriosDePersonas.h`):
+    // buscar un paciente tiene que comportarse igual en todas las pantallas.
+    void abrirBuscadorDePacientes();
+    void abrirBuscadorDeMedicos();
+    void confirmarPersona();
 
     // --- La confirmacion ---
     void confirmarCampo();
@@ -176,8 +195,12 @@ private:
     Vista _vista = Vista::Menu;
     Reporte _reporte = Reporte::TurnosPorFecha;
 
-    // El campo de la pregunta del reporte (la fecha o el id).
+    // El campo de la pregunta del reporte (la fecha).
     std::unique_ptr<Campo> _campo;
+
+    // El buscador de la persona del reporte (el de "turnos por paciente" y el
+    // de "turnos por medico").
+    std::unique_ptr<Buscador> _buscador;
 
     // El selector de la especialidad.
     std::unique_ptr<Selector> _selector;

@@ -4,7 +4,9 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "ui/CargarEjemplo.h"
 #include "ui/Contexto.h"
+#include "ui/CriteriosDePersonas.h"
 #include "ui/CrudPersonas.h"
+#include "ui/IdDesdeTexto.h"
 #include "ui/NombresDePersonas.h"
 #include "utils/Fecha.h"
 #include "utils/Utils.h"
@@ -31,8 +33,15 @@
 //
 //   - el camino CORTO (cancelar): buscador -> confirmacion -> la accion.
 //
-//   - el camino LARGO (agendar, reprogramar, modificar): buscador -> formulario
+//   - el camino LARGO (reprogramar, modificar): buscador -> formulario
 //     -> [selector] -> la accion.
+//
+// "AGENDAR" TIENE TRES PASOS
+//
+// El turno es de un PACIENTE y de un MEDICO, y los dos se BUSCAN (no se
+// escriben): primero se elige el paciente, despues el medico y por ultimo se
+// llena el formulario (la fecha, la hora, la duracion y el consultorio). Es
+// el unico camino que no arranca por un turno.
 //
 // El paso del SELECTOR es opcional: solo lo tienen las acciones en las que
 // la especialidad se ELIGE (agendar y modificar). Es el mismo criterio que
@@ -790,8 +799,8 @@ bool PantallaTurnos::manejarBusqueda(const Evento& evento) {
     // EL ENTER ELIGE LA COINCIDENCIA
     //
     // Con un numero escrito que no existe, el buscador deja el error y el
-    // numero en la pantalla: el usuario lo corrige. Sin error, el turno
-    // elegido es el que estaba resaltado.
+    // numero en la pantalla: el usuario lo corrige. Sin error, la entidad
+    // elegida es la que estaba resaltada.
     //
     // EL "ELEGIDO" DEL BUSCADOR ES POR EVENTO
     //
@@ -799,8 +808,17 @@ bool PantallaTurnos::manejarBusqueda(const Evento& evento) {
     // el resaltado con una flecha, esa flecha no puede volver a disparar la
     // accion: el buscador reinicia el "elegido" en cada evento (ver
     // `ui::Buscador::aplicarEvento`).
+    //
+    // EL BUSCADOR ELIGE UNA COSA U OTRA
+    //
+    // El de los turnos elige un TURNO; el de "agendar" elige una PERSONA
+    // (el paciente o el medico, segun el paso en el que se este).
     if (_buscador->elegido()) {
-        confirmarId();
+        if (_pasoDelBuscador == PasoDelBuscador::Turno) {
+            confirmarId();
+        } else {
+            confirmarPersona();
+        }
     }
     return true;
 }
@@ -964,14 +982,104 @@ bool PantallaTurnos::manejarLectura(const Evento& evento) {
 void PantallaTurnos::iniciarAgendar() {
     _accion = Accion::Agendar;
 
+    // EL PACIENTE SE ELIGE PRIMERO
+    //
+    // El turno es de un paciente y de un medico: los dos se BUSCAN (no se
+    // escriben sus ids) y el paciente va primero, que es el que esta
+    // enfrente.
+    _idPacienteElegido = -1;
+    _idMedicoElegido = -1;
+    abrirBuscadorDePacientes();
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE PERSONAS
+//
+// EL PACIENTE Y EL MEDICO SE BUSCAN, NO SE ESCRIBEN
+//
+// Los ids del paciente y del medico son claves de un archivo: el usuario no
+// las tiene en la cabeza. Se escribe un dato que CONOCE (el nombre, el
+// apellido, el dni, el legajo) y se elige una de las coincidencias.
+//
+// LOS MISMOS CRITERIOS QUE LAS PANTALLAS DE PACIENTES Y DE MEDICOS
+//
+// Los criterios son los compartidos (ver `ui::CriteriosDePersonas.h`), asi
+// que buscar un paciente se comporta igual en las cuatro pantallas que lo
+// buscan: con el texto vacio se listan los ACTIVOS (los dados de baja no se
+// pueden atender) y con texto se corre el mismo criterio que corre la
+// pantalla de pacientes.
+//
+// EL CANCELAR VUELVE AL MENU DEL MODULO
+//
+// Los dos pasos son del mismo camino: si el usuario cancela en cualquiera de
+// los dos, vuelve al menu de turnos (no queda a medio camino).
+// ---------------------------------------------------------------------------
+
+void PantallaTurnos::abrirBuscadorDePacientes() {
+    _pasoDelBuscador = PasoDelBuscador::Paciente;
+    _buscador = std::make_unique<Buscador>(
+        "Buscar paciente",
+        pistaDelBuscadorDePacientes(),
+        [this](const std::string& texto) { return coincidenciasDePacientes(texto); });
+    irA(Vista::Busqueda);
+}
+
+void PantallaTurnos::abrirBuscadorDeMedicos() {
+    _pasoDelBuscador = PasoDelBuscador::Medico;
+    _buscador = std::make_unique<Buscador>(
+        "Buscar medico",
+        pistaDelBuscadorDeMedicos(),
+        [this](const std::string& texto) { return coincidenciasDeMedicos(texto); });
+    irA(Vista::Busqueda);
+}
+
+std::vector<Buscador::Coincidencia> PantallaTurnos::coincidenciasDePacientes(
+    const std::string& texto) {
+    return coincidenciasDelBuscadorDePacientes(_pacientes, texto);
+}
+
+std::vector<Buscador::Coincidencia> PantallaTurnos::coincidenciasDeMedicos(
+    const std::string& texto) {
+    return coincidenciasDelBuscadorDeMedicos(_medicos, texto);
+}
+
+void PantallaTurnos::confirmarPersona() {
+    // EL ID VIENE DEL BUSCADOR
+    //
+    // El buscador solo ofrece entidades que EXISTEN (las busca en el
+    // repositorio), asi que el chequeo de abajo no deberia disparar nunca.
+    // Se deja igual: es la red de contencion contra un dato raro.
+    const int id = _buscador ? _buscador->idElegido() : -1;
+    if (id < 0) {
+        irA(Vista::Menu);
+        return;
+    }
+
+    if (_pasoDelBuscador == PasoDelBuscador::Paciente) {
+        // PRIMER PASO: EL PACIENTE
+        _idPacienteElegido = id;
+        // SEGUNDO PASO: EL MEDICO
+        abrirBuscadorDeMedicos();
+        return;
+    }
+
+    // SEGUNDO PASO: EL MEDICO
+    _idMedicoElegido = id;
+    // TERCER PASO: EL FORMULARIO
+    abrirFormularioDeAgendar();
+}
+
+void PantallaTurnos::abrirFormularioDeAgendar() {
     // EL FORMULARIO DE AGENDAR
+    //
+    // El paciente y el medico YA ESTAN ELEGIDOS (con los buscadores): el
+    // formulario solo pide lo demas (la fecha, la hora, la duracion y el
+    // consultorio).
     //
     // El id del turno NO se escribe: lo propone el repositorio
     // (`proximoId()`), que es la unica forma de que dos turnos no tengan
     // el mismo id.
     std::vector<std::unique_ptr<Campo>> campos;
-    campos.push_back(std::make_unique<Campo>("id paciente", "", validadorDeId()));
-    campos.push_back(std::make_unique<Campo>("id medico", "", validadorDeId()));
     campos.push_back(std::make_unique<Campo>("fecha", "", validadorDeFecha()));
     campos.push_back(std::make_unique<Campo>(ETIQUETA_HORA, "", validadorDeHora()));
     campos.push_back(std::make_unique<Campo>("duracion", "", validadorDeDuracion()));
@@ -1012,18 +1120,21 @@ bool PantallaTurnos::laAccionTieneSelector() const {
 PantallaTurnos::DatosFormulario PantallaTurnos::datosDelFormulario() const {
     // LOS DATOS SE LEEN POR ETIQUETA
     //
-    // Cada campo sabe como se llama ("id paciente", "fecha", ...), asi que
-    // el formulario se arma sin indices sueltos: agregar un campo a un
+    // Cada campo sabe como se llama ("fecha", "hora", ...), asi que el
+    // formulario se arma sin indices sueltos: agregar un campo a un
     // formulario no mueve los valores de los otros.
+    //
+    // EL PACIENTE Y EL MEDICO NO SON CAMPOS
+    //
+    // Los eligio el usuario con los buscadores de "agendar": viajan con los
+    // datos de la operacion, no con el formulario.
     DatosFormulario datos;
+    datos.idPaciente = _idPacienteElegido;
+    datos.idMedico = _idMedicoElegido;
     for (const std::unique_ptr<Campo>& campo : _campos) {
         const std::string& etiqueta = campo->etiqueta();
         const std::string valor = campo->valor();
-        if (etiqueta == "id paciente") {
-            datos.idPaciente = valor;
-        } else if (etiqueta == "id medico") {
-            datos.idMedico = valor;
-        } else if (etiqueta == "fecha") {
+        if (etiqueta == "fecha") {
             datos.fecha = valor;
         } else if (etiqueta == ETIQUETA_HORA) {
             datos.hora = valor;
@@ -1151,6 +1262,11 @@ void PantallaTurnos::confirmarSeleccion() {
 
 void PantallaTurnos::abrirBuscador(Accion accion) {
     _accion = accion;
+    // EL BUSCADOR DE LOS TURNOS
+    //
+    // El de "agendar" es otro (el de las personas): el paso dice de que se
+    // esta eligiendo la entidad.
+    _pasoDelBuscador = PasoDelBuscador::Turno;
     _buscador = std::make_unique<Buscador>(
         "Buscar turno",
         "Paciente, medico, especialidad, consultorio, estado o fecha",
@@ -1347,8 +1463,8 @@ void PantallaTurnos::agendarTurno(const DatosFormulario& datos) {
     // regla que usa el resto del sistema (decision R4) y la que garantiza
     // que dos turnos no tengan el mismo id.
     const Turno turno(_turnos.proximoId(),
-                      std::stoi(datos.idMedico),
-                      std::stoi(datos.idPaciente),
+                      datos.idMedico,
+                      datos.idPaciente,
                       especialidadDesdeCodigo(datos.especialidad),
                       fechaCruda(datos.fecha),
                       horaCruda(datos.hora),

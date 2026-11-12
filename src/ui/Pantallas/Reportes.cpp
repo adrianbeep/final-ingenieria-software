@@ -2,6 +2,7 @@
 
 #include "domain/Especialidad.h"
 #include "exceptions/ExcepcionesSistema.h"
+#include "ui/CriteriosDePersonas.h"
 #include "ui/CrudPersonas.h"
 #include "ui/NombresDePersonas.h"
 #include "ui/Pantallas/Medicos.h"
@@ -163,17 +164,14 @@ std::vector<std::string> filaPorEspecialidad(const Turno& turno,
 // LA REGLA ES LA DEL DOMINIO, NO LA DE LA PANTALLA
 //
 // El campo del formulario decide la FORMA del dato (que la fecha se vea como
-// AAAA-MM-DD, que el id sea un numero). El RANGO (que la fecha exista en el
-// calendario, que el paciente exista) NO lo decide el campo: lo decide el
-// dominio, y el error sale como MENSAJE (`ERR <mensaje>`), que es el canal
-// de los errores de la aplicacion.
+// AAAA-MM-DD). El RANGO (que la fecha exista en el calendario) NO lo decide el
+// campo: lo decide el dominio, y el error sale como MENSAJE (`ERR <mensaje>`),
+// que es el canal de los errores de la aplicacion.
 //
-// POR QUE EL ID SE VALIDA CONTRA EL REPOSITORIO
+// EL ID NO SE ESCRIBE: SE BUSCA
 //
-// La consulta del servicio devuelve un vector VACIO si el id no existe, y
-// eso taparia el error de quien escribio el id. La pantalla lo valida antes
-// de preguntar: es lo que hace el motor CRUD con sus ids, y es lo que el
-// propio servicio deja escrito ("la UI valida el id antes de preguntar").
+// Los dos reportes de personas eligen a la persona con un buscador (ver
+// `abrirBuscadorDePacientes`): asi que no hay ningun validador de id aca.
 // ---------------------------------------------------------------------------
 
 // La fecha tiene que tener FORMA AAAA-MM-DD.
@@ -184,38 +182,6 @@ Campo::Validador validadorDeFecha() {
     return [](const std::string& texto) -> std::string {
         if (!Utils::esFormatoFecha(texto)) {
             return "se esperaba AAAA-MM-DD";
-        }
-        return "";
-    };
-}
-
-// El id de un PACIENTE tiene que existir.
-//
-// Un id es un entero POSITIVO. Que exista es otra pregunta.
-Campo::Validador validadorDeIdPaciente(RepositorioPacientes& pacientes) {
-    return [&pacientes](const std::string& texto) -> std::string {
-        const int id = idDesdeTexto(texto);
-        if (id < 0) {
-            return "el id tiene que ser un numero entero mayor que cero";
-        }
-        Paciente paciente;
-        if (!pacientes.buscarPorId(id, paciente)) {
-            return "no existe paciente #" + texto;
-        }
-        return "";
-    };
-}
-
-// El id de un MEDICO tiene que existir.
-Campo::Validador validadorDeIdMedico(RepositorioMedicos& medicos) {
-    return [&medicos](const std::string& texto) -> std::string {
-        const int id = idDesdeTexto(texto);
-        if (id < 0) {
-            return "el id tiene que ser un numero entero mayor que cero";
-        }
-        Medico medico;
-        if (!medicos.buscarPorId(id, medico)) {
-            return "no existe medico #" + texto;
         }
         return "";
     };
@@ -437,6 +403,8 @@ bool PantallaReportes::manejar(const Evento& evento) {
             return manejarMenu(evento);
         case Vista::Campo:
             return manejarCampo(evento);
+        case Vista::Busqueda:
+            return manejarBusqueda(evento);
         case Vista::Selector:
             return manejarSelector(evento);
         case Vista::Resultado:
@@ -494,6 +462,62 @@ bool PantallaReportes::manejarCampo(const Evento& evento) {
     }
 
     return _campo->aplicarEvento(evento);
+}
+
+bool PantallaReportes::manejarBusqueda(const Evento& evento) {
+    if (!_buscador) {
+        return false;
+    }
+
+    // EL `Escape` VUELVE AL MENU
+    //
+    // El buscador NO lo consume (el `Escape` es una tecla de navegacion, no
+    // un dato): lo atiende la pantalla, que sube un nivel.
+    if (esTeclaEscape(evento)) {
+        volverAtras();
+        return true;
+    }
+
+    // EL '0' ES "VOLVER" SOLO SI EL TEXTO ESTA VACIO
+    //
+    // Con algo escrito el '0' es un dato (un dni puede empezar con un cero) y
+    // se lo queda el campo. Y solo cuando el foco esta en el TEXTO: en la
+    // lista el '0' es el numero de una opcion.
+    if (_buscador->focoEnElTexto() && esTeclaVolver(evento) && _buscador->filtro().empty()) {
+        volverAtras();
+        return true;
+    }
+
+    // EL RATON MUEVE EL RESALTADO, NO CONFIRMA
+    //
+    // Un clic elige la fila, pero la confirmacion es el Enter: un clic
+    // accidental no cambia el reporte que se esta viendo.
+    if (evento.esMouse()) {
+        if (!evento.esClic()) {
+            return false;
+        }
+        const int indice = _buscador->coincidenciaEnFila(evento.y, _buscador->filaInicial());
+        if (indice < 0) {
+            // El clic cae fuera de las coincidencias: no se consume.
+            return false;
+        }
+        _buscador->seleccionar(indice);
+        return true;
+    }
+
+    if (!_buscador->aplicarEvento(evento)) {
+        return false;
+    }
+
+    // EL ENTER ELIGE LA COINCIDENCIA
+    //
+    // Con un numero escrito que no existe, el buscador deja el error y el
+    // numero en la pantalla: el usuario lo corrige. Sin error, la persona
+    // elegida es la que estaba resaltada.
+    if (_buscador->elegido()) {
+        confirmarPersona();
+    }
+    return true;
 }
 
 bool PantallaReportes::manejarSelector(const Evento& evento) {
@@ -572,14 +596,92 @@ void PantallaReportes::iniciarTurnosPorFecha() {
 
 void PantallaReportes::iniciarTurnosPorPaciente() {
     _reporte = Reporte::TurnosPorPaciente;
-    _campo = std::make_unique<Campo>("Id del paciente", "", validadorDeIdPaciente(_pacientes));
-    irA(Vista::Campo);
+    abrirBuscadorDePacientes();
 }
 
 void PantallaReportes::iniciarTurnosPorMedico() {
     _reporte = Reporte::TurnosPorMedico;
-    _campo = std::make_unique<Campo>("Id del medico", "", validadorDeIdMedico(_medicos));
-    irA(Vista::Campo);
+    abrirBuscadorDeMedicos();
+}
+
+// ---------------------------------------------------------------------------
+// EL BUSCADOR DE LA PERSONA DEL REPORTE
+//
+// EL PACIENTE Y EL MEDICO SE BUSCAN, NO SE ESCRIBEN
+//
+// Los ids que pedian los dos reportes son claves de un archivo: el usuario no
+// las tiene en la cabeza. Se escribe un dato que CONOCE (el nombre, el
+// apellido, el dni, el legajo) y se elige una de las coincidencias.
+//
+// LOS MISMOS CRITERIOS QUE LAS PANTALLAS DE PACIENTES Y DE MEDICOS
+//
+// Los criterios son los compartidos (ver `ui::CriteriosDePersonas.h`), asi
+// que buscar un paciente se comporta igual en las cuatro pantallas que lo
+// buscan.
+// ---------------------------------------------------------------------------
+
+void PantallaReportes::abrirBuscadorDePacientes() {
+    _buscador = std::make_unique<Buscador>(
+        "Buscar paciente",
+        pistaDelBuscadorDePacientes(),
+        [this](const std::string& texto) {
+            return coincidenciasDelBuscadorDePacientes(_pacientes, texto);
+        });
+    irA(Vista::Busqueda);
+}
+
+void PantallaReportes::abrirBuscadorDeMedicos() {
+    _buscador = std::make_unique<Buscador>(
+        "Buscar medico",
+        pistaDelBuscadorDeMedicos(),
+        [this](const std::string& texto) {
+            return coincidenciasDelBuscadorDeMedicos(_medicos, texto);
+        });
+    irA(Vista::Busqueda);
+}
+
+void PantallaReportes::confirmarPersona() {
+    // EL ID VIENE DEL BUSCADOR
+    //
+    // El buscador solo ofrece entidades que EXISTEN (las busca en el
+    // repositorio), asi que el chequeo de abajo no deberia disparar nunca.
+    // Se deja igual: es la red de contencion contra un dato raro.
+    const int id = _buscador ? _buscador->idElegido() : -1;
+    if (id < 0) {
+        irA(Vista::Menu);
+        return;
+    }
+
+    _filas.clear();
+    switch (_reporte) {
+        case Reporte::TurnosPorPaciente:
+            for (const Turno& turno : _servicioTurnos.turnosDePaciente(id)) {
+                _filas.push_back(filaPorPaciente(turno, _medicos));
+            }
+            _cabeceras = cabecerasPorPaciente();
+            _mensajeVacio = "No hay turnos para ese paciente. 0: volver al menu.";
+            break;
+
+        case Reporte::TurnosPorMedico:
+            for (const Turno& turno : _servicioTurnos.turnosDeMedico(id)) {
+                _filas.push_back(filaPorMedico(turno, _pacientes));
+            }
+            _cabeceras = cabecerasPorMedico();
+            _mensajeVacio = "No hay turnos para ese medico. 0: volver al menu.";
+            break;
+
+        case Reporte::TurnosPorFecha:
+        case Reporte::TurnosPorEspecialidad:
+        case Reporte::OcupacionPorSemana:
+        default:
+            // No deberia llegar aca: los otros reportes no eligen a una
+            // persona con el buscador.
+            irA(Vista::Menu);
+            return;
+    }
+
+    avisarExito(std::to_string(_filas.size()) + " turno(s).");
+    irA(Vista::Resultado);
 }
 
 void PantallaReportes::iniciarOcupacion() {
@@ -674,25 +776,12 @@ void PantallaReportes::confirmarCampo() {
             break;
         }
 
-        case Reporte::TurnosPorPaciente: {
-            const int id = idDesdeTexto(_campo->valor());
-            for (const Turno& turno : _servicioTurnos.turnosDePaciente(id)) {
-                _filas.push_back(filaPorPaciente(turno, _medicos));
-            }
-            _cabeceras = cabecerasPorPaciente();
-            _mensajeVacio = "No hay turnos para ese paciente. 0: volver al menu.";
-            break;
-        }
-
-        case Reporte::TurnosPorMedico: {
-            const int id = idDesdeTexto(_campo->valor());
-            for (const Turno& turno : _servicioTurnos.turnosDeMedico(id)) {
-                _filas.push_back(filaPorMedico(turno, _pacientes));
-            }
-            _cabeceras = cabecerasPorMedico();
-            _mensajeVacio = "No hay turnos para ese medico. 0: volver al menu.";
-            break;
-        }
+        case Reporte::TurnosPorPaciente:
+        case Reporte::TurnosPorMedico:
+            // No deberia llegar aca: el paciente y el medico se ELIGEN con el
+            // buscador (ver `confirmarPersona`), no se escriben.
+            irA(Vista::Menu);
+            return;
 
         case Reporte::TurnosPorEspecialidad:
             // No deberia llegar aca: la especialidad no se escribe, se elige.
@@ -973,6 +1062,36 @@ ftxui::Element PantallaReportes::renderizar() {
                 lineas.push_back(lineaError(_campo->error()));
             }
             break;
+        case Vista::Busqueda: {
+            if (!_buscador) {
+                break;
+            }
+            lineas.push_back(ftxui::text("  " + _buscador->titulo()));
+            // EL CAMPO DEL BUSCADOR
+            //
+            // Se invierte cuando el foco esta en el TEXTO: es la misma
+            // convencion de los demas campos (el foco se ve invertido).
+            ftxui::Element campo = ftxui::text("  " + _buscador->lineaDelCampo());
+            if (_buscador->focoEnElTexto()) {
+                campo = campo | ftxui::inverted;
+            }
+            lineas.push_back(campo);
+            // La coincidencia `i` queda en la fila `filaInicial + i`: el
+            // hit-testing del raton lo necesita.
+            _buscador->definirFilaInicial(static_cast<int>(lineas.size()));
+            // EL DIBUJO DE LA LISTA ES EL COMPARTIDO
+            //
+            // Es el mismo que usa la pantalla de turnos y el del motor CRUD
+            // (ver `ui/RenderDeSelector.h`): asi el resaltado de la opcion
+            // elegida es el mismo en toda la aplicacion.
+            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+                lineas.push_back(elemento);
+            }
+            if (!_buscador->error().empty()) {
+                lineas.push_back(lineaError(_buscador->error()));
+            }
+            break;
+        }
         case Vista::Selector: {
             if (!_selector) {
                 break;
@@ -1025,6 +1144,15 @@ std::string PantallaReportes::ayuda() const {
             return "Flechas: mover   Enter: elegir   0: volver   Esc: volver";
         case Vista::Campo:
             return "Enter: confirmar   0: volver (campo vacio)   Esc: volver";
+        case Vista::Busqueda:
+            // LA AYUDA DE UN BUSCADOR DICE LOS DOS PASOS
+            //
+            // El buscador tiene dos focos: se escribe el texto (Enter busca)
+            // y se elige de la lista (flechas o numero). El '0' vuelve SOLO
+            // con el texto vacio, como en cualquier otro campo de texto (con
+            // algo escrito el '0' es un dato).
+            return "Enter: buscar   Flechas: elegir   Retroceso: corregir   "
+                   "0: volver   Esc: volver";
         case Vista::Selector:
             return "Flechas: mover   Numero: elegir   Enter: confirmar   Esc: volver";
         case Vista::Resultado:
@@ -1046,6 +1174,7 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
     // la referencia que se devuelve tiene que vivir mas que la llamada.
     static const std::string menu = "Menu";
     static const std::string campo = "Campo";
+    static const std::string busqueda = "Busqueda";
     static const std::string selector = "Selector";
     static const std::string resultado = "Resultado";
     static const std::string ocupacion = "Ocupacion";
@@ -1056,6 +1185,8 @@ const std::string& PantallaReportes::nombreDeVista(Vista vista) {
             return menu;
         case Vista::Campo:
             return campo;
+        case Vista::Busqueda:
+            return busqueda;
         case Vista::Selector:
             return selector;
         case Vista::Resultado:
@@ -1090,6 +1221,15 @@ std::string PantallaReportes::textoDeLaVista() const {
             salida += "  " + _campo->etiqueta() + ": " + _campo->textoEnPantalla() + "\n";
             if (!_campo->error().empty()) {
                 salida += "      " + _campo->error() + "\n";
+            }
+            return salida;
+        }
+        case Vista::Busqueda: {
+            if (_buscador) {
+                // La vista en texto plano tiene el MISMO orden que la
+                // dibujada: el titulo, el campo y las lineas de las
+                // coincidencias.
+                salida += _buscador->textoPlano();
             }
             return salida;
         }

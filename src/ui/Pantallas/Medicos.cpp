@@ -5,6 +5,7 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "repositories/IRepositorioBajaLogica.h"
 #include "services/ServicioTurnos.h"
+#include "ui/CriteriosDePersonas.h"
 
 #include <cstddef>
 #include <functional>
@@ -40,24 +41,6 @@ namespace {
 // CORTO. La leyenda que lo explica la dibuja el motor de la ficha, debajo
 // de las tablas (la pone la pantalla, no el motor).
 const char* MARCADOR_DE_ESPECIALIDAD = "*";
-
-// LA FILA DE UN MEDICO
-//
-// Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
-// `email`, `telefono`, `legajo`, `especialidad` y `estado`.
-//
-// La especialidad se muestra con su DESCRIPCION ("Cardiología"), que es lo
-// que el usuario lee: el CODIGO ("CARD") es el dato que viaja en el archivo.
-std::vector<std::string> filaDe(const Medico& medico) {
-    return {std::to_string(medico.getId()),
-            medico.getNombre(),
-            medico.getApellido(),
-            medico.getEmail(),
-            medico.getTelefono(),
-            medico.getLegajo(),
-            descripcionDe(medico.getEspecialidad()),
-            medico.esActivo() ? "activo" : "inactivo"};
-}
 
 // LA FILA DE UN TURNO
 //
@@ -136,9 +119,8 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     config.singular = "medico";
     config.plural = "medicos";
 
-    config.cabeceras = {"id",  "nombre",      "apellido", "email",
-                        "telefono", "legajo", "especialidad", "estado"};
-    config.fila = [](const Medico& medico) { return filaDe(medico); };
+    config.cabeceras = cabecerasDeMedicos();
+    config.fila = [](const Medico& medico) { return filaDeMedico(medico); };
 
     // EL FORMULARIO
     //
@@ -228,48 +210,13 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     // celdas. La pantalla "Buscar" muestra las celdas (en una tabla) y el
     // buscador usa el id (para elegir la entidad).
     //
-    // LAS REGLAS SON LAS DEL REPOSITORIO
+    // LOS CRITERIOS SON COMPARTIDOS
     //
-    // La pantalla NO tiene reglas de busqueda propias: las pregunta al
-    // repositorio, que es quien tiene el conjunto de los medicos. El
-    // "nombre o apellido" usa `buscarPorNombre` (coincidencia PARCIAL e
-    // insensible a mayusculas) y el "legajo" usa `existeLegajo` (coincidencia
-    // EXACTA e insensible a mayusculas, la misma con la que se verifica su
-    // unicidad).
-    config.criterios = {
-        {"id", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             const int id = idDesdeTexto(valor);
-             if (id < 0) {
-                 return coincidencias;
-             }
-             Medico medico;
-             if (repositorio.buscarPorId(id, medico)) {
-                 coincidencias.push_back({medico.getId(), filaDe(medico)});
-             }
-             return coincidencias;
-         }},
-        {"nombre o apellido", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             for (const Medico& medico : repositorio.buscarPorNombre(valor)) {
-                 coincidencias.push_back({medico.getId(), filaDe(medico)});
-             }
-             return coincidencias;
-         }},
-        {"legajo", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             // El repositorio devuelve el id del medico que tiene el legajo:
-             // con ese id se arma la fila.
-             int id = -1;
-             if (!repositorio.existeLegajo(valor, id)) {
-                 return coincidencias;
-             }
-             Medico medico;
-             if (repositorio.buscarPorId(id, medico)) {
-                 coincidencias.push_back({medico.getId(), filaDe(medico)});
-             }
-             return coincidencias;
-         }}};
+    // Viven en `ui::CriteriosDePersonas.h`, no aca: los usan tambien las
+    // pantallas que buscan a un medico para otra cosa (la de turnos al
+    // agendar y la de reportes). Si cada una escribiera los suyos, buscar un
+    // medico se comportaria de una manera en cada pantalla.
+    config.criterios = criteriosDeMedicos(repositorio);
 
     // EL BUSCADOR DE MEDICOS
     //
@@ -277,8 +224,8 @@ CrudPersonas<Medico>::Config configDeMedicos(RepositorioMedicos& repositorio,
     // medico: el apellido y el nombre, la especialidad (que es lo que
     // distingue a dos medicos con el mismo nombre) y el legajo (que es lo que
     // lo identifica). El id va primero: es lo que el buscador devuelve.
-    config.columnasBuscador = {"id", "apellido", "nombre", "especialidad", "legajo"};
-    config.pistaBuscador = "Nombre, apellido, legajo o especialidad";
+    config.columnasBuscador = columnasDelBuscadorDeMedicos();
+    config.pistaBuscador = pistaDelBuscadorDeMedicos();
 
     // EL ROTULO DE LA FICHA
     //

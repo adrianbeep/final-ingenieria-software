@@ -8,6 +8,7 @@
 #include "ui/CargarEjemplo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
+#include "ui/CriterioBusqueda.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
@@ -108,33 +109,12 @@ struct TurnosDePersona {
     std::function<std::string(int)> nota;
 };
 
-// Una coincidencia de una busqueda: el id de la entidad y sus celdas.
+// EL CRITERIO DE BUSQUEDA Y LA COINCIDENCIA VIVEN EN SU PROPIO HEADER
 //
-// EL ID VIAJA CON LA FILA
-//
-// El id NO se deduce de la posicion de una columna: la columna del id puede
-// cambiar de lugar y el buscador devolveria la entidad equivocada. El que
-// busca ya tiene la entidad en la mano, asi que el id lo devuelve con la
-// fila.
-//
-// ES EL MISMO TIPO QUE EL DEL BUSCADOR
-//
-// El `ui::Buscador` devuelve las coincidencias de la misma manera: se reusa
-// su tipo en vez de escribir dos veces la misma definicion.
-using Coincidencia = Buscador::Coincidencia;
-
-// Un criterio de busqueda: como se llama y que devuelve.
-//
-// DEVUELVE LAS COINCIDENCIAS
-//
-// El resultado de una busqueda son VARIAS coincidencias, y cada coincidencia
-// son las celdas de las columnas MAS el id de la entidad. La pantalla
-// "Buscar" las mete en una `ui::Tabla` (con las celdas) y el buscador elige
-// una (con el id).
-struct CriterioBusqueda {
-    std::string etiqueta;
-    std::function<std::vector<Coincidencia>(const std::string&)> buscar;
-};
+// El criterio (y la regla con la que el buscador corre los criterios) lo
+// usan tambien las pantallas que buscan a una persona para otra cosa (la de
+// turnos al agendar y la de reportes). Si vivieran aca, esas pantallas
+// dependerian del motor CRUD entero para tener un criterio.
 
 // El texto en mayusculas.
 //
@@ -159,29 +139,6 @@ inline Evento eventoEnter() {
     Evento evento;
     evento.tipo = TipoTecla::Enter;
     return evento;
-}
-
-// Convierte un texto en un id. Devuelve -1 si el texto NO es un entero
-// valido (o si esta fuera del rango de un id).
-//
-// LA CONVERSION NO LANZA
-//
-// `std::stoi` lanza `std::out_of_range` con un numero enorme, y esa
-// excepcion NO es del sistema: se escaparia sin archivo ni linea. Por eso
-// el texto se valida ANTES de convertir, y la conversion va en un `try`.
-inline int idDesdeTexto(const std::string& texto) {
-    if (!Utils::esEntero(texto)) {
-        return -1;
-    }
-    try {
-        const long long valor = std::stoll(texto);
-        if (valor < 1 || valor > 1000000000LL) {
-            return -1;
-        }
-        return static_cast<int>(valor);
-    } catch (...) {
-        return -1;
-    }
 }
 
 template <class T>
@@ -333,8 +290,8 @@ private:
     void abrirBuscador(Accion accion);
     void confirmarId();
     std::vector<Coincidencia> coincidenciasDelBuscador(const std::string& texto);
+    std::vector<Coincidencia> activosDelBuscador() const;
     std::vector<std::string> celdasDelBuscador(const std::vector<std::string>& fila) const;
-    bool yaEstaEnLasCoincidencias(const std::vector<Coincidencia>& coincidencias, int id) const;
 
     // --- La baja y la reactivation ---
     std::string preguntaDeBaja(const T& entidad) const;
@@ -1116,63 +1073,35 @@ void CrudPersonas<T>::abrirBuscador(Accion accion) {
 
 template <class T>
 std::vector<Coincidencia> CrudPersonas<T>::coincidenciasDelBuscador(const std::string& texto) {
-    std::vector<Coincidencia> coincidencias;
-
-    // CON EL TEXTO VACIO SE MUESTRAN LOS ACTIVOS
+    // LA REGLA DEL BUSCADOR ESTA EN UN SOLO LUGAR
     //
-    // Los criterios NO encuentran nada con un texto vacio: el repositorio
-    // define que una busqueda sin texto no encuentra nada (`buscarPorNombre`
-    // devuelve una lista vacia) y el dni (y el legajo) se comparan EXACTOS,
-    // asi que un texto vacio no es el dni de nadie.
-    //
-    // Pero el usuario que abre el buscador quiere VER la lista: si no, el
-    // buscador arranca vacio y no dice nada. Por eso, con el texto vacio, se
-    // muestran las entidades ACTIVAS: son las que se pueden usar, y son las
-    // que el usuario espera ver al abrir el buscador.
-    //
-    // (Las dadas de baja se siguen BUSCANDO por nombre, dni o legajo: los
-    // criterios las encuentran, asi que la reactivacion se puede hacer
-    // escribiendo el nombre.)
-    if (!Utils::esNoVacio(texto)) {
-        for (const T& entidad : _repositorio.listar()) {
-            const bool activa = _config.esActivo ? _config.esActivo(entidad) : true;
-            if (!activa) {
-                continue;
-            }
-            coincidencias.push_back({entidad.getId(), celdasDelBuscador(_config.fila(entidad))});
-        }
-        return coincidencias;
-    }
-
-    // SE CORREN LOS CRITERIOS Y SE UNEN LOS RESULTADOS
-    //
-    // Sin repetir: el mismo paciente puede coincidir en "nombre o apellido" y
-    // en "dni", y en la lista tiene que aparecer UNA vez. Gana el primero que
-    // aparece (el orden de los criterios es el de la configuracion).
-    for (const CriterioBusqueda& criterio : _config.criterios) {
-        if (!criterio.buscar) {
-            continue;
-        }
-        for (const Coincidencia& coincidencia : criterio.buscar(texto)) {
-            if (yaEstaEnLasCoincidencias(coincidencias, coincidencia.first)) {
-                continue;
-            }
-            coincidencias.push_back(
-                {coincidencia.first, celdasDelBuscador(coincidencia.second)});
-        }
-    }
-    return coincidencias;
+    // Con el texto vacio se listan los activos, y con texto se corren los
+    // criterios de la configuracion sin repetir. Es la MISMA regla que usan
+    // las pantallas que buscan a una persona para otra cosa (la de turnos al
+    // agendar y la de reportes): ver `ui::CriterioBusqueda.h`.
+    return coincidenciasDelBuscadorDePersonas(
+        _config.criterios,
+        [this]() { return activosDelBuscador(); },
+        [this](const std::vector<std::string>& fila) { return celdasDelBuscador(fila); },
+        texto);
 }
 
 template <class T>
-bool CrudPersonas<T>::yaEstaEnLasCoincidencias(const std::vector<Coincidencia>& coincidencias,
-                                                 int id) const {
-    for (const Coincidencia& coincidencia : coincidencias) {
-        if (coincidencia.first == id) {
-            return true;
+std::vector<Coincidencia> CrudPersonas<T>::activosDelBuscador() const {
+    // LAS ENTIDADES ACTIVAS, CON SU FILA
+    //
+    // Son las que se pueden usar: las dadas de baja no. (Se siguen BUSCANDO
+    // por nombre, dni o legajo: los criterios las encuentran, asi que la
+    // reactivacion se puede hacer escribiendo el nombre.)
+    std::vector<Coincidencia> activos;
+    for (const T& entidad : _repositorio.listar()) {
+        const bool activa = _config.esActivo ? _config.esActivo(entidad) : true;
+        if (!activa) {
+            continue;
         }
+        activos.push_back({entidad.getId(), _config.fila(entidad)});
     }
-    return false;
+    return activos;
 }
 
 template <class T>
@@ -1184,17 +1113,7 @@ std::vector<std::string> CrudPersonas<T>::celdasDelBuscador(
     // NOMBRE dentro de `cabeceras`: asi el buscador muestra lo que dice la
     // configuracion y no lo que quede en una posicion. Una columna que no
     // existe queda vacia (nunca se lee una celda de otro lado).
-    std::vector<std::string> celdas;
-    celdas.reserve(_config.columnasBuscador.size());
-    for (const std::string& nombre : _config.columnasBuscador) {
-        const int columna = indiceDeColumna(nombre);
-        if (columna >= 0 && static_cast<std::size_t>(columna) < fila.size()) {
-            celdas.push_back(fila[static_cast<std::size_t>(columna)]);
-        } else {
-            celdas.push_back("");
-        }
-    }
-    return celdas;
+    return celdasDeLasColumnas(fila, _config.cabeceras, _config.columnasBuscador);
 }
 
 // ---------------------------------------------------------------------------
@@ -1519,12 +1438,11 @@ std::string CrudPersonas<T>::singularConMayuscula() const {
 
 template <class T>
 int CrudPersonas<T>::indiceDeColumna(const std::string& nombre) const {
-    for (std::size_t i = 0; i < _config.cabeceras.size(); ++i) {
-        if (_config.cabeceras[i] == nombre) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
+    // LA COLUMNA SE BUSCA POR NOMBRE
+    //
+    // La regla (la de `ui::CriterioBusqueda.h`) la usan el buscador y el
+    // formulario de modificar: los dos buscan la columna por su NOMBRE.
+    return ui::indiceDeColumna(_config.cabeceras, nombre);
 }
 
 // ---------------------------------------------------------------------------

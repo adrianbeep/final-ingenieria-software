@@ -5,6 +5,7 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "repositories/IRepositorioBajaLogica.h"
 #include "services/ServicioTurnos.h"
+#include "ui/CriteriosDePersonas.h"
 
 #include <functional>
 #include <memory>
@@ -36,20 +37,6 @@
 namespace ui {
 namespace Pantallas {
 namespace {
-
-// LA FILA DE UN PACIENTE
-//
-// Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
-// `email`, `telefono`, `dni` y `estado`.
-std::vector<std::string> filaDe(const Paciente& paciente) {
-    return {std::to_string(paciente.getId()),
-            paciente.getNombre(),
-            paciente.getApellido(),
-            paciente.getEmail(),
-            paciente.getTelefono(),
-            paciente.getDni(),
-            paciente.esActivo() ? "activo" : "inactivo"};
-}
 
 // LA FILA DE UN TURNO
 //
@@ -98,8 +85,8 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     config.singular = "paciente";
     config.plural = "pacientes";
 
-    config.cabeceras = {"id", "nombre", "apellido", "email", "telefono", "dni", "estado"};
-    config.fila = [](const Paciente& paciente) { return filaDe(paciente); };
+    config.cabeceras = cabecerasDePacientes();
+    config.fila = [](const Paciente& paciente) { return filaDePaciente(paciente); };
 
     // EL FORMULARIO
     //
@@ -141,49 +128,13 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     // celdas. La pantalla "Buscar" muestra las celdas (en una tabla) y el
     // buscador usa el id (para elegir la entidad).
     //
-    // LAS REGLAS SON LAS DEL REPOSITORIO
+    // LOS CRITERIOS SON COMPARTIDOS
     //
-    // La pantalla NO tiene reglas de busqueda propias: las pregunta al
-    // repositorio, que es quien tiene el conjunto de los pacientes. El "nombre
-    // o apellido" usa `buscarPorNombre` (coincidencia PARCIAL e insensible a
-    // mayusculas) y el "dni" usa `existeDni` (coincidencia EXACTA
-    // e insensible a mayusculas, la misma con la que se verifica su
-    // unicidad). Si la pantalla copiara la regla, habria DOS reglas que se
-    // pueden desincronizar.
-    config.criterios = {
-        {"id", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             const int id = idDesdeTexto(valor);
-             if (id < 0) {
-                 return coincidencias;
-             }
-             Paciente paciente;
-             if (repositorio.buscarPorId(id, paciente)) {
-                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
-             }
-             return coincidencias;
-         }},
-        {"nombre o apellido", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             for (const Paciente& paciente : repositorio.buscarPorNombre(valor)) {
-                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
-             }
-             return coincidencias;
-         }},
-        {"dni", [&repositorio](const std::string& valor) {
-             std::vector<Coincidencia> coincidencias;
-             // El repositorio devuelve el id del paciente que tiene el
-             // dni: con ese id se arma la fila.
-             int id = -1;
-             if (!repositorio.existeDni(valor, id)) {
-                 return coincidencias;
-             }
-             Paciente paciente;
-             if (repositorio.buscarPorId(id, paciente)) {
-                 coincidencias.push_back({paciente.getId(), filaDe(paciente)});
-             }
-             return coincidencias;
-         }}};
+    // Viven en `ui::CriteriosDePersonas.h`, no aca: los usan tambien las
+    // pantallas que buscan a un paciente para otra cosa (la de turnos al
+    // agendar y la de reportes). Si cada una escribiera los suyos, buscar un
+    // paciente se comportaria de una manera en cada pantalla.
+    config.criterios = criteriosDePacientes(repositorio);
 
     // EL BUSCADOR DE PACIENTES
     //
@@ -191,8 +142,8 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     // la persona: el apellido y el nombre (que es como se la llama) y el dni
     // (que es lo que la distingue de los homonimos). El id va primero: es lo
     // que el buscador devuelve.
-    config.columnasBuscador = {"id", "apellido", "nombre", "dni"};
-    config.pistaBuscador = "Nombre, apellido o DNI";
+    config.columnasBuscador = columnasDelBuscadorDePacientes();
+    config.pistaBuscador = pistaDelBuscadorDePacientes();
 
     // EL ROTULO DE LA FICHA
     //
