@@ -4,6 +4,7 @@
 #include "persistence/ArchivoTexto.h"
 #include "repositories/IRepositorio.h"
 #include "structures/ArbolBST.h"
+#include "structures/ListaEnlazada.h"
 #include "utils/Utils.h"
 
 #include <cstddef>
@@ -58,6 +59,11 @@ struct TieneNombreYApellido<T, std::void_t<
 // EL BACKING: un `ArbolBST<T>` (la coleccion ordenada por clave) y un
 // `ArchivoTexto<T>` (la capa de archivos). El repositorio es la costura entre
 // los dos, y es el UNICO lugar donde se conoce a los dos.
+//
+// ENTRE LOS DOS ESTA LA LISTA: la `ListaEnlazada<T>` es la forma en que un
+// archivo de datos vive en memoria. `persistir()` arma la lista con el
+// recorrido en orden del arbol y se la entrega al archivo; `cargar()` la
+// recibe del archivo y reconstruye el arbol con ella.
 //
 // ESTA CAPA NO TIENE REGLAS DE NEGOCIO
 //
@@ -387,9 +393,12 @@ void RepositorioCRUD<T>::cargar() {
     // Si el archivo NO existe, se crea vacio y NO se falla: la aplicacion
     // no puede romperse al arrancar por un archivo que todavia no esta.
     // Es el mismo criterio que usa la capa de persistencia con `crearVacio`.
-    std::vector<T> registros;
+    //
+    // La lectura pasa por la LISTA: es la representacion en memoria del
+    // archivo de datos.
+    ListaEnlazada<T> registros;
     try {
-        registros = _archivo.cargar();
+        registros = _archivo.cargarEnLista();
     } catch (const ArchivoNoEncontradoException&) {
         _archivo.crearVacio();
         _arbol.construirDesdeOrdenados(std::vector<T>());
@@ -404,12 +413,24 @@ void RepositorioCRUD<T>::cargar() {
     // `construirDesdeOrdenados()` es O(n) y arma un arbol balanceado
     // (altura ~log2(n)): el archivo YA viene ordenado por id, asi que el
     // arbol balanceado sale gratis.
-    _arbol.construirDesdeOrdenados(std::move(registros));
+    //
+    // POR QUE LA LISTA SE CONVIERTE EN VECTOR
+    //
+    // `construirDesdeOrdenados()` es divide y conqueras: el elemento del
+    // medio es la raiz, asi que necesita acceso ALEATORIO a la secuencia.
+    // La lista no lo tiene (y no lo va a tener: `operator[]` en una lista
+    // enlazada seria O(n)), asi que el puente es `aVector()`. El archivo
+    // esta ordenado por id, asi que la lista tambien: la conversion no
+    // cambia el orden.
+    _arbol.construirDesdeOrdenados(registros.aVector());
 }
 
 template <class T>
 void RepositorioCRUD<T>::persistir() {
-    // Se escribe SIEMPRE el vector ordenado del arbol: `ArchivoTexto` no
+    // Se escribe SIEMPRE la lista ordenada del arbol: `ArchivoTexto` no
     // conoce el arbol, escribe lo que le dan en el orden en que lo recibe.
-    _archivo.guardar(_arbol.inOrder());
+    //
+    // La lista es la representacion en memoria del archivo: el recorrido en
+    // orden del arbol la arma y el archivo la escribe registro por registro.
+    _archivo.guardar(_arbol.inOrderEnLista());
 }

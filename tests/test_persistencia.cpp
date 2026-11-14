@@ -7,6 +7,7 @@
 #include "exceptions/ExcepcionesSistema.h"
 #include "persistence/ArchivoTexto.h"
 #include "structures/ArbolBST.h"
+#include "structures/ListaEnlazada.h"
 #include "utils/Fecha.h"
 #include "utils/Utils.h"
 
@@ -483,6 +484,131 @@ TEST_CASE("la baja logica sobrevive al round trip", persistencia_round_trip_baja
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
     CHECK(Utils::separar(lineas[2], '|')[5] == "0");
+}
+
+// ---------------------------------------------------------------------------
+// LA RUTA DE LA LISTA
+//
+// La lista es la representacion en memoria del archivo de datos: por ella
+// pasan las lecturas y las escrituras. Lo que se prueba ACA:
+//
+//   - el round trip por la lista (guardar una lista y cargarla de vuelta)
+//   - que el ARCHIVO que sale es IDENTICO al de la otra ruta: el formato no
+//     depende de la estructura de la que se leen los registros
+//   - que la semilla commiteada se relee y se reescribe byte a byte igual
+//   - que la ruta nueva no deja nodos vivos
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el round trip por la lista conserva todos los campos",
+          persistencia_round_trip_por_lista) {
+    std::vector<Paciente> originales;
+    for (int id = 1; id <= 100; ++id) {
+        originales.push_back(pacienteDePrueba(id));
+    }
+
+    const std::string ruta = rutaDePrueba("lista_round_trip.dat");
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+
+    ListaEnlazada<Paciente> lista;
+    for (const Paciente& paciente : originales) {
+        lista.insertarFinal(paciente);
+    }
+    archivo.guardar(lista);
+
+    const ListaEnlazada<Paciente> cargados = archivo.cargarEnLista();
+    CHECK(cargados.size() == originales.size());
+
+    // Campo por campo (como en el round trip por vector): `operator==`
+    // compararia solo el id y el test pasaria aunque se perdiera el nombre.
+    std::size_t i = 0;
+    for (const Paciente& cargado : cargados) {
+        CHECK(i < originales.size());
+        if (i < originales.size()) {
+            CHECK(cargado.getId() == originales[i].getId());
+            CHECK(cargado.getNombre() == originales[i].getNombre());
+            CHECK(cargado.getApellido() == originales[i].getApellido());
+            CHECK(cargado.getEmail() == originales[i].getEmail());
+            CHECK(cargado.getTelefono() == originales[i].getTelefono());
+            CHECK(cargado.esActivo() == originales[i].esActivo());
+            CHECK(cargado.getDni() == originales[i].getDni());
+        }
+        ++i;
+    }
+    CHECK(i == originales.size());
+}
+
+TEST_CASE("las dos rutas escriben el mismo archivo byte a byte",
+          persistencia_bytes_identicos_por_lista) {
+    std::vector<Paciente> registros;
+    for (int id = 1; id <= 25; ++id) {
+        registros.push_back(pacienteDePrueba(id));
+    }
+
+    // La ruta del vector.
+    const std::string rutaVector = rutaDePrueba("bytes_vector.dat");
+    ArchivoTexto<Paciente> archivoVector(rutaVector, "PACIENTES");
+    archivoVector.guardar(registros);
+
+    // La ruta de la lista, con los MISMOS registros.
+    ListaEnlazada<Paciente> lista;
+    for (const Paciente& paciente : registros) {
+        lista.insertarFinal(paciente);
+    }
+    const std::string rutaLista = rutaDePrueba("bytes_lista.dat");
+    ArchivoTexto<Paciente> archivoLista(rutaLista, "PACIENTES");
+    archivoLista.guardar(lista);
+
+    // Los bytes son IDENTICOS: el formato del archivo no depende de la
+    // estructura de la que se leen los registros.
+    CHECK(leerArchivo(rutaVector) == leerArchivo(rutaLista));
+    CHECK(!leerArchivo(rutaVector).empty());
+}
+
+TEST_CASE("la semilla se relee y se reescribe byte a byte igual por la ruta de la lista",
+          persistencia_semilla_bytes_identicos) {
+    // La semilla es el archivo commiteado: si la ruta de la lista lo altera
+    // en un byte, el repositorio empieza a escribir archivos distintos a
+    // los que estan en el repositorio.
+    const std::string rutaSemilla = rutaDeSemilla("pacientes.dat");
+    CHECK(!rutaSemilla.empty());
+    if (rutaSemilla.empty()) {
+        return;
+    }
+
+    ArchivoTexto<Paciente> archivo(rutaSemilla, "PACIENTES");
+    const ListaEnlazada<Paciente> cargados = archivo.cargarEnLista();
+    CHECK(cargados.size() == 13);
+
+    // Se relee con la lista y se reescribe con la lista: el archivo que sale
+    // tiene que ser IDENTICO al commiteado.
+    const std::string ruta = rutaDePrueba("semilla_reescrita.dat");
+    ArchivoTexto<Paciente> salida(ruta, "PACIENTES");
+    salida.guardar(cargados);
+
+    CHECK(leerArchivo(ruta) == leerArchivo(rutaSemilla));
+}
+
+TEST_CASE("la ruta de la lista no deja nodos vivos", persistencia_lista_sin_fugas) {
+    CHECK(ListaEnlazada<Paciente>::nodosVivos() == 0);
+
+    {
+        const std::string ruta = rutaDePrueba("lista_fugas.dat");
+        ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+
+        ListaEnlazada<Paciente> lista;
+        for (int id = 1; id <= 10; ++id) {
+            lista.insertarFinal(pacienteDePrueba(id));
+        }
+        archivo.guardar(lista);
+
+        const ListaEnlazada<Paciente> cargados = archivo.cargarEnLista();
+        CHECK(cargados.size() == 10);
+        CHECK(ListaEnlazada<Paciente>::nodosVivos() == 20);
+    }
+
+    // Las dos listas (la guardada y la cargada) se destruyeron: no queda
+    // ningun nodo vivo.
+    CHECK(ListaEnlazada<Paciente>::nodosVivos() == 0);
 }
 
 TEST_CASE("las 12 especialidads viajan por codigo y vuelven por codigo",

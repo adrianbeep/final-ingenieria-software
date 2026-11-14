@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -253,4 +254,128 @@ TEST_CASE("la lista solo necesita operator==: no exige operator<",
     CHECK(lista.eliminar(SoloIgualdad{1}));
     CHECK(lista.size() == 1);
     CHECK(!lista.eliminar(SoloIgualdad{1}));
+}
+
+// ---------------------------------------------------------------------------
+// RECORRIDO EN UN CONTEXTO `const`
+//
+// La capa de persistencia recibe la lista por `const&`: sin iteradores
+// constantes, la lista no se podria recorrer ahi.
+// ---------------------------------------------------------------------------
+
+// El iterador de una lista CONSTANTE tiene que devolver `const T&`: si
+// devolviera `T&`, una lista constante se podria modificar a traves del
+// recorrido. Es una comprobacion de COMPILACION: si el tipo cambia, el
+// proyecto deja de compilar.
+static_assert(std::is_same<decltype(*std::declval<const ListaEnlazada<Entero>&>().begin()),
+                           const Entero&>::value,
+              "el iterador de una lista constante tiene que dar 'const Entero&'");
+
+// Y el de una lista que NO es constante sigue dando `T&`: el recorrido de
+// lectura no le saca el poder de escribir.
+static_assert(std::is_same<decltype(*std::declval<ListaEnlazada<Entero>&>().begin()),
+                           Entero&>::value,
+              "el iterador de una lista mutable tiene que dar 'Entero&'");
+
+TEST_CASE("la lista se recorre en un contexto const", estructuras_lista_recorrido_const) {
+    ListaEnlazada<Entero> lista;
+    lista.insertarFinal(Entero{3});
+    lista.insertarFinal(Entero{1});
+    lista.insertarFinal(Entero{2});
+
+    // La lista llega por `const&`: es como la recibe la capa de
+    // persistencia.
+    const ListaEnlazada<Entero>& constante = lista;
+
+    std::vector<int> vistos;
+    for (const Entero& e : constante) {
+        vistos.push_back(e.v);
+    }
+    CHECK(vistos.size() == 3);
+    CHECK(vistos[0] == 3);
+    CHECK(vistos[1] == 1);
+    CHECK(vistos[2] == 2);
+}
+
+TEST_CASE("el iterador constante no modifica la lista ni invalida nada",
+          estructuras_lista_iterador_const_no_invalida) {
+    ListaEnlazada<Entero> lista;
+    for (int i = 1; i <= 5; ++i) {
+        lista.insertarFinal(Entero{i});
+    }
+
+    const std::size_t tamanoAntes = lista.size();
+    const int nodosAntes = ListaEnlazada<Entero>::nodosVivos();
+
+    const ListaEnlazada<Entero>& constante = lista;
+    for (auto it = constante.cbegin(); it != constante.cend(); ++it) {
+        CHECK((*it).v >= 1);
+        CHECK((*it).v <= 5);
+    }
+
+    // Recorrer no creo nodos, no borro nodos y no cambio el tamano: la
+    // lista quedo EXACTAMENTE como estaba.
+    CHECK(lista.size() == tamanoAntes);
+    CHECK(ListaEnlazada<Entero>::nodosVivos() == nodosAntes);
+}
+
+TEST_CASE("el iterador constante funciona con los algoritmos de la biblioteca",
+          estructuras_lista_iterador_const_algoritmos) {
+    ListaEnlazada<Entero> lista;
+    lista.insertarFinal(Entero{1});
+    lista.insertarFinal(Entero{2});
+    lista.insertarFinal(Entero{3});
+
+    const ListaEnlazada<Entero>& constante = lista;
+
+    const auto encontrado = std::find(constante.begin(), constante.end(), Entero{2});
+    CHECK(encontrado != constante.end());
+    CHECK((*encontrado).v == 2);
+
+    const int pares = std::count_if(constante.begin(), constante.end(),
+                                     [](const Entero& e) { return e.v % 2 == 0; });
+    CHECK(pares == 1);
+}
+
+TEST_CASE("aVector devuelve los mismos elementos en el mismo orden",
+          estructuras_lista_a_vector) {
+    ListaEnlazada<Entero> lista;
+    lista.insertarFinal(Entero{3});
+    lista.insertarFinal(Entero{1});
+    lista.insertarFinal(Entero{2});
+
+    const std::vector<Entero> vector = lista.aVector();
+    CHECK(vector.size() == 3);
+    CHECK(vector[0].v == 3);
+    CHECK(vector[1].v == 1);
+    CHECK(vector[2].v == 2);
+
+    // Y el vector tiene los MISMOS elementos que la lista, no solo el mismo
+    // tamano: el recorrido es el de la lista.
+    std::size_t i = 0;
+    for (const Entero& e : lista) {
+        CHECK(i < vector.size());
+        if (i < vector.size()) {
+            CHECK(e.v == vector[i].v);
+        }
+        ++i;
+    }
+    CHECK(i == vector.size());
+}
+
+TEST_CASE("aVector de una lista vacia es un vector vacio",
+          estructuras_lista_a_vector_vacia) {
+    const ListaEnlazada<Entero> lista;
+    CHECK(lista.aVector().empty());
+}
+
+TEST_CASE("aVector de una lista constante tambien funciona",
+          estructuras_lista_a_vector_const) {
+    ListaEnlazada<Entero> lista;
+    lista.insertarFinal(Entero{7});
+
+    const ListaEnlazada<Entero>& constante = lista;
+    const std::vector<Entero> vector = constante.aVector();
+    CHECK(vector.size() == 1);
+    CHECK(vector[0].v == 7);
 }

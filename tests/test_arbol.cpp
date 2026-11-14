@@ -3,6 +3,7 @@
 #include "entities/Paciente.h"
 #include "entities/Persona.h"
 #include "structures/ArbolBST.h"
+#include "structures/ListaEnlazada.h"
 
 #include <cstddef>
 #include <string>
@@ -233,6 +234,40 @@ TEST_CASE("inOrder devuelve los valores estrictamente ascendentes",
     CHECK(esAscendente(porCallback));
     CHECK(std::equal(porCallback.begin(), porCallback.end(), ordenados.begin(),
                      [](const int& a, const Entero& b) { return a == b.v; }));
+}
+
+TEST_CASE("inOrderEnLista devuelve la misma secuencia que inOrder",
+          estructuras_arbol_in_order_en_lista) {
+    ArbolBST<Entero> arbol;
+    const std::vector<int> valores = permutacionDeterminista(50);
+    for (const int v : valores) {
+        CHECK(arbol.insertar(Entero{v}));
+    }
+
+    const std::vector<Entero> conVector = arbol.inOrder();
+    const ListaEnlazada<Entero> conLista = arbol.inOrderEnLista();
+
+    // La lista tiene la MISMA cantidad de elementos...
+    CHECK(conLista.size() == conVector.size());
+    CHECK(conLista.size() == 50);
+
+    // ...y la MISMA secuencia, en el MISMO orden: la lista no ordena (no
+    // tiene `operator<`), recibe la secuencia YA ordenada.
+    std::size_t i = 0;
+    for (const Entero& e : conLista) {
+        CHECK(i < conVector.size());
+        if (i < conVector.size()) {
+            CHECK(e.v == conVector[i].v);
+        }
+        ++i;
+    }
+    CHECK(i == conVector.size());
+}
+
+TEST_CASE("inOrderEnLista de un arbol vacio es una lista vacia",
+          estructuras_arbol_in_order_en_lista_vacia) {
+    const ArbolBST<Entero> arbol;
+    CHECK(arbol.inOrderEnLista().vacio());
 }
 
 TEST_CASE("size es O(1): las consultas no recontan los nodos",

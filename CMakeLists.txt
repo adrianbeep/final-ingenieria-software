@@ -147,14 +147,16 @@ target_include_directories(structures INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/inc
 # Mismo caso que `structures`: `ArchivoTexto<T>` es un TEMPLATE, asi que vive
 # entero en include/persistence/ArchivoTexto.h y no hay .cpp que compilar.
 #
-# A diferencia de `structures`, este SI propaga una dependencia: usa
-# `Utils::separar` y `DatoInvalidoException`, que estan en `core`. Se declara
-# con la palabra clave INTERFACE, que es la unica valida para un target
-# INTERFACE: lo que se lista aca lo reciben TODOS los que enlacen con
-# `persistencia` (incluidos sus directorios de include y la libreria `core`).
+# A diferencia de `structures`, este SI propaga dependencias: usa
+# `Utils::separar` y `DatoInvalidoException`, que estan en `core`, y la
+# `ListaEnlazada<T>` (la representacion en memoria del archivo de datos),
+# que esta en `structures`. Se declara con la palabra clave INTERFACE, que es
+# la unica valida para un target INTERFACE: lo que se lista aca lo reciben
+# TODOS los que enlacen con `persistencia` (incluidos sus directorios de
+# include y la libreria `core`).
 add_library(persistencia INTERFACE)
 target_include_directories(persistencia INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(persistencia INTERFACE core)
+target_link_libraries(persistencia INTERFACE core structures)
 
 # --- repositorios: las interfaces y el template CRUD ---
 # `IRepositorio<T>`, `IRepositorioBajaLogica<T>` y `RepositorioCRUD<T>` son

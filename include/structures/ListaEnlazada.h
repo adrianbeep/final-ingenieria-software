@@ -2,18 +2,22 @@
 
 #include <cstddef>
 #include <iterator>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // ListaEnlazada<T>: lista simplemente enlazada, escrita a mano.
 //
-// ES EL HISTORIAL DE TURNOS: recorrido secuencial, orden de insercion.
+// ES LA REPRESENTACION EN MEMORIA DE UN ARCHIVO DE DATOS: por ella pasan
+// TODAS las lecturas y TODAS las escrituras de `data/*.dat`. Recorrido
+// secuencial y orden de insercion.
 //
 // ---------------------------------------------------------------------------
 // POR QUE UNA LISTA Y NO UN `std::vector`
 //
 // Porque el requisito 7 de la consigna pide una estructura IMPLEMENTADA POR
-// EL PACIENTE, y porque el caso de uso real calza: el historial es append-only
-// (crece al final), de solo lectura y sin busquedas.
+// EL PACIENTE, y porque es la estructura por la que pasan las lecturas y las
+// escrituras de los archivos de datos: `ArchivoTexto<T>` lee y escribe a
+// traves de una `ListaEnlazada<T>`.
 //
 //   `std::vector<T>`                  `ListaEnlazada<T>`
 //   -------------------------------   ---------------------------------
@@ -22,9 +26,10 @@
 //   invalida iteradores y punteros
 //   recorrer: O(n) cache-friendly     recorrer: O(n) con salto de punteros
 //
-// La respuesta honesta: para el historial, un vector seria mas eficiente. La
-// lista esta porque el requisito la pide y porque el historial es el caso
-// canonico de una lista. No es una decision de rendimiento.
+// La respuesta honesta: para el caso de uso concreto del historial de turnos
+// (append-only, de solo lectura y sin busquedas) un `std::vector<T>` seria
+// mas eficiente. La lista esta porque el requisito la pide y porque es la
+// estructura de la capa de persistencia. No es una decision de rendimiento.
 //
 // ---------------------------------------------------------------------------
 // EL CONTRATO DEL TIPO `T`
@@ -107,6 +112,52 @@ public:
         friend class ListaEnlazada;
     };
 
+    // ------------------------------------------------------------------------
+    // Iterador de SOLO LECTURA: el que se usa cuando la lista llega por
+    // `const&` (un archivo, un arbol, un parametro).
+    //
+    // ES EL MISMO recorrido que `Iterador`, pero sobre nodos `const`: por eso
+    // `operator*` devuelve `const T&` y no `T&`. Con un solo iterador, una
+    // lista constante se podria modificar a traves del recorrido.
+    //
+    // Sin este iterador la lista no se podria recorrer donde el contenedor
+    // llega por `const&`, que es el caso de la capa de persistencia.
+    // ------------------------------------------------------------------------
+    class IteradorConst {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = T;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const T*;
+        using reference = const T&;
+
+        IteradorConst() = default;
+        explicit IteradorConst(const Nodo* nodo_) : nodo(nodo_) {}
+
+        reference operator*() const { return nodo->valor; }
+        pointer operator->() const { return &nodo->valor; }
+
+        IteradorConst& operator++() {
+            nodo = nodo->sig;
+            return *this;
+        }
+
+        // El post-incremento COPIA ANTES de avanzar (como en `Iterador`): si
+        // se avanzara primero, el iterador devuelto apuntaria al nodo
+        // siguiente.
+        IteradorConst operator++(int) {
+            IteradorConst copia = *this;
+            ++(*this);
+            return copia;
+        }
+
+        bool operator==(const IteradorConst& otro) const { return nodo == otro.nodo; }
+        bool operator!=(const IteradorConst& otro) const { return nodo != otro.nodo; }
+
+    private:
+        const Nodo* nodo = nullptr;
+    };
+
     // --- Regla de Cinco: las CINCO operaciones, todas explicitas ---
     ListaEnlazada() = default;
     ~ListaEnlazada() { liberar(); }
@@ -126,8 +177,29 @@ public:
     bool vacio() const { return tam == 0; }    // O(1)
 
     // --- Recorrido ---
+    //
+    // DOS iteradores, como en cualquier contenedor: el de lectura (`Iterador`)
+    // y el de SOLO LECTURA (`IteradorConst`).
+    //
+    // `begin()` y `end()` tienen las DOS versiones: la que no es `const`
+    // devuelve el iterador de lectura y la `const` devuelve el de solo
+    // lectura. Sin la version `const` la lista no se podria recorrer donde el
+    // contenedor llega por `const&`, que es el caso de la capa de
+    // persistencia (el archivo y el arbol la reciben por `const&`).
     Iterador begin() { return Iterador(cabeza); }
     Iterador end() { return Iterador(nullptr); }
+    IteradorConst begin() const { return IteradorConst(cabeza); }
+    IteradorConst end() const { return IteradorConst(nullptr); }
+    IteradorConst cbegin() const { return IteradorConst(cabeza); }
+    IteradorConst cend() const { return IteradorConst(nullptr); }
+
+    // Copia los elementos a un `std::vector`, en el MISMO orden.
+    //
+    // ES EL PUENTE entre la lista y el resto del codigo. La lista NO tiene
+    // `operator[]`: en una lista enlazada seria O(n) y peor diseno que un
+    // vector. El codigo que necesita acceso aleatorio (el arbol, que se
+    // construye balanceado por divide y conqueras) pasa por esta conversion.
+    std::vector<T> aVector() const;
 
     // Nodos vivos de esta instanciacion: el detector de fugas portable
     // (decision S4). Es `static` DENTRO de una plantilla, asi que hay un
@@ -289,4 +361,17 @@ bool ListaEnlazada<T>::eliminar(const T& valor_) {
         actual = actual->sig;
     }
     return false;
+}
+
+// CONVERSION A VECTOR: recorre la lista en orden y copia cada elemento.
+//
+// El `reserve` es solo una optimizacion: el tamanio ya se sabe (`tam`).
+template <class T>
+std::vector<T> ListaEnlazada<T>::aVector() const {
+    std::vector<T> salida;
+    salida.reserve(tam);
+    for (const T& valor : *this) {
+        salida.push_back(valor);
+    }
+    return salida;
 }
