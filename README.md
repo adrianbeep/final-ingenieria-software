@@ -98,7 +98,8 @@ tests/      arnes de tests propio (sin framework externo)
 data/       datos de trabajo: los archivos que usa la aplicacion
 data/ejemplo/  la semilla: los datos de ejemplo, para empezar de cero
 third_party/  FTXUI, vendorizada (ver la decision 18)
-docs/       decisiones de diseno (la trazabilidad llega en la Fase 8)
+docs/       el diagrama de clases del dominio y las decisiones de diseno
+            (docs/DiagramaDeClases.md y docs/decisiones.md)
 ```
 
 Los TADs genericos (`ArbolBST`, `ListaEnlazada`, `ArchivoTexto`, `RepositorioCRUD`)
