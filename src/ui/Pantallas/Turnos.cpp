@@ -36,15 +36,32 @@
 //   - el camino LARGO (reprogramar, modificar): buscador -> formulario
 //     -> [selector] -> la accion.
 //
-// "AGENDAR" TIENE TRES PASOS
+// "AGENDAR" TIENE CUATRO PASOS
 //
-// El turno es de un PACIENTE y de un MEDICO, y los dos se BUSCAN (no se
-// escriben): primero se elige el paciente, despues el medico y por ultimo se
-// llena el formulario (la fecha, la hora, la duracion y el consultorio). Es
-// el unico camino que no arranca por un turno.
+// El turno es de un PACIENTE, de una ESPECIALIDAD y de un MEDICO, y los tres
+// se ELIGEN (no se escriben): primero se elige el paciente, despues la
+// especialidad, despues el medico y por ultimo se llena el formulario (la
+// fecha, la hora, la duracion y el consultorio). Es el unico camino que no
+// arranca por un turno.
 //
-// El paso del SELECTOR es opcional: solo lo tienen las acciones en las que
-// la especialidad se ELIGE (agendar y modificar). Es el mismo criterio que
+// LA ESPECIALIDAD VA ANTES DEL MEDICO
+//
+// Antes se elegia al FINAL (despues del formulario), cuando el medico ya
+// estaba elegido: se le preguntaba al usuario un dato que ya se sabia (la
+// especialidad del medico) y, si no coincidia, el servicio lo rechazaba con
+// la regla 2b. Ahora la especialidad se elige antes, asi que el buscador de
+// medicos sale FILTRADO por ella y el turno sale con la especialidad del
+// medico por CONSTRUCCION: la contradiccion no se puede escribir.
+//
+// "MODIFICAR" NO CAMBIA
+//
+// Ahi la especialidad se sigue preguntando al final del formulario: es el
+// dato HISTORICO del turno, que se puede corregir (decision D21).
+//
+// EL PASO DEL SELECTOR ES EL MISMO PARA LOS DOS FLUJOS
+//
+// El selector de la especialidad es uno solo: en "agendar" abre el buscador
+// de medicos y en "modificar" cierra la operacion. Es el mismo criterio que
 // usa el motor CRUD con los medicos.
 //
 // EL TURNO SE BUSCA, NO SE ESCRIBE
@@ -226,6 +243,27 @@ int indiceDeEspecialidad(Especialidad especialidad) {
     // No esta en el catalogo: se deja la primera (el `ui::Selector` ignora
     // un indice fuera de rango).
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// LA ESPECIALIDAD DE UN INDICE DEL CATALOGO
+//
+// EL INDICE DEL SELECTOR ES LA POSICION EN EL CATALOGO
+//
+// El `Selector` muestra las opciones en el orden de
+// `todasLasEspecialidades()`, asi que el numero que escribe el usuario es la
+// POSICION de la especialidad: el indice es la forma de pedirla y la
+// `Especialidad` es la forma de usarla.
+//
+// Un indice fuera de rango devuelve la primera: es la red de contencion
+// contra un dato raro (el `ui::Selector` ya ignora un indice invalido).
+// ---------------------------------------------------------------------------
+Especialidad especialidadDesdeIndice(int indice) {
+    const std::vector<Especialidad>& catalogo = todasLasEspecialidades();
+    if (indice < 0 || indice >= static_cast<int>(catalogo.size())) {
+        return catalogo.front();
+    }
+    return catalogo[static_cast<std::size_t>(indice)];
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +555,18 @@ void PantallaTurnos::volverAtras() {
             irA(Vista::Busqueda);
             return;
         case Vista::Selector:
+            // EL SELECTOR SUBE UN NIVEL, Y EL NIVEL DEPENDE DEL FLUJO
+            //
+            // En "modificar" el selector es un paso DEL formulario: se
+            // vuelve al formulario, con todo lo que el usuario escribio
+            // intacto. En "agendar" el selector va ANTES del formulario (y
+            // del buscador de medicos): no hay formulario atras, asi que se
+            // vuelve al menu del modulo (el flujo se cancela, como cuando
+            // se cancela en cualquiera de los dos buscadores).
+            if (_accion == Accion::Agendar) {
+                irA(Vista::Menu);
+                return;
+            }
             irA(Vista::Formulario);
             return;
         case Vista::Valor:
@@ -694,12 +744,14 @@ bool PantallaTurnos::manejarSelector(const Evento& evento) {
         return false;
     }
 
-    // EL `Escape` VUELVE AL FORMULARIO
+    // EL `Escape` VUELVE AL PASO ANTERIOR
     //
-    // El selector es un paso DEL formulario: el `Escape` sube al formulario,
-    // con todo lo que el usuario escribio intacto.
+    // El selector es un paso DEL flujo: el `Escape` sube un nivel, con todo
+    // lo que el usuario escribio intacto. Que nivel es depende de la accion
+    // (en "modificar" es el formulario; en "agendar" es el menu del modulo,
+    // porque el selector va antes del formulario).
     if (esTeclaEscape(evento)) {
-        irA(Vista::Formulario);
+        volverAtras();
         return true;
     }
 
@@ -984,11 +1036,20 @@ void PantallaTurnos::iniciarAgendar() {
 
     // EL PACIENTE SE ELIGE PRIMERO
     //
-    // El turno es de un paciente y de un medico: los dos se BUSCAN (no se
-    // escriben sus ids) y el paciente va primero, que es el que esta
-    // enfrente.
+    // El turno es de un paciente, de una especialidad y de un medico: los
+    // tres se ELIGEN (no se escriben sus ids) y el paciente va primero, que
+    // es el que esta enfrente.
     _idPacienteElegido = -1;
     _idMedicoElegido = -1;
+
+    // LA ESPECIALIDAD ARRANCA SIN ELEGIR
+    //
+    // Todavia no hay filtro que aplicar (el buscador de medicos todavia no
+    // se abrio) y el selector arranca en la primera especialidad del
+    // catalogo: aun no hay ningun turno que editar.
+    _especialidadElegida.reset();
+    _indiceEspecialidad = 0;
+
     abrirBuscadorDePacientes();
 }
 
@@ -1011,8 +1072,14 @@ void PantallaTurnos::iniciarAgendar() {
 //
 // EL CANCELAR VUELVE AL MENU DEL MODULO
 //
-// Los dos pasos son del mismo camino: si el usuario cancela en cualquiera de
-// los dos, vuelve al menu de turnos (no queda a medio camino).
+// Los pasos son del mismo camino: si el usuario cancela en cualquiera de
+// ellos, vuelve al menu de turnos (no queda a medio camino).
+//
+// EL BUSCADOR DE MEDICOS FILTRA POR LA ESPECIALIDAD ELEGIDA
+//
+// El filtro es de ESTE buscador (el de agendar): los buscadores de medicos
+// de las otras pantallas no se filtran, asi que la regla compartida no se
+// toca.
 // ---------------------------------------------------------------------------
 
 void PantallaTurnos::abrirBuscadorDePacientes() {
@@ -1026,8 +1093,18 @@ void PantallaTurnos::abrirBuscadorDePacientes() {
 
 void PantallaTurnos::abrirBuscadorDeMedicos() {
     _pasoDelBuscador = PasoDelBuscador::Medico;
+
+    // EL TITULO DICE DE QUE ESPECIALIDAD SE BUSCA
+    //
+    // La lista sale filtrada, asi que el titulo dice cual es el filtro: el
+    // usuario entiende por que la lista es corta.
+    std::string titulo = "Buscar medico";
+    if (_especialidadElegida.has_value()) {
+        titulo += " de " + descripcionDe(*_especialidadElegida);
+    }
+
     _buscador = std::make_unique<Buscador>(
-        "Buscar medico",
+        titulo,
         pistaDelBuscadorDeMedicos(),
         [this](const std::string& texto) { return coincidenciasDeMedicos(texto); });
     irA(Vista::Busqueda);
@@ -1040,7 +1117,43 @@ std::vector<Buscador::Coincidencia> PantallaTurnos::coincidenciasDePacientes(
 
 std::vector<Buscador::Coincidencia> PantallaTurnos::coincidenciasDeMedicos(
     const std::string& texto) {
-    return coincidenciasDelBuscadorDeMedicos(_medicos, texto);
+    // EL FILTRO POR ESPECIALIDAD
+    //
+    // El filtro es SOLO del buscador de MEDICOS de esta pantalla (el de
+    // agendar): los buscadores de medicos de las OTRAS pantallas (el de
+    // reportes y el de medicos) siguen mostrando a todos, asi que la regla
+    // compartida (`ui::CriteriosDePersonas.h`) no se toca.
+    if (!_especialidadElegida.has_value()) {
+        return coincidenciasDelBuscadorDeMedicos(_medicos, texto);
+    }
+
+    // LA REGLA COMPARTIDA PRIMERO, EL FILTRO DESPUES
+    //
+    // Con el texto vacio la regla compartida lista los medicos ACTIVOS (los
+    // dados de baja no pueden atender) y con texto corre los criterios (por
+    // nombre o apellido y por legajo). El filtro va DESPUES: no es una
+    // regla de busqueda nueva, es un recorte de lo que la regla compartida
+    // ya traia.
+    const std::vector<Buscador::Coincidencia> todas =
+        coincidenciasDelBuscadorDeMedicos(_medicos, texto);
+
+    std::vector<Buscador::Coincidencia> filtradas;
+    for (const Buscador::Coincidencia& coincidencia : todas) {
+        // LA COINCIDENCIA TRAE EL ID: EL MEDICO SE BUSCA EN EL REPOSITORIO
+        //
+        // La especialidad no viaja con la fila: se lee del medico. Un id
+        // que no esta en el repositorio se descarta (no se puede saber de
+        // que especialidad es).
+        Medico medico;
+        if (!_medicos.buscarPorId(coincidencia.first, medico)) {
+            continue;
+        }
+        if (medico.getEspecialidad() != *_especialidadElegida) {
+            continue;
+        }
+        filtradas.push_back(coincidencia);
+    }
+    return filtradas;
 }
 
 void PantallaTurnos::confirmarPersona() {
@@ -1058,14 +1171,18 @@ void PantallaTurnos::confirmarPersona() {
     if (_pasoDelBuscador == PasoDelBuscador::Paciente) {
         // PRIMER PASO: EL PACIENTE
         _idPacienteElegido = id;
-        // SEGUNDO PASO: EL MEDICO
-        abrirBuscadorDeMedicos();
+        // SEGUNDO PASO: LA ESPECIALIDAD
+        //
+        // La especialidad se elige ANTES del medico: es lo que hace que el
+        // buscador de medicos salga filtrado por ella y que el turno no
+        // pueda quedar con la especialidad de otro medico.
+        abrirSelector();
         return;
     }
 
-    // SEGUNDO PASO: EL MEDICO
+    // TERCER PASO: EL MEDICO
     _idMedicoElegido = id;
-    // TERCER PASO: EL FORMULARIO
+    // CUARTO PASO: EL FORMULARIO
     abrirFormularioDeAgendar();
 }
 
@@ -1108,13 +1225,16 @@ void PantallaTurnos::moverFoco(int delta) {
 }
 
 bool PantallaTurnos::laAccionTieneSelector() const {
-    // LA ESPECIALIDAD SE ELIGE, NO SE ESCRIBE
+    // SOLO "MODIFICAR" ABRE EL SELECTOR DESPUES DEL FORMULARIO
     //
-    // En "agendar" y en "modificar" la especialidad es una de las doce del
-    // catalogo: se elige de la lista, con su numero. Es el mismo criterio
-    // que usa la pantalla de medicos (decision 1: el estado invalido es
-    // irrepresentable).
-    return _accion == Accion::Agendar || _accion == Accion::Modificar;
+    // En "modificar" la especialidad se corrige al FINAL: es el dato
+    // HISTORICO del turno (decision D21) y se elige de la lista de las doce
+    // (decision 1: el estado invalido es irrepresentable).
+    //
+    // En "agendar" NO: la especialidad ya se eligio ANTES del medico (es el
+    // paso del selector que abre el buscador de medicos), asi que el
+    // formulario ya la sabe y no la vuelve a preguntar.
+    return _accion == Accion::Modificar;
 }
 
 PantallaTurnos::DatosFormulario PantallaTurnos::datosDelFormulario() const {
@@ -1131,6 +1251,19 @@ PantallaTurnos::DatosFormulario PantallaTurnos::datosDelFormulario() const {
     DatosFormulario datos;
     datos.idPaciente = _idPacienteElegido;
     datos.idMedico = _idMedicoElegido;
+
+    // LA ESPECIALIDAD YA ESTA ELEGIDA EN "AGENDAR"
+    //
+    // En ese flujo se elige antes del medico (es el paso que abre el
+    // buscador de medicos), asi que viaja con la operacion: el turno sale
+    // con la especialidad del medico por construccion.
+    //
+    // En "modificar" la especialidad la pone el selector que va DESPUES del
+    // formulario, asi que aca queda vacia.
+    if (_accion == Accion::Agendar && _especialidadElegida.has_value()) {
+        datos.especialidad = codigoDe(*_especialidadElegida);
+    }
+
     for (const std::unique_ptr<Campo>& campo : _campos) {
         const std::string& etiqueta = campo->etiqueta();
         const std::string valor = campo->valor();
@@ -1165,6 +1298,11 @@ void PantallaTurnos::confirmarFormulario() {
     _pendientes = datosDelFormulario();
 
     // CON SELECTOR: PRIMERO SE ELIGE, DESPUES SE HACE LA OPERACION
+    //
+    // El selector lo tiene la accion de MODIFICAR: ahi la especialidad se
+    // corrige despues del formulario (es el dato historico del turno). En
+    // "agendar" la especialidad ya se eligio antes del medico, asi que el
+    // turno sale con la del medico por construccion.
     if (laAccionTieneSelector()) {
         abrirSelector();
         return;
@@ -1209,7 +1347,37 @@ void PantallaTurnos::confirmarSeleccion() {
     // y puede abrir el selector otra vez: la especialidad que habia
     // elegido sigue siendo la que arranca elegida.
     _indiceEspecialidad = indice;
-    _pendientes.especialidad = codigoDe(todasLasEspecialidades()[static_cast<std::size_t>(indice)]);
+    const Especialidad elegida = especialidadDesdeIndice(indice);
+
+    // EN "AGENDAR" EL SELECTOR ABRE EL BUSCADOR DE MEDICOS
+    //
+    // La especialidad se elige ANTES del medico: el selector no cierra una
+    // operacion, abre el paso siguiente. Y el buscador de medicos sale
+    // FILTRADO por la especialidad elegida, asi que el turno sale con la del
+    // medico por construccion.
+    if (_accion == Accion::Agendar) {
+        _especialidadElegida = elegida;
+
+        // UNA ESPECIALIDAD SIN MEDICOS SE DICE CLARO
+        //
+        // Una lista vacia sin explicacion parece un error: se avisa y se
+        // vuelve al selector (NO al menu), para que el usuario elija otra
+        // especialidad.
+        if (coincidenciasDeMedicos("").empty()) {
+            avisar("no hay medicos de la especialidad " + descripcionDe(elegida));
+            abrirSelector();
+            return;
+        }
+
+        abrirBuscadorDeMedicos();
+        return;
+    }
+
+    // EN "MODIFICAR" EL SELECTOR CORRIGE EL DATO HISTORICO DEL TURNO
+    //
+    // Ahi la especialidad se elige al final (decision D21): no se deduce del
+    // medico, se corrige.
+    _pendientes.especialidad = codigoDe(elegida);
 
     ejecutarAccion(_pendientes);
 }
@@ -1462,6 +1630,12 @@ void PantallaTurnos::agendarTurno(const DatosFormulario& datos) {
     // El turno se construye con el id que dice `proximoId()`: es la misma
     // regla que usa el resto del sistema (decision R4) y la que garantiza
     // que dos turnos no tengan el mismo id.
+    //
+    // LA ESPECIALIDAD ES LA ELEGIDA ANTES DEL MEDICO
+    //
+    // El medico que se eligio salio del buscador FILTRADO por la
+    // especialidad, asi que el turno sale con la del medico por
+    // construccion: la regla 2b no se puede violar desde la interfaz.
     const Turno turno(_turnos.proximoId(),
                       datos.idMedico,
                       datos.idPaciente,
@@ -2072,6 +2246,16 @@ std::string PantallaTurnos::ayuda() const {
             return "Tab: siguiente campo   Enter: confirmar   0: volver (campo vacio)   "
                    "Esc: volver";
         case Vista::Selector:
+            // LA AYUDA DICE A DONDE VUELVE EL `Escape`
+            //
+            // En "modificar" el selector es un paso del formulario: el
+            // `Escape` vuelve al formulario. En "agendar" el selector va
+            // antes del formulario: el `Escape` cancela el flujo y vuelve al
+            // menu del modulo.
+            if (_accion == Accion::Agendar) {
+                return "Flechas: mover   Numero: elegir   Enter: confirmar   "
+                       "Esc: volver";
+            }
             return "Flechas: mover   Numero: elegir   Enter: confirmar   "
                    "Esc: volver al formulario";
         case Vista::Busqueda:
