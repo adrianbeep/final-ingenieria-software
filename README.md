@@ -99,7 +99,7 @@ cualquier sistema operativo**. En Configuracion (opcion `6`) esta la accion "Car
 include/    domain, entities, structures, persistence, repositories, services, ui
 src/        espejo .cpp de include/       tests/  arnes de tests propio, sin framework externo
 data/       los archivos de trabajo; data/ejemplo/ la semilla
-third_party/  FTXUI, vendorizada           docs/  el diagrama y las decisiones de diseno
+third_party/  FTXUI, vendorizada           docs/  el diagrama, las decisiones y la trazabilidad
 ```
 
 ## Estado del proyecto
