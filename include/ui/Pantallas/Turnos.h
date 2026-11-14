@@ -10,6 +10,8 @@
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
+#include "ui/CriteriosDePersonas.h"
+#include "ui/Dibujo.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
@@ -319,8 +321,17 @@ private:
     ftxui::Element lineaMenuVacio() const;
     ftxui::Element lineaResultados() const;
     ftxui::Element lineaDetalle() const;
-    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+    ftxui::Element tablaDe(const std::vector<Tabla::Fila>& filas,
                            const std::vector<std::string>& cabeceras) const;
+
+    // LO QUE LA PANTALLA TRATA
+    //
+    // En el flujo de "agendar", las lineas del paciente, la especialidad y
+    // el medico ya elegidos. Vacias en los demas flujos.
+    std::vector<ftxui::Element> lineasDeLoElegido() const;
+
+    // Lo mismo, en texto plano.
+    std::string textoDeLoElegido() const;
     std::string vacio(const std::string& queFalta) const;
     std::string ayuda() const;
 

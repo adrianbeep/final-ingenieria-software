@@ -3,6 +3,7 @@
 #include "ui/Aplicacion.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Contexto.h"
+#include "ui/Dibujo.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantallas/AcercaDe.h"
 #include "ui/Pantallas/Calendario.h"
@@ -10,6 +11,7 @@
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
 #include "ui/Pantallas/Reportes.h"
+#include "ui/Pantallas/Tema.h"
 #include "ui/Pantallas/Turnos.h"
 #include "ui/Reloj.h"
 
@@ -32,6 +34,7 @@ MenuPrincipal::MenuPrincipal(Aplicacion& aplicacion)
     _menu.agregar('5', "Calendario", [this]() { abrirCalendario(); });
     _menu.agregar('6', "Configuracion", [this]() { abrirConfiguracion(); });
     _menu.agregar('7', "Acerca de", [this]() { abrirAcercaDe(); });
+    _menu.agregar('8', "Tema", [this]() { abrirTema(); });
     _menu.agregar('0', "Salir", [this]() { _aplicacion.salir(); });
 
     // El menu se dibuja a partir de la fila FILA_INICIAL: el hit-testing del
@@ -122,6 +125,17 @@ void MenuPrincipal::abrirAcercaDe() {
     });
 }
 
+void MenuPrincipal::abrirTema() {
+    // LA PANTALLA DEL TEMA
+    //
+    // No necesita nada del contexto: el tema es un estado COMPARTIDO de la
+    // paleta (ver `ui::Theme`), asi que la pantalla escribe ese estado y
+    // todas las demas lo ven.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaTema(app);
+    });
+}
+
 bool MenuPrincipal::manejar(const Evento& evento) {
     // El menu se encarga de todo: las flechas, Enter, los atajos y el clic.
     return _menu.aplicarEvento(evento);
@@ -162,7 +176,7 @@ ftxui::Element MenuPrincipal::renderizar() {
         lineas.push_back(lineaMensaje());
     }
 
-    lineas.push_back(ftxui::text("Flechas: mover   Enter: elegir   0: salir   Esc: salir"));
+    lineas.push_back(lineaDeAyuda(_tema, "Flechas: mover   Enter: elegir   0: salir   Esc: salir"));
 
     return ftxui::vbox(std::move(lineas));
 }
@@ -176,23 +190,21 @@ ftxui::Element MenuPrincipal::encabezado() const {
 }
 
 ftxui::Element MenuPrincipal::lineaOpcion(int indice) const {
-    const std::string atajo(1, _menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + _menu.etiquetas()[static_cast<std::size_t>(indice)]);
-
-    if (indice == _menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, _menu.atajoDe(indice)),
+                          _menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == _menu.seleccion());
 }
 
 ftxui::Element MenuPrincipal::lineaMensaje() const {
     const Mensaje& mensaje = _aplicacion.contexto().mensaje();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {

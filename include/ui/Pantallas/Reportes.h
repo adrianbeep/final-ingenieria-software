@@ -8,6 +8,7 @@
 #include "ui/Buscador.h"
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
+#include "ui/Dibujo.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
@@ -177,7 +178,7 @@ private:
     ftxui::Element lineaResultado() const;
     ftxui::Element lineaBajas() const;
     ftxui::Element lineaOcupacion() const;
-    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+    ftxui::Element tablaDe(const std::vector<Tabla::Fila>& filas,
                            const std::vector<std::string>& cabeceras) const;
     std::string ayuda() const;
 

@@ -7,6 +7,7 @@
 #include "ui/Aplicacion.h"
 #include "ui/Campo.h"
 #include "ui/ColorFtxui.h"
+#include "ui/Dibujo.h"
 #include "ui/MapaCalor.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
@@ -164,7 +165,7 @@ private:
     ftxui::Element filaDeGrilla(const FilaDeGrilla& fila) const;
     ftxui::Element lineaDetalle() const;
     ftxui::Element lineaAgenda() const;
-    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+    ftxui::Element tablaDe(const std::vector<Tabla::Fila>& filas,
                            const std::vector<std::string>& cabeceras) const;
     std::string ayuda() const;
 

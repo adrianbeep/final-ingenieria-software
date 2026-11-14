@@ -348,7 +348,7 @@ Campo::Validador validadorDeDia(int anio, int mes) {
 struct ParteLeyenda {
     bool esMuestra = false;
     std::string texto;
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
 };
 
 // LAS PARTES DE LA LEYENDA
@@ -359,18 +359,18 @@ std::vector<ParteLeyenda> leyendaDelMapaCalor(bool conColores) {
     //
     // No tiene muestra: no tiene color (un dia sin turnos no es "el nivel
     // mas bajo", es la ausencia de ocupacion).
-    partes.push_back(ParteLeyenda{false, "0 = sin turnos  ", Rol::Subtitulo});
+    partes.push_back(ParteLeyenda{false, "0 = sin turnos  ", Rol::Secundario});
 
     for (const NivelCalor nivel : nivelesConColor()) {
         if (conColores) {
             partes.push_back(ParteLeyenda{true, MUESTRA, rolDeCalor(nivel)});
             partes.push_back(
-                ParteLeyenda{false, " " + rangoDeCalor(nivel) + "  ", Rol::Subtitulo});
+                ParteLeyenda{false, " " + rangoDeCalor(nivel) + "  ", Rol::Secundario});
             continue;
         }
         partes.push_back(ParteLeyenda{false,
                                        rangoDeCalor(nivel) + " = " + nombreDeCalor(nivel) + "  ",
-                                       Rol::Subtitulo});
+                                       Rol::Secundario});
     }
 
     return partes;
@@ -818,22 +818,22 @@ ftxui::Element PantallaCalendario::encabezado() const {
 }
 
 ftxui::Element PantallaCalendario::lineaOpcion(int indice) const {
-    const std::string atajo(1, _menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + _menu.etiquetas()[static_cast<std::size_t>(indice)]);
-    if (indice == _menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, _menu.atajoDe(indice)),
+                          _menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == _menu.seleccion());
 }
 
 ftxui::Element PantallaCalendario::lineaCampo(const Campo& campo) const {
-    ftxui::Element elemento =
-        ftxui::text("  " + campo.etiqueta() + ": " + campo.textoEnPantalla());
-    elemento = elemento | ftxui::inverted;
-    return elemento;
+    // LA ETIQUETA Y EL VALOR CON ROLES DISTINTOS
+    //
+    // Se lee de un vistazo que parte de la linea es el rotulo y que parte es
+    // el dato (ver `ui/Dibujo.h`).
+    return lineaDeCampo(_tema, campo.etiqueta(), campo.textoEnPantalla()) | ftxui::inverted;
 }
 
 ftxui::Element PantallaCalendario::lineaError(const std::string& texto) const {
@@ -848,7 +848,7 @@ ftxui::Element PantallaCalendario::lineaMensaje() const {
     const Mensaje& mensaje = mensajeActual();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {
@@ -971,10 +971,10 @@ ftxui::Element PantallaCalendario::lineaLeyenda() const {
 //
 // Es la MISMA tabla de la aplicacion (`ui::Tabla`): las columnas se miden
 // por su contenido, asi que la tabla se ajusta al dato.
-ftxui::Element PantallaCalendario::tablaDe(const std::vector<std::vector<std::string>>& filas,
+ftxui::Element PantallaCalendario::tablaDe(const std::vector<Tabla::Fila>& filas,
                                            const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
-    for (const std::vector<std::string>& fila : filas) {
+    for (const Tabla::Fila& fila : filas) {
         tabla.agregarFila(fila);
     }
     return tabla.renderizar();
@@ -990,7 +990,11 @@ ftxui::Element PantallaCalendario::lineaDetalle() const {
     if (_filas.empty()) {
         return ftxui::text("  " + _mensajeVacio);
     }
-    return tablaDe(_filas, _cabeceras);
+    // LAS FILAS CON SUS ROLES
+    //
+    // La celda del estado va con el color de su estado: se ve de un vistazo
+    // que turnos estan cancelados.
+    return tablaDe(filasDeTabla(_cabeceras, _filas), _cabeceras);
 }
 
 // LA AGENDA DEL DIA
@@ -998,7 +1002,7 @@ ftxui::Element PantallaCalendario::lineaAgenda() const {
     if (_filas.empty()) {
         return ftxui::text("  " + _mensajeVacio);
     }
-    return tablaDe(_filas, _cabeceras);
+    return tablaDe(filasDeTabla(_cabeceras, _filas), _cabeceras);
 }
 
 std::string PantallaCalendario::ayuda() const {
@@ -1087,7 +1091,7 @@ ftxui::Element PantallaCalendario::renderizar() {
     if (!mensajeActual().esVacio()) {
         lineas.push_back(lineaMensaje());
     }
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }

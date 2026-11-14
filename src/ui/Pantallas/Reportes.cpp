@@ -928,15 +928,14 @@ ftxui::Element PantallaReportes::encabezado() const {
 }
 
 ftxui::Element PantallaReportes::lineaOpcion(int indice) const {
-    const std::string atajo(1, _menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + _menu.etiquetas()[static_cast<std::size_t>(indice)]);
-    if (indice == _menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, _menu.atajoDe(indice)),
+                          _menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == _menu.seleccion());
 }
 
 ftxui::Element PantallaReportes::lineaNumeroSelector() const {
@@ -944,14 +943,28 @@ ftxui::Element PantallaReportes::lineaNumeroSelector() const {
     //
     // Va a la vista porque es lo que el usuario esta TECLEANDO: si no se
     // mostrara, escribir "12" seria indistinguible de no escribir nada.
-    return ftxui::text("  Numero: " + _selector->numeroDigitado() + "|");
+    //
+    // EL ROTULO VA CON EL COLOR DE ETIQUETA DE CAMPO
+    //
+    // Es el nombre del campo, como en el formulario: el numero que se esta
+    // escribiendo es el valor, y el valor va con el color por defecto.
+    ftxui::Elements partes;
+    ftxui::Element rotulo = ftxui::text("  Numero:");
+    if (const auto color = _tema.colorDe(Rol::EtiquetaDeCampo)) {
+        rotulo = rotulo | ftxui::color(aFtxui(*color));
+    }
+    partes.push_back(rotulo);
+    partes.push_back(ftxui::text(" " + _selector->numeroDigitado() + "|"));
+    return ftxui::hbox(std::move(partes));
 }
 
 ftxui::Element PantallaReportes::lineaCampo(const Campo& campo) const {
-    ftxui::Element elemento =
-        ftxui::text("  " + campo.etiqueta() + ": " + campo.textoEnPantalla());
-    elemento = elemento | ftxui::inverted;
-    return elemento;
+    // LA ETIQUETA Y EL VALOR CON ROLES DISTINTOS
+    //
+    // Se lee de un vistazo que parte de la linea es el rotulo y que parte es
+    // el dato (ver `ui/Dibujo.h`).
+    ftxui::Element elemento = lineaDeCampo(_tema, campo.etiqueta(), campo.textoEnPantalla());
+    return elemento | ftxui::inverted;
 }
 
 ftxui::Element PantallaReportes::lineaError(const std::string& texto) const {
@@ -966,7 +979,7 @@ ftxui::Element PantallaReportes::lineaMensaje() const {
     const Mensaje& mensaje = mensajeActual();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {
@@ -986,7 +999,11 @@ ftxui::Element PantallaReportes::lineaResultado() const {
     if (_filas.empty()) {
         return ftxui::text("  " + _mensajeVacio);
     }
-    return tablaDe(_filas, _cabeceras);
+    // LAS FILAS CON SUS ROLES
+    //
+    // El id va con el rol secundario y la celda del estado con el color de su
+    // estado.
+    return tablaDe(filasDeTabla(_cabeceras, _filas), _cabeceras);
 }
 
 ftxui::Element PantallaReportes::lineaBajas() const {
@@ -1004,14 +1021,26 @@ ftxui::Element PantallaReportes::lineaBajas() const {
         // usuario atrapado: el mensaje dice las dos cosas.
         lineas.push_back(ftxui::text("    No hay pacientes inactivos. 0: volver al menu."));
     } else {
-        lineas.push_back(tablaDe(_tablaPacientes.filas, _tablaPacientes.cabeceras));
+        // LAS FILAS DADAS DE BAJA VAN ATENUADAS
+        //
+        // Son las personas que no se pueden usar: se ven, pero no compiten
+        // con las que estan vivas.
+        std::vector<Tabla::Fila> filas;
+        for (const std::vector<std::string>& fila : _tablaPacientes.filas) {
+            filas.push_back(filaDeTabla(_tablaPacientes.cabeceras, fila, true));
+        }
+        lineas.push_back(tablaDe(filas, _tablaPacientes.cabeceras));
     }
 
     lineas.push_back(ftxui::text("  Medicos dados de baja:"));
     if (_tablaMedicos.filas.empty()) {
         lineas.push_back(ftxui::text("    No hay medicos inactivos. 0: volver al menu."));
     } else {
-        lineas.push_back(tablaDe(_tablaMedicos.filas, _tablaMedicos.cabeceras));
+        std::vector<Tabla::Fila> filas;
+        for (const std::vector<std::string>& fila : _tablaMedicos.filas) {
+            filas.push_back(filaDeTabla(_tablaMedicos.cabeceras, fila, true));
+        }
+        lineas.push_back(tablaDe(filas, _tablaMedicos.cabeceras));
     }
 
     return ftxui::vbox(std::move(lineas));
@@ -1023,13 +1052,23 @@ ftxui::Element PantallaReportes::lineaOcupacion() const {
     // Son los siete dias de la semana mas el total: no hay un estado
     // vacio que mostrar (una semana sin turnos es una semana con siete
     // dias en cero).
-    return tablaDe(_filas, _cabeceras);
+    //
+    // LA FILA DEL TOTAL VA CON EL COLOR DE REALCE
+    //
+    // La ultima fila es el total de los siete dias: es lo que la pantalla
+    // TRATA (la pregunta del reporte es "cuanto ocupa la semana"), asi que
+    // tiene que saltar a la vista.
+    std::vector<Tabla::Fila> filas = filasDeTabla(_cabeceras, _filas);
+    if (!filas.empty()) {
+        filas.back().roles.assign(filas.back().celdas.size(), Rol::Realce);
+    }
+    return tablaDe(filas, _cabeceras);
 }
 
-ftxui::Element PantallaReportes::tablaDe(const std::vector<std::vector<std::string>>& filas,
+ftxui::Element PantallaReportes::tablaDe(const std::vector<Tabla::Fila>& filas,
                                           const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
-    for (const std::vector<std::string>& fila : filas) {
+    for (const Tabla::Fila& fila : filas) {
         tabla.agregarFila(fila);
     }
     return tabla.renderizar();
@@ -1084,7 +1123,7 @@ ftxui::Element PantallaReportes::renderizar() {
             // Es el mismo que usa la pantalla de turnos y el del motor CRUD
             // (ver `ui/RenderDeSelector.h`): asi el resaltado de la opcion
             // elegida es el mismo en toda la aplicacion.
-            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+            for (ftxui::Element& elemento : lineasDeBuscador(_tema, *_buscador)) {
                 lineas.push_back(elemento);
             }
             if (!_buscador->error().empty()) {
@@ -1106,7 +1145,7 @@ ftxui::Element PantallaReportes::renderizar() {
             // Es el mismo que usa la pantalla de turnos y la del motor CRUD
             // (ver `ui/RenderDeSelector.h`): asi el resaltado de la opcion
             // elegida es el mismo en toda la aplicacion.
-            for (ftxui::Element& elemento : lineasDeSelector(*_selector)) {
+            for (ftxui::Element& elemento : lineasDeSelector(_tema, *_selector)) {
                 lineas.push_back(elemento);
             }
             if (!_selector->error().empty()) {
@@ -1128,7 +1167,7 @@ ftxui::Element PantallaReportes::renderizar() {
     if (!mensajeActual().esVacio()) {
         lineas.push_back(lineaMensaje());
     }
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }

@@ -17,20 +17,20 @@
 //
 // QUE ES
 //
-// Es la pantalla de las PREFERENCIAS del usuario: el color (se enciende o se
-// apaga) y los datos (se carga el juego de ejemplo).
+// Es la pantalla de las PREFERENCIAS del usuario: el tema de color (se elige
+// el oscuro, el claro o los colores apagados) y los datos (se carga el juego
+// de ejemplo).
 //
 // QUE HAY EN ELLA (decision 7)
 //
-// Son DOS cosas y nada mas: los colores y los datos de ejemplo. El usuario no
+// Son DOS cosas y nada mas: el tema y los datos de ejemplo. El usuario no
 // configura el dominio: el dominio son reglas de negocio, no preferencias.
 //
-// EL COLOR ES UN ESTADO COMPARTIDO
+// EL TEMA ES UN ESTADO COMPARTIDO
 //
-// El toggle no apaga el color de esta pantalla: apaga el color de TODAS las
+// La pantalla no apaga el color de esta pantalla: cambia el tema de TODAS las
 // pantallas, y el efecto es inmediato. Por eso la pantalla escribe el estado
-// compartido (`ui::Theme::establecerColoresActivos`) y no guarda un bool
-// propio.
+// compartido (`ui::Theme::establecerTema`) y no guarda un valor propio.
 //
 // LA CONFIRMACION ES DE DOS PASOS
 //
@@ -92,7 +92,7 @@ private:
     bool manejarConfirmacion(const Evento& evento);
 
     // --- Las acciones ---
-    void alternarColores();
+    void abrirTema();
     void pedirCargaDeEjemplo();
     void cargarEjemplo();
 

@@ -15,7 +15,27 @@ Tabla::Tabla(std::vector<std::string> cabeceras) : _cabeceras(std::move(cabecera
 }
 
 void Tabla::agregarFila(std::vector<std::string> celdas) {
-    _filas.push_back(std::move(celdas));
+    Fila fila;
+    fila.celdas = std::move(celdas);
+    _filas.push_back(std::move(fila));
+}
+
+void Tabla::agregarFila(std::vector<std::string> celdas, const std::vector<Rol>& roles) {
+    Fila fila;
+    fila.celdas = std::move(celdas);
+    fila.roles = roles;
+    _filas.push_back(std::move(fila));
+}
+
+void Tabla::agregarFilaAtenuada(std::vector<std::string> celdas) {
+    Fila fila;
+    fila.celdas = std::move(celdas);
+    fila.atenuada = true;
+    _filas.push_back(std::move(fila));
+}
+
+void Tabla::agregarFila(const Fila& fila) {
+    _filas.push_back(fila);
 }
 
 int Tabla::filas() const {
@@ -33,14 +53,16 @@ ftxui::Element Tabla::renderizar() const {
                                  bordes.esquinaSuperiorDerecha));
 
     // La fila de cabeceras.
-    lineas.push_back(fila(_cabeceras, anchos, true));
+    Fila cabecera;
+    cabecera.celdas = _cabeceras;
+    lineas.push_back(fila(cabecera, anchos, true));
 
     // El separador entre las cabeceras y los datos.
     lineas.push_back(lineaBorde(anchos, bordes.esquinaSuperiorIzquierda,
                                  bordes.esquinaSuperiorDerecha));
 
     // Las filas de datos.
-    for (const std::vector<std::string>& datos : _filas) {
+    for (const Fila& datos : _filas) {
         lineas.push_back(fila(datos, anchos, false));
     }
 
@@ -60,9 +82,9 @@ std::vector<int> Tabla::anchos() const {
     }
 
     // Y despues el dato mas largo de la columna.
-    for (const std::vector<std::string>& datos : _filas) {
-        for (std::size_t i = 0; i < anchos.size() && i < datos.size(); ++i) {
-            const int ancho = ftxui::string_width(datos[i]);
+    for (const Fila& datos : _filas) {
+        for (std::size_t i = 0; i < anchos.size() && i < datos.celdas.size(); ++i) {
+            const int ancho = ftxui::string_width(datos.celdas[i]);
             if (ancho > anchos[i]) {
                 anchos[i] = ancho;
             }
@@ -90,8 +112,37 @@ ftxui::Element Tabla::lineaBorde(const std::vector<int>& anchos, char izquierda,
     return elemento;
 }
 
-ftxui::Element Tabla::fila(const std::vector<std::string>& celdas,
-                           const std::vector<int>& anchos, bool cabecera) const {
+Rol Tabla::rolDeCelda(const Fila& fila, std::size_t columna) const {
+    // EL ROL EXPLICITO GANA
+    //
+    // Es el que sabe la pantalla: la celda del estado va con el color de su
+    // estado, aunque la fila entera este atenuada (el estado es lo que mas
+    // dice de la fila).
+    //
+    // EL ROL DE CELDA NO ES UN ROL EXPLICITO
+    //
+    // Es el rol POR DEFECTO de una celda: si la fila esta atenuada, la
+    // atenuacion gana (una fila de una entidad dada de baja se ve atenuada
+    // entera).
+    if (columna < fila.roles.size() && fila.roles[columna] != Rol::TablaCelda) {
+        return fila.roles[columna];
+    }
+
+    // UNA FILA ATENUADA VA CON EL ROL SECUNDARIO
+    //
+    // La entidad esta dada de baja: se ve, pero no compite con las vivas.
+    if (fila.atenuada) {
+        return Rol::Secundario;
+    }
+
+    // UNA CELDA NORMAL VA CON EL COLOR POR DEFECTO
+    //
+    // El rol de celda no tiene color propio: la tabla se lee como texto.
+    return Rol::TablaCelda;
+}
+
+ftxui::Element Tabla::fila(const Fila& fila, const std::vector<int>& anchos,
+                            bool cabecera) const {
     const Bordes& bordes = _tema.bordes();
 
     ftxui::Elements partes;
@@ -104,7 +155,7 @@ ftxui::Element Tabla::fila(const std::vector<std::string>& celdas,
     partes.push_back(separador);
 
     for (std::size_t i = 0; i < anchos.size(); ++i) {
-        const std::string celda = i < celdas.size() ? celdas[i] : std::string();
+        const std::string celda = i < fila.celdas.size() ? fila.celdas[i] : std::string();
 
         // EL ANCHO FIJO DE LA COLUMNA
         //
@@ -117,9 +168,23 @@ ftxui::Element Tabla::fila(const std::vector<std::string>& celdas,
         ftxui::Element contenido = ftxui::text(celda) |
                                    ftxui::size(ftxui::WIDTH, ftxui::EQUAL, anchos[i]);
 
-        const Rol rol = cabecera ? Rol::TablaHeader : Rol::TablaCelda;
+        const Rol rol = cabecera ? Rol::TablaHeader : rolDeCelda(fila, i);
         if (const auto color = _tema.colorDe(rol)) {
             contenido = contenido | ftxui::color(aFtxui(*color));
+            if (cabecera) {
+                // LA CABECERA VA EN NEGRITA
+                //
+                // Es el rotulo de la columna: tiene que destacar de las
+                // celdas (que van con el color por defecto) sin dejar de
+                // leerse como texto.
+                //
+                // LA NEGRITA VA CON EL COLOR
+                //
+                // Con el tema apagado la tabla sale como texto plano, sin
+                // ningun codigo de escape: el `NO_COLOR` tiene que apagarlo
+                // TODO, no solo el color.
+                contenido = contenido | ftxui::bold;
+            }
         }
 
         partes.push_back(ftxui::text(" "));

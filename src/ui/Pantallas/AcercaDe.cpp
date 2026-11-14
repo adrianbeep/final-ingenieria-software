@@ -127,8 +127,8 @@ ftxui::Element PantallaAcercaDe::encabezado() const {
 ftxui::Element PantallaAcercaDe::lineaDato(const std::string& etiqueta,
                                             const std::string& valor) const {
     ftxui::Element elemento = ftxui::text("  " + etiqueta + ": " + valor);
-    if (const auto color = _tema.colorDe(Rol::Subtitulo)) {
-        // El TEXTO del dato va con el color de subtitulo: el encabezado de la
+    if (const auto color = _tema.colorDe(Rol::Secundario)) {
+        // El TEXTO del dato va con el color secundario: el encabezado de la
         // tabla es el que dice que es, asi que el valor no compite con el.
         elemento = elemento | ftxui::color(aFtxui(*color));
     }
@@ -172,7 +172,7 @@ ftxui::Element PantallaAcercaDe::renderizar() {
     lineas.push_back(ftxui::text("  Copyright (c) 2019 Arthur Sonzonni"));
 
     lineas.push_back(ftxui::separator());
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }

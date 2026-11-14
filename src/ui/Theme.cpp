@@ -5,56 +5,121 @@
 namespace ui {
 namespace {
 
-// LA PALETA
+// ---------------------------------------------------------------------------
+// LA PALETA DE UN TEMA
 //
-// Son valores RGB enteros. Los tonos son legibles sobre un fondo oscuro
-// (que es el fondo que se elige por defecto en una terminal) y los roles de
-// exito y de error son los mas saturados, porque son los que tienen que
-// saltar a la vista.
-constexpr Color COLOR_TITULO{94, 214, 255};
-constexpr Color COLOR_SUBTITULO{150, 150, 150};
-constexpr Color COLOR_EXITO{126, 231, 135};
-constexpr Color COLOR_ERROR{255, 106, 106};
-constexpr Color COLOR_ADVERTENCIA{255, 214, 102};
-constexpr Color COLOR_TABLA_HEADER{235, 235, 235};
-constexpr Color COLOR_TABLA_CELDA{200, 200, 200};
-constexpr Color COLOR_TABLA_BORDE{110, 110, 110};
+// Son los valores de los roles CON color propio de UN tema. Los roles SIN
+// color propio (`ValorDeCampo` y `TablaCelda`) NO estan: se dibujan con el
+// color por defecto de la terminal, asi que no hay ningun numero que guardar.
+//
+// QUE SIGNIFICA CADA COLOR (el contrato)
+//
+// Los numeros de abajo estan comentados con el SIGNIFICADO del color, no con
+// su nombre: el color es la forma, el significado es el contrato. Un tono
+// que se cambia tiene que poder cambiarse sin perder el significado.
+//
+//   - los que ACOMPAÑAN (el titulo, el realce, la etiqueta de campo) son los
+//     que tienen que distinguirse del texto de alrededor;
+//   - los que ACOMPAÑAN SIN IMPORTAR (el secundario, la ayuda, el borde) son
+//     los que no pueden competir con el dato;
+//   - los de ESTADO (activo, cancelado, reprogramado) dicen COMO ESTA la
+//     fila, asi que tienen que ser distinguibles entre si.
+//
+// POR QUE HAY DOS JUEGOS DE VALORES Y NO UNO
+//
+// La paleta esta afinada para un fondo: los tonos claros se lavan en un
+// terminal de fondo blanco y los oscuros desaparecen en uno de fondo negro.
+// Los roles siguen siendo los mismos: lo que cambia es el numero, asi que
+// ajustar un tono despues es tocar un valor.
+// ---------------------------------------------------------------------------
+struct Paleta {
+    Color titulo;
+    Color realce;
+    Color secundario;
+    Color etiquetaDeCampo;
+    Color ayuda;
+    Color exito;
+    Color error;
+    Color advertencia;
+    Color estadoActivo;
+    Color estadoCancelado;
+    Color estadoReprogramado;
+    Color tablaHeader;
+    Color tablaBorde;
+    Color calorBajo;
+    Color calorMedio;
+    Color calorAlto;
+    Color calorMaximo;
+};
 
-// ---------------------------------------------------------------------------
-// LOS COLORES DEL MAPA DE CALOR
+// EL TEMA OSCURO
 //
-// SON UNA RAMPA DE "MAS ES MAS CALIENTE"
+// Esta afinado para una terminal de FONDO OSCURO: los tonos son claros sobre
+// el fondo, y los roles de exito y de error son los mas saturados, porque son
+// los que tienen que saltar a la vista.
+const Paleta& paletaOscura() {
+    static const Paleta paleta = {
+        {94, 214, 255},   // Titulo: el encabezado, bien separado del texto
+        {255, 214, 102},  // Realce: lo que la pantalla trata
+        {140, 150, 163},  // Secundario: ids, contadores y filas atenuadas
+        {126, 168, 216},  // EtiquetaDeCampo: el nombre del campo del formulario
+        {110, 118, 129},  // Ayuda: la linea de atajos del pie
+        {126, 231, 135},  // Exito: la operacion salio bien
+        {255, 106, 106},  // Error: la operacion fallo
+        {255, 214, 102},  // Advertencia: hay que mirar pero no fallo
+        {126, 231, 135},  // EstadoActivo: el turno o la persona esta vigente
+        {217, 119, 118},  // EstadoCancelado: no se va a usar
+        {255, 214, 102},  // EstadoReprogramado: se movera a otra fecha
+        {94, 214, 255},   // TablaHeader: el rotulo de la columna
+        {70, 80, 92},     // TablaBorde: el marco, sin competir con el dato
+        {70, 130, 220},   // CalorBajo: la rampa del mapa de calor
+        {90, 200, 140},   // CalorMedio: la rampa del mapa de calor
+        {255, 200, 90},   // CalorAlto: la rampa del mapa de calor
+        {240, 90, 70},    // CalorMaximo: la rampa del mapa de calor
+    };
+    return paleta;
+}
+
+// EL TEMA CLARO
 //
-// El dia con mas turnos se tiene que ver al instante, asi que los cuatro
-// niveles van de un color FRIO a uno CALIENTE: azul, verde, amarillo y rojo.
-// Es la rampa clasica del mapa de calor, y funciona sobre un fondo oscuro
-// (que es el fondo que se elige por defecto en una terminal).
+// Esta afinado para una terminal de FONDO CLARO: los tonos son oscuros, asi
+// que se leen sobre el blanco. Los mismos roles, otros numeros.
 //
-// EL "0 TURNOS" NO TIENE COLOR
+// LA RAMPA DEL MAPA DE CALOR NO CAMBIA
 //
-// Un dia sin turnos no es "el nivel mas bajo": es la AUSENCIA de ocupacion.
-// Por eso no tiene un rol propio: la celda se pinta con el color normal de
-// una celda (`COLOR_TABLA_CELDA`) y la leyenda lo dice con palabras.
-//
-// POR QUE EL VERDE ES EL SEGUNDO Y NO EL PRIMERO
-//
-// El verde es, en un consultorio, el color de "todo bien": si el primer
-// nivel (1-2 turnos) fuera verde, un dia con dos turnos pareceria un dia
-// libre. Empezando por el azul, la lectura es "de poco a mucho": el azul es
-// el nivel bajo y el rojo el nivel alto.
-// ---------------------------------------------------------------------------
-constexpr Color COLOR_CALOR_BAJO{70, 130, 220};
-constexpr Color COLOR_CALOR_MEDIO{90, 200, 140};
-constexpr Color COLOR_CALOR_ALTO{255, 200, 90};
-constexpr Color COLOR_CALOR_MAXIMO{240, 90, 70};
+// Los cuatro niveles del mapa de calor son los mismos en los dos temas: son
+// una rampa de "mas es mas caliente", y los dos extremos (el azul y el rojo)
+// se distinguen igual sobre los dos fondos.
+const Paleta& paletaClara() {
+    static const Paleta paleta = {
+        {20, 90, 150},    // Titulo: el encabezado, bien separado del texto
+        {138, 109, 31},   // Realce: lo que la pantalla trata
+        {95, 105, 117},   // Secundario: ids, contadores y filas atenuadas
+        {47, 92, 138},    // EtiquetaDeCampo: el nombre del campo del formulario
+        {138, 148, 159},  // Ayuda: la linea de atajos del pie
+        {26, 127, 55},    // Exito: la operacion salio bien
+        {179, 38, 30},    // Error: la operacion fallo
+        {170, 107, 0},    // Advertencia: hay que mirar pero no fallo
+        {26, 127, 55},    // EstadoActivo: el turno o la persona esta vigente
+        {179, 38, 30},    // EstadoCancelado: no se va a usar
+        {170, 107, 0},    // EstadoReprogramado: se movera a otra fecha
+        {20, 90, 150},    // TablaHeader: el rotulo de la columna
+        {195, 202, 210},  // TablaBorde: el marco, sin competir con el dato
+        {70, 130, 220},   // CalorBajo: la rampa del mapa de calor
+        {90, 200, 140},   // CalorMedio: la rampa del mapa de calor
+        {255, 200, 90},   // CalorAlto: la rampa del mapa de calor
+        {240, 90, 70},    // CalorMaximo: la rampa del mapa de calor
+    };
+    return paleta;
+}
 
 // EL CACHE DEL ENTORNO
 //
 // Son dos variables (el valor y si ya se leyo) y no una sola porque el valor
 // se tiene que poder RESETEAR: los tests cambian `NO_COLOR` en caliente, y
-// el menu de configuracion puede cambiar la paleta en caliente.
-bool& valorCacheado() {
-    static bool valor = true;
+// el menu de configuracion puede cambiar el tema en caliente.
+Tema& valorCacheado() {
+    static Tema valor = Tema::Oscuro;
     return valor;
 }
 
@@ -64,30 +129,44 @@ bool& entornoLeido() {
 }
 
 // ---------------------------------------------------------------------------
-// EL ESTADO COMPARTIDO DE LOS COLORES ACTIVOS
+// EL ESTADO COMPARTIDO DEL TEMA
 //
-// Es UN SOLO booleano para todo el programa: el toggle de la pantalla de
-// configuracion lo escribe y TODAS las pantallas lo leen.
+// Es UN SOLO tema para todo el programa: la pantalla de configuracion (y la
+// de tema) lo escriben y TODAS las pantallas lo leen.
 //
 // SE INICIALIZA UNA SOLA VEZ
 //
-// El valor inicial sale del entorno (`coloresActivosPorDefecto()`). Despues
-// de eso, el unico que lo cambia es `establecerColoresActivos()`.
+// El valor inicial sale del entorno (`temaPorDefecto()`). Despues de eso, el
+// unico que lo cambia es `establecerTema()`.
 //
 // POR QUE NO ESTA EN EL CONSTRUCTOR DE `Theme`
 //
 // `Tabla` crea un `Theme` en cada render, y las pantallas tienen el suyo
 // desde que se arman. Si el constructor reiniciara el estado compartido, el
-// toggle se perderia en el primer redibujado. Por eso el estado vive ACA
-// (un `static` de funcion) y el constructor solo lo CONSULTA.
+// tema se perderia en el primer redibujado. Por eso el estado vive ACA (un
+// `static` de funcion) y el constructor solo lo CONSULTA.
 //
 // OJO: el estado se inicializa al PRIMER USO, no al cargar el programa. Es
 // lo que permite que los tests cambien `NO_COLOR` antes de la primera
 // consulta.
 // ---------------------------------------------------------------------------
-bool& estadoCompartido() {
-    static bool valor = Theme::coloresActivosPorDefecto();
+Tema& estadoCompartido() {
+    static Tema valor = Theme::temaPorDefecto();
     return valor;
+}
+
+// La paleta del tema activo.
+//
+// El tema "Apagados" NO tiene paleta: es la ausencia de color, asi que no
+// hay ningun numero que devolver.
+const Paleta* paletaDelTema(Tema tema) {
+    if (tema == Tema::Claro) {
+        return &paletaClara();
+    }
+    if (tema == Tema::Oscuro) {
+        return &paletaOscura();
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -97,10 +176,10 @@ Theme::Theme() {
     // se inicializa en el primer uso).
 }
 
-Theme::Theme(bool coloresActivos) : _forzado(coloresActivos) {
+Theme::Theme(Tema tema) : _forzado(tema) {
 }
 
-bool Theme::coloresActivos() const {
+Tema Theme::tema() const {
     // El valor EFECTIVO: el forzado de la instancia si lo hay, y el del
     // estado compartido si no.
     if (_forzado.has_value()) {
@@ -109,74 +188,107 @@ bool Theme::coloresActivos() const {
     return estadoCompartido();
 }
 
+bool Theme::coloresActivos() const {
+    // Solo el tema "Apagados" deja de pintar color.
+    return tema() != Tema::Apagados;
+}
+
 std::optional<Color> Theme::colorDe(Rol rol) const {
-    if (!coloresActivos()) {
+    const Paleta* paleta = paletaDelTema(tema());
+    if (paleta == nullptr) {
+        // El tema esta apagado (o el rol no tiene color propio): la pantalla
+        // dibuja el texto tal cual, sin ningun codigo de color.
         return std::nullopt;
     }
+
     switch (rol) {
         case Rol::Titulo:
-            return titulo();
-        case Rol::Subtitulo:
-            return subtitulo();
+            return paleta->titulo;
+        case Rol::Realce:
+            return paleta->realce;
+        case Rol::Secundario:
+            return paleta->secundario;
+        case Rol::EtiquetaDeCampo:
+            return paleta->etiquetaDeCampo;
+        case Rol::ValorDeCampo:
+            // SIN COLOR PROPIO: el valor de un campo va con el color por
+            // defecto de la terminal.
+            return std::nullopt;
+        case Rol::Ayuda:
+            return paleta->ayuda;
         case Rol::Exito:
-            return exito();
+            return paleta->exito;
         case Rol::Error:
-            return error();
+            return paleta->error;
         case Rol::Advertencia:
-            return advertencia();
+            return paleta->advertencia;
+        case Rol::EstadoActivo:
+            return paleta->estadoActivo;
+        case Rol::EstadoCancelado:
+            return paleta->estadoCancelado;
+        case Rol::EstadoReprogramado:
+            return paleta->estadoReprogramado;
         case Rol::TablaHeader:
-            return tablaHeader();
+            return paleta->tablaHeader;
         case Rol::TablaCelda:
-            return tablaCelda();
+            // SIN COLOR PROPIO: la celda va con el color por defecto.
+            return std::nullopt;
         case Rol::TablaBorde:
-            return tablaBorde();
+            return paleta->tablaBorde;
         case Rol::CalorBajo:
-            return calorBajo();
+            return paleta->calorBajo;
         case Rol::CalorMedio:
-            return calorMedio();
+            return paleta->calorMedio;
         case Rol::CalorAlto:
-            return calorAlto();
+            return paleta->calorAlto;
         case Rol::CalorMaximo:
-            return calorMaximo();
+            return paleta->calorMaximo;
     }
     return std::nullopt;
 }
 
-const Color& Theme::titulo() const { return COLOR_TITULO; }
-const Color& Theme::subtitulo() const { return COLOR_SUBTITULO; }
-const Color& Theme::exito() const { return COLOR_EXITO; }
-const Color& Theme::error() const { return COLOR_ERROR; }
-const Color& Theme::advertencia() const { return COLOR_ADVERTENCIA; }
-const Color& Theme::tablaHeader() const { return COLOR_TABLA_HEADER; }
-const Color& Theme::tablaCelda() const { return COLOR_TABLA_CELDA; }
-const Color& Theme::tablaBorde() const { return COLOR_TABLA_BORDE; }
+std::optional<Color> Theme::titulo() const { return colorDe(Rol::Titulo); }
+std::optional<Color> Theme::realce() const { return colorDe(Rol::Realce); }
+std::optional<Color> Theme::secundario() const { return colorDe(Rol::Secundario); }
+std::optional<Color> Theme::etiquetaDeCampo() const { return colorDe(Rol::EtiquetaDeCampo); }
+std::optional<Color> Theme::valorDeCampo() const { return colorDe(Rol::ValorDeCampo); }
+std::optional<Color> Theme::ayuda() const { return colorDe(Rol::Ayuda); }
+std::optional<Color> Theme::exito() const { return colorDe(Rol::Exito); }
+std::optional<Color> Theme::error() const { return colorDe(Rol::Error); }
+std::optional<Color> Theme::advertencia() const { return colorDe(Rol::Advertencia); }
+std::optional<Color> Theme::estadoActivo() const { return colorDe(Rol::EstadoActivo); }
+std::optional<Color> Theme::estadoCancelado() const { return colorDe(Rol::EstadoCancelado); }
+std::optional<Color> Theme::estadoReprogramado() const { return colorDe(Rol::EstadoReprogramado); }
+std::optional<Color> Theme::tablaHeader() const { return colorDe(Rol::TablaHeader); }
+std::optional<Color> Theme::tablaCelda() const { return colorDe(Rol::TablaCelda); }
+std::optional<Color> Theme::tablaBorde() const { return colorDe(Rol::TablaBorde); }
 
-const Color& Theme::calorBajo() const { return COLOR_CALOR_BAJO; }
-const Color& Theme::calorMedio() const { return COLOR_CALOR_MEDIO; }
-const Color& Theme::calorAlto() const { return COLOR_CALOR_ALTO; }
-const Color& Theme::calorMaximo() const { return COLOR_CALOR_MAXIMO; }
+std::optional<Color> Theme::calorBajo() const { return colorDe(Rol::CalorBajo); }
+std::optional<Color> Theme::calorMedio() const { return colorDe(Rol::CalorMedio); }
+std::optional<Color> Theme::calorAlto() const { return colorDe(Rol::CalorAlto); }
+std::optional<Color> Theme::calorMaximo() const { return colorDe(Rol::CalorMaximo); }
 
 const Bordes& Theme::bordes() const {
     static const Bordes bordes;
     return bordes;
 }
 
-bool Theme::coloresActivosPorDefecto() {
+Tema Theme::temaPorDefecto() {
     if (!entornoLeido()) {
         const char* noColor = std::getenv("NO_COLOR");
         // La especificacion de NO_COLOR dice: si la variable esta DEFINIDA y
         // NO esta vacia, no se usan colores. Una variable definida pero
         // vacia NO apaga los colores.
-        valorCacheado() = !(noColor != nullptr && noColor[0] != '\0');
+        valorCacheado() = (noColor != nullptr && noColor[0] != '\0') ? Tema::Apagados : Tema::Oscuro;
         entornoLeido() = true;
     }
     return valorCacheado();
 }
 
-void Theme::establecerColoresActivos(bool coloresActivos) {
+void Theme::establecerTema(Tema tema) {
     // Escribe el estado COMPARTIDO: el efecto es inmediato en todas las
     // pantallas que lo siguen (o sea, todas).
-    estadoCompartido() = coloresActivos;
+    estadoCompartido() = tema;
 }
 
 void Theme::recargarEntorno() {
@@ -188,7 +300,7 @@ void Theme::recargarEntorno() {
     // "Recargar el entorno" es "volver a lo que dice el entorno": si el
     // usuario habia apagado los colores a mano, esta llamada los vuelve a
     // prender (o los apaga, si `NO_COLOR` esta definida).
-    estadoCompartido() = coloresActivosPorDefecto();
+    estadoCompartido() = temaPorDefecto();
 }
 
 } // namespace ui

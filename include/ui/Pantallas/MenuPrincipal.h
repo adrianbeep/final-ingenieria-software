@@ -15,11 +15,17 @@
 // ya tienen modulo. Los PRs siguientes van agregar su opcion en su lugar, asi
 // que la lista nunca promete nada que no funcione.
 //
-// SON OCHO OPCIONES
+// SON NUEVE OPCIONES
 //
 // "1. Pacientes", "2. Medicos", "3. Turnos", "4. Reportes", "5. Calendario",
-// "6. Configuracion", "7. Acerca de" y "0. Salir". El '0' esta reservado
-// para salir y no se puede usar para otra cosa.
+// "6. Configuracion", "7. Acerca de", "8. Tema" y "0. Salir". El '0' esta
+// reservado para salir y no se puede usar para otra cosa.
+//
+// EL TEMA ESTA AL ALCANCE DE LA MANO
+//
+// El tema de color es la unica preferencia que el usuario puede cambiar en
+// cualquier momento, asi que tiene su propia entrada en el menu principal (y
+// tambien esta en Configuracion, que es donde viven las preferencias).
 //
 // EL MENSAJE DE LA ULTIMA OPERACION
 //
@@ -57,6 +63,7 @@ private:
     void abrirCalendario();
     void abrirConfiguracion();
     void abrirAcercaDe();
+    void abrirTema();
 
     ftxui::Element encabezado() const;
     ftxui::Element lineaOpcion(int indice) const;
