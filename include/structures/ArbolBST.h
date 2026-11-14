@@ -1,5 +1,7 @@
 #pragma once
 
+#include "structures/ListaEnlazada.h"
+
 #include <cstddef>
 #include <vector>
 
@@ -119,7 +121,14 @@ public:
     // que define a un BST y lo que va a producir el archivo de datos.
     // `recorrerInOrder()` es el caso general (callback) y `inOrder()` se
     // apoya en el: no hay dos formas de hacer lo mismo.
+    //
+    // `inOrderEnLista()` es la MISMA secuencia, pero en una
+    // `ListaEnlazada<T>`: es la forma en que la capa de persistencia recibe
+    // los registros (la lista es la representacion en memoria de un archivo
+    // de datos). El recorrido es el mismo: lo que cambia es la estructura
+    // en la que queda.
     std::vector<T> inOrder() const;
+    ListaEnlazada<T> inOrderEnLista() const;
     template <class F> void recorrerInOrder(F&& visitante) const;
 
     // Construye el arbol BALANCEADO a partir de una secuencia ORDENADA por
@@ -437,6 +446,15 @@ template <class T>
 template <class F>
 void ArbolBST<T>::recorrerInOrder(F&& visitante) const {
     recorrerEn(raiz, visitante);
+}
+
+// LA SECUENCIA ORDENADA, EN UNA LISTA: el mismo recorrido que `inOrder()`,
+// con la lista como estructura de salida.
+template <class T>
+ListaEnlazada<T> ArbolBST<T>::inOrderEnLista() const {
+    ListaEnlazada<T> lista;
+    recorrerInOrder([&lista](const T& valor_) { lista.insertarFinal(valor_); });
+    return lista;
 }
 
 template <class T>

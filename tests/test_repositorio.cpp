@@ -4,6 +4,7 @@
 #include "entities/Medico.h"
 #include "entities/Turno.h"
 #include "exceptions/ExcepcionesSistema.h"
+#include "persistence/ArchivoTexto.h"
 #include "repositories/IRepositorio.h"
 #include "repositories/IRepositorioBajaLogica.h"
 #include "repositories/RepositorioPacientes.h"
@@ -111,6 +112,14 @@ std::vector<std::string> leerLineas(const std::string& ruta) {
         lineas.push_back(linea);
     }
     return lineas;
+}
+
+// Contenido completo del archivo, en BYTES: es lo que se compara cuando la
+// pregunta es "el archivo salio igual".
+std::string leerArchivo(const std::string& ruta) {
+    std::ifstream archivo(ruta, std::ios::in | std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(archivo)),
+                       std::istreambuf_iterator<char>());
 }
 
 // ---------------------------------------------------------------------------
@@ -1602,6 +1611,61 @@ TEST_CASE("despues de las altas y las modificaciones el archivo sigue ordenado p
     for (std::size_t i = 1; i < listados.size(); ++i) {
         CHECK(listados[i - 1].getId() < listados[i].getId());
     }
+}
+
+// ---------------------------------------------------------------------------
+// LA RUTA DE LA LISTA
+//
+// El repositorio persiste por la LISTA (la representacion en memoria del
+// archivo de datos). Lo que se prueba ACA es que el archivo que deja el
+// repositorio es IDENTICO al que dejaba antes de que la lista existiera: el
+// formato del archivo no depende de la estructura de la que se leen los
+// registros.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("el repositorio escribe el mismo archivo que la ruta del vector",
+          repositorio_bytes_identicos_con_el_vector) {
+    // El repositorio escribe por la lista.
+    const std::string rutaRepositorio = rutaDePrueba("bytes_repo.dat");
+    std::filesystem::remove(rutaRepositorio);
+
+    RepositorioPacientes repo(rutaRepositorio);
+    for (int id = 1; id <= 15; ++id) {
+        repo.alta(pacienteDePrueba(id));
+    }
+
+    // El MISMO conjunto de pacientes, escrito por la ruta del vector.
+    std::vector<Paciente> registros;
+    for (int id = 1; id <= 15; ++id) {
+        registros.push_back(pacienteDePrueba(id));
+    }
+    const std::string rutaVector = rutaDePrueba("bytes_repo_vector.dat");
+    ArchivoTexto<Paciente> archivo(rutaVector, "PACIENTES");
+    archivo.guardar(registros);
+
+    CHECK(leerArchivo(rutaRepositorio) == leerArchivo(rutaVector));
+}
+
+TEST_CASE("el repositorio relee por la lista el archivo que escribio",
+          repositorio_round_trip_por_lista) {
+    const std::string ruta = rutaDePrueba("round_trip_lista.dat");
+    std::filesystem::remove(ruta);
+
+    RepositorioPacientes repo(ruta);
+    for (int id = 1; id <= 10; ++id) {
+        repo.alta(pacienteDePrueba(id));
+    }
+
+    // Un repositorio NUEVO sobre el MISMO archivo: lo lee por la lista y
+    // reconstruye el arbol con lo que devuelve.
+    RepositorioPacientes otro(ruta);
+    otro.cargar();
+    CHECK(otro.contar() == 10);
+
+    Paciente encontrado;
+    CHECK(otro.buscarPorId(7, encontrado));
+    CHECK(encontrado.getId() == 7);
+    CHECK(encontrado.getDni() == "2020007");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "exceptions/ExcepcionesSistema.h"
+#include "structures/ListaEnlazada.h"
 #include "utils/Utils.h"
 
 #include <atomic>
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <random>
@@ -251,12 +253,35 @@ public:
 
     // Escribe TODOS los registros, de forma ATOMICA. Reemplaza el archivo
     // completo: no agrega ni modifica lo que hubiera.
+    //
+    // La lista es la FORMA en que un archivo de datos vive en memoria: por
+    // eso `guardar()` tambien acepta una `ListaEnlazada<T>`. Las dos
+    // sobrecargas escriben el MISMO archivo: el formato depende de los
+    // registros, no de la estructura de la que se leen.
     void guardar(const std::vector<T>& registros);
+    void guardar(const ListaEnlazada<T>& registros);
+
+    // Escribe los registros de una lista de inicializacion: es la forma
+    // comoda de escribir ("guardar({a, b, c})").
+    //
+    // POR QUE EXISTE
+    //
+    // Con las DOS sobrecargas de arriba, una lista VACIA entre llaves es
+    // AMBIGUA: `{}` puede ser un vector vacio o una lista vacia, y el
+    // compilador no puede elegir. Esta sobrecarga resuelve la ambiguedad:
+    // una lista entre llaves siempre es una lista de inicializacion.
+    void guardar(std::initializer_list<T> registros);
 
     // Lee y valida. Lanza `ArchivoNoEncontradoException` si el archivo no
     // existe, `FormatoDesconocidoException` si el formato no calza y
     // `DatoInvalidoException` si un registro esta mal.
+    //
+    // Y la version que devuelve la LISTA: es la lectura de la capa de
+    // persistencia (la que usa el repositorio). El archivo que se lee es el
+    // mismo y la validacion es la misma: lo que cambia es la estructura en
+    // que vuelven los registros.
     std::vector<T> cargar();
+    ListaEnlazada<T> cargarEnLista();
 
     // Crea el archivo con el header y la linea de esquema, SIN registros.
     // No hace nada si el archivo ya existe (no pisa datos).
@@ -267,6 +292,30 @@ public:
     const std::string& nombreEntidad() const;
 
 private:
+    // El cuerpo de la escritura, para CUALQUIER secuencia de registros (un
+    // vector o una lista).
+    //
+    // POR QUE ES UN METODO PLANTILLA
+    //
+    // El archivo que sale no depende de la estructura de la que se leen los
+    // registros: depende de los registros. Por eso el cuerpo (el buffer en
+    // memoria, el temporal, el rename atomico) vive UNA vez y las dos
+    // sobrecargas de `guardar()` son delegadoras.
+    template <class Secuencia>
+    void guardarSecuencia(const Secuencia& registros);
+
+    // El cuerpo de la lectura, con un VISITANTE por registro.
+    //
+    // La validacion (header, linea de esquema y cantidad declarada) es la
+    // MISMA para las dos salidas: por eso vive ACA y no duplicada en
+    // `cargar()` y `cargarEnLista()`.
+    //
+    // El conteo de registros leidos se lleva aca adentro (y no en el
+    // visitante) porque la validacion del header necesita saber cuantos se
+    // leyeron.
+    template <class Visitante>
+    void leerVisitando(Visitante&& visitante);
+
     // Escribe UN registro canonico con el `operator<<` del tipo `T`.
     void escribirRegistro(std::ostream& out, const T& registro) const;
 
@@ -331,6 +380,22 @@ ArchivoTexto<T>::ArchivoTexto(std::string ruta_, std::string nombreEntidad_)
 
 template <class T>
 void ArchivoTexto<T>::guardar(const std::vector<T>& registros) {
+    guardarSecuencia(registros);
+}
+
+template <class T>
+void ArchivoTexto<T>::guardar(const ListaEnlazada<T>& registros) {
+    guardarSecuencia(registros);
+}
+
+template <class T>
+void ArchivoTexto<T>::guardar(std::initializer_list<T> registros) {
+    guardarSecuencia(std::vector<T>(registros));
+}
+
+template <class T>
+template <class Secuencia>
+void ArchivoTexto<T>::guardarSecuencia(const Secuencia& registros) {
     // --- PASO 1: serializar TODO en memoria ---
     // Si algo lanza (un dato invalido), NO se toco el disco: el archivo
     // original sigue intacto. Por eso el buffer va antes de abrir nada.
@@ -447,6 +512,21 @@ void ArchivoTexto<T>::guardar(const std::vector<T>& registros) {
 
 template <class T>
 std::vector<T> ArchivoTexto<T>::cargar() {
+    std::vector<T> registros;
+    leerVisitando([&registros](const T& registro) { registros.push_back(registro); });
+    return registros;
+}
+
+template <class T>
+ListaEnlazada<T> ArchivoTexto<T>::cargarEnLista() {
+    ListaEnlazada<T> registros;
+    leerVisitando([&registros](const T& registro) { registros.insertarFinal(registro); });
+    return registros;
+}
+
+template <class T>
+template <class Visitante>
+void ArchivoTexto<T>::leerVisitando(Visitante&& visitante) {
     std::error_code error;
     if (!std::filesystem::exists(_ruta, error)) {
         throw ArchivoNoEncontradoException(_ruta);
@@ -519,7 +599,10 @@ std::vector<T> ArchivoTexto<T>::cargar() {
     }
 
     // --- PASO 3: los registros ---
-    std::vector<T> registros;
+    //
+    // El conteo se lleva aca (y no en el visitante): la validacion del
+    // header necesita saber cuantos registros se leyeron.
+    std::size_t leidos = 0;
     int numeroLinea = 2;  // la linea 1 es el header y la 2 el esquema
     while (std::getline(entrada, linea)) {
         ++numeroLinea;
@@ -527,17 +610,18 @@ std::vector<T> ArchivoTexto<T>::cargar() {
         if (Utils::trim(linea).empty()) {
             continue;
         }
-        registros.push_back(leerRegistro(linea, numeroLinea));
+        visitante(leerRegistro(linea, numeroLinea));
+        ++leidos;
     }
 
     // --- PASO 4: la cantidad declarada tiene que coincidir ---
     // Si no coincide, hay DOS casos opuestos y el mensaje tiene que decir
     // CUAL de los dos es: decir siempre "truncado" cuando sobran registros
     // seria mentir sobre el archivo.
-    if (static_cast<long long>(registros.size()) != cantidadDeclarada) {
+    if (static_cast<long long>(leidos) != cantidadDeclarada) {
         const std::string detalle = "el header declara " + std::to_string(cantidadDeclarada)
-            + " registro(s) y se leyeron " + std::to_string(registros.size());
-        if (static_cast<long long>(registros.size()) < cantidadDeclarada) {
+            + " registro(s) y se leyeron " + std::to_string(leidos);
+        if (static_cast<long long>(leidos) < cantidadDeclarada) {
             // Faltan registros: el archivo esta truncado.
             throw DatoInvalidoException("archivo", _ruta, "archivo truncado: " + detalle);
         }
@@ -545,8 +629,6 @@ std::vector<T> ArchivoTexto<T>::cargar() {
         throw DatoInvalidoException("archivo", _ruta,
                                     "el archivo tiene mas registros que los declarados: " + detalle);
     }
-
-    return registros;
 }
 
 template <class T>

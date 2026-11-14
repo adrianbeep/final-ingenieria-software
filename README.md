@@ -72,7 +72,7 @@ ctest --test-dir build --output-on-failure
 # 100% tests passed, 0 tests failed out of 1
 
 mingw32-make test
-# 580 caso(s), 0 fallo(s)
+# 594 caso(s), 0 fallo(s)
 ```
 
 El arnes de tests es propio (`tests/test_framework.h`): macros `TEST_CASE` y
@@ -120,6 +120,27 @@ eso esta garantizado por construccion:
 Medido con 1000 entidades: **altura 10 y 9 comparaciones** para encontrar un id
 y 9 para un id inexistente. Los tests fijan la complejidad **contando
 comparaciones**, no midiendo el reloj.
+
+### Donde esta la lista enlazada
+
+`ListaEnlazada<T>` es la representacion **en memoria de un archivo de datos**:
+por ella pasan TODAS las lecturas y TODAS las escrituras de `data/*.dat`.
+
+- `ArchivoTexto<T>::cargarEnLista()` devuelve los registros del archivo en una
+  lista; `ArchivoTexto<T>::guardar(lista)` escribe una lista.
+- `RepositorioCRUD<T>::persistir()` arma la lista con el recorrido en orden del
+  arbol y se la entrega al archivo; `cargar()` la recibe y reconstruye el
+  arbol.
+
+El **formato en disco no cambio**: los bytes de `data/*.dat` y de
+`data/ejemplo/*.dat` son los mismos que antes de que la lista existiera, y
+los tests lo verifican byte a byte (la ruta del vector y la de la lista
+escriben el mismo archivo).
+
+La lista **no ordena** (no tiene `operator<`): recibe la secuencia ya
+ordenada del arbol. Y **no tiene `operator[]`**: en una lista enlazada seria
+O(n), asi que el puente con el codigo que necesita acceso aleatorio es
+`aVector()`.
 
 ### La interfaz: una TUI de consola
 
