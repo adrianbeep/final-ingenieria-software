@@ -62,13 +62,18 @@ Con Make (fallback, sin CMake; en Windows con MinGW el comando es `mingw32-make`
 make && make test && make run
 ```
 Verificacion: `ctest --test-dir build` da 100% tests passed (0 tests failed out of 1) y
-`mingw32-make test` da 594 casos y 0 fallos.
+`mingw32-make test` da 608 casos y 0 fallos.
 
 ## La aplicacion
 
-Ocho opciones: Pacientes, Medicos, Turnos, Reportes, Calendario, Configuracion, Acerca de y Salir.
+Nueve opciones: Pacientes, Medicos, Turnos, Reportes, Calendario, Configuracion, Acerca de, Tema y Salir.
 Teclado primero: las flechas mueven, `Enter` elige, `0` y `Esc` vuelven; el mouse es un plus.
 Sin terminal interactiva imprime el menu en texto plano y sale con codigo 0: lo que evita que el CI se cuelgue.
+
+El color de la TUI es SEMANTICO: cada rol de la paleta dice para que sirve (lo que la pantalla
+trata, lo que acompana, el estado de una fila), y hay **dos temas** (oscuro y claro) que se eligen
+en la pantalla de Tema (opcion `8` del menu, o la opcion `1` de Configuracion). Con `NO_COLOR`
+definido la aplicacion arranca sin color, pero el usuario puede elegir el tema.
 
 ## Las decisiones de diseno
 
@@ -80,7 +85,7 @@ Sin terminal interactiva imprime el menu en texto plano y sale con codigo 0: lo 
 6. **La interfaz es una TUI propia sobre FTXUI vendorizada**, no el framework de la terminal del sistema: teclado primero, y sin terminal interactiva imprime el menu en texto plano y sale con codigo 0, que es lo que permite que el CI lo ejecute sin colgarse.
 7. **La interfaz no pide ids**: donde antes habia un id de base de datos, hay un buscador (se escribe un nombre, un DNI, un legajo o una especialidad y se elige de la lista). Un id es una clave primaria de un archivo: nadie lo tiene en la cabeza.
 
-Las 44 decisiones, con su alternativa descartada, estan en [docs/decisiones.md](docs/decisiones.md).
+Las 53 decisiones, con su alternativa descartada, estan en [docs/decisiones.md](docs/decisiones.md).
 
 ## Los datos
 
@@ -109,6 +114,6 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 | 3 | Estructuras de datos propias | [#6](https://github.com/adrianbeep/final-ingenieria-software/issues/6) | Completada |
 | 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Completada |
 | 5 | Repositorios y reglas de negocio | [#14](https://github.com/adrianbeep/final-ingenieria-software/issues/14) | Completada |
-| 6 | Interfaz de consola TUI: 38 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | Completada |
+| 6 | Interfaz de consola TUI: 39 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | Completada |
 | 7 | Extras y cierre tecnico | — | Pendiente |
 | 8 | Documentacion y defensa | — | En curso |

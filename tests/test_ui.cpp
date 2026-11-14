@@ -17,6 +17,7 @@
 #include "ui/Consola.h"
 #include "ui/Contexto.h"
 #include "ui/CrudPersonas.h"
+#include "ui/Dibujo.h"
 #include "ui/Evento.h"
 #include "ui/MapaCalor.h"
 #include "ui/Menu.h"
@@ -29,6 +30,7 @@
 #include "ui/Pantallas/Pacientes.h"
 #include "ui/Pantallas/Medicos.h"
 #include "ui/Pantallas/Reportes.h"
+#include "ui/Pantallas/Tema.h"
 #include "ui/Pantallas/Turnos.h"
 #include "ui/Semana.h"
 #include "ui/Tabla.h"
@@ -224,7 +226,8 @@ TEST_CASE("sin NO_COLOR el tema propone colores", tema_sin_no_color_propone_colo
     borrarNoColor();
     ui::Theme::recargarEntorno();
 
-    CHECK(ui::Theme::coloresActivosPorDefecto() == true);
+    // EL TEMA INICIAL ES EL OSCURO
+    CHECK(ui::Theme::temaPorDefecto() == ui::Tema::Oscuro);
 
     const ui::Theme tema;
     CHECK(tema.coloresActivos() == true);
@@ -237,35 +240,45 @@ TEST_CASE("con NO_COLOR el tema no propone ningun color", tema_con_no_color_no_p
     definirNoColor("1");
     ui::Theme::recargarEntorno();
 
-    CHECK(ui::Theme::coloresActivosPorDefecto() == false);
+    CHECK(ui::Theme::temaPorDefecto() == ui::Tema::Apagados);
 
     const ui::Theme tema;
     CHECK(tema.coloresActivos() == false);
     // Ningun rol propone color: la pantalla dibuja el texto tal cual.
     CHECK(tema.colorDe(ui::Rol::Titulo).has_value() == false);
-    CHECK(tema.colorDe(ui::Rol::Subtitulo).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::Realce).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::Secundario).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::EtiquetaDeCampo).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::ValorDeCampo).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::Ayuda).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::Exito).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::Error).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::Advertencia).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::EstadoActivo).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::EstadoCancelado).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::EstadoReprogramado).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::TablaHeader).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::TablaCelda).has_value() == false);
     CHECK(tema.colorDe(ui::Rol::TablaBorde).has_value() == false);
 
-    // La paleta pura sigue existiendo: apagar los colores no la borra.
-    CHECK(tema.titulo().r >= 0 && tema.titulo().r <= 255);
+    // La paleta del tema oscuro sigue existiendo: apagar los colores no la
+    // borra (lo que se apaga es el tema, no la paleta).
+    const ui::Theme oscuro(ui::Tema::Oscuro);
+    CHECK(oscuro.titulo().has_value() == true);
+    CHECK(oscuro.titulo()->r >= 0 && oscuro.titulo()->r <= 255);
 
     borrarNoColor();
     ui::Theme::recargarEntorno();
 }
 
-TEST_CASE("el tema se puede forzar con o sin colores", tema_forzado) {
-    const ui::Theme con( true);
-    const ui::Theme sin(false);
+TEST_CASE("el tema se puede forzar", tema_forzado) {
+    const ui::Theme oscuro(ui::Tema::Oscuro);
+    const ui::Theme apagado(ui::Tema::Apagados);
 
-    CHECK(con.coloresActivos() == true);
-    CHECK(con.colorDe(ui::Rol::Titulo).has_value() == true);
-    CHECK(sin.coloresActivos() == false);
-    CHECK(sin.colorDe(ui::Rol::Titulo).has_value() == false);
+    CHECK(oscuro.coloresActivos() == true);
+    CHECK(oscuro.colorDe(ui::Rol::Titulo).has_value() == true);
+    CHECK(apagado.coloresActivos() == false);
+    CHECK(apagado.colorDe(ui::Rol::Titulo).has_value() == false);
 }
 
 TEST_CASE("los caracteres de borde son los esperados", tema_bordes) {
@@ -5406,13 +5419,14 @@ TEST_CASE("la celda de un dia se pinta con el color de su nivel de calor",
     // de arriba) y la columna 0 arranca en la posicion 3 (la sangria y el
     // separador vertical). El numero esta CENTRADO en la celda.
     const ui::Theme tema;
-    CHECK(lienzo.PixelAt(7, 5).foreground_color == ui::aFtxui(tema.calorMaximo()));
+    CHECK(lienzo.PixelAt(7, 5).foreground_color == ui::aFtxui(*tema.calorMaximo()));
 
     // Y UN DIA SIN TURNOS NO TIENE COLOR DE CALOR
     //
     // El dia 2 (la segunda celda de la primera semana) no tiene turnos: se
-    // pinta con el color normal de una celda.
-    CHECK(lienzo.PixelAt(17, 5).foreground_color == ui::aFtxui(tema.tablaCelda()));
+    // pinta con el color por defecto de la terminal (el rol de celda no
+    // tiene color propio).
+    CHECK(lienzo.PixelAt(17, 5).foreground_color == ftxui::Color::Default);
 }
 
 TEST_CASE("la leyenda del mapa de calor muestra las muestras cuando hay colores",
@@ -5752,7 +5766,7 @@ TEST_CASE("las tablas del calendario entran en 80 columnas",
 //   - las dos pantallas nuevas (configuracion y "acerca de");
 //   - los estados vacios CON ACCION (los listados de pacientes, medicos y
 //     turnos) y la carga de datos de ejemplo;
-//   - el conteo de 38 pantallas del epico;
+//   - el conteo de 39 pantallas del epico;
 //   - la Definition of Done: el '0' y el `Escape` vuelven en todos los
 //     niveles, toda baja o cancelacion pide confirmacion de dos pasos, y hay
 //     UN SOLO formato de error en toda la aplicacion.
@@ -6019,28 +6033,29 @@ std::vector<std::filesystem::path> archivosDeLaCapaUi(const std::filesystem::pat
 } // namespace
 
 // ---------------------------------------------------------------------------
-// EL FLAG DE COLOR COMPARTIDO
+// EL TEMA COMPARTIDO
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el toggle cambia el render de una pantalla VIVA", tema_el_toggle_cambia_el_render) {
-    // SIN COLORES
-    ui::Theme::establecerColoresActivos(false);
+TEST_CASE("el cambio de tema cambia el render de una pantalla VIVA",
+           tema_el_cambio_cambia_el_render) {
+    // CON LOS COLORES APAGADOS
+    ui::Theme::establecerTema(ui::Tema::Apagados);
 
-    EscenarioCierre escenario("tema_el_toggle_cambia_el_render");
+    EscenarioCierre escenario("tema_el_cambio_cambia_el_render");
     ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
 
-    // El titulo de la pantalla se dibuja con el color del titulo... si los
-    // colores estan encendidos.
+    // El titulo de la pantalla se dibuja con el color del titulo... si el
+    // tema propone color.
     CHECK(colorDeLaFila(menu.renderizar(), 0) == ftxui::Color::Default);
 
-    // EL TOGGLE: el estado es COMPARTIDO, asi que el cambio se ve en la
-    // pantalla que YA esta abierta (no en una nueva).
-    ui::Theme::establecerColoresActivos(true);
+    // EL TEMA ES COMPARTIDO: el cambio se ve en la pantalla que YA esta
+    // abierta (no en una nueva).
+    ui::Theme::establecerTema(ui::Tema::Oscuro);
 
     const ui::Theme tema;
-    CHECK(colorDeLaFila(menu.renderizar(), 0) == ui::aFtxui(tema.titulo()));
+    CHECK(colorDeLaFila(menu.renderizar(), 0) == ui::aFtxui(*tema.titulo()));
 
-    ui::Theme::establecerColoresActivos(false);
+    ui::Theme::establecerTema(ui::Tema::Apagados);
 }
 
 TEST_CASE("NO_COLOR definido y no vacio arranca SIN color", tema_no_color_no_vacio) {
@@ -6048,18 +6063,23 @@ TEST_CASE("NO_COLOR definido y no vacio arranca SIN color", tema_no_color_no_vac
     ui::Theme::recargarEntorno();
 
     // EL ENTORNO MANDA AL ARRANCAR
-    CHECK(ui::Theme::coloresActivosPorDefecto() == false);
+    CHECK(ui::Theme::temaPorDefecto() == ui::Tema::Apagados);
     const ui::Theme tema;
     CHECK(tema.coloresActivos() == false);
     CHECK(tema.colorDe(ui::Rol::Titulo).has_value() == false);
 
-    // PERO NO ES UN VETO: el usuario puede ENCENDERLOS desde la
-    // configuracion.
-    ui::Theme::establecerColoresActivos(true);
+    // PERO NO ES UN VETO: el usuario puede ELEGIR un tema con color desde la
+    // pantalla de configuracion.
+    ui::Theme::establecerTema(ui::Tema::Oscuro);
     CHECK(ui::Theme().coloresActivos() == true);
     CHECK(ui::Theme().colorDe(ui::Rol::Titulo).has_value() == true);
 
-    ui::Theme::establecerColoresActivos(false);
+    // Y PUEDE ELEGIR EL CLARO TAMBIEN
+    ui::Theme::establecerTema(ui::Tema::Claro);
+    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(ui::Theme().colorDe(ui::Rol::Titulo).has_value() == true);
+
+    ui::Theme::establecerTema(ui::Tema::Apagados);
     borrarNoColor();
     ui::Theme::recargarEntorno();
 }
@@ -6078,7 +6098,7 @@ TEST_CASE("NO_COLOR definido y vacio arranca CON color", tema_no_color_vacio) {
     definirNoColor("");
     ui::Theme::recargarEntorno();
 
-    CHECK(ui::Theme::coloresActivosPorDefecto() == true);
+    CHECK(ui::Theme::temaPorDefecto() == ui::Tema::Oscuro);
     const ui::Theme tema;
     CHECK(tema.coloresActivos() == true);
     CHECK(tema.colorDe(ui::Rol::Titulo).has_value() == true);
@@ -6087,42 +6107,42 @@ TEST_CASE("NO_COLOR definido y vacio arranca CON color", tema_no_color_vacio) {
     ui::Theme::recargarEntorno();
 }
 
-TEST_CASE("establecer los colores y recargar el entorno vuelve al valor del entorno",
+TEST_CASE("establecer el tema y recargar el entorno vuelve al valor del entorno",
            tema_establecer_y_recargar) {
     borrarNoColor();
     ui::Theme::recargarEntorno();
-    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(ui::Theme().tema() == ui::Tema::Oscuro);
 
-    // EL TOGGLE MANUAL
-    ui::Theme::establecerColoresActivos(false);
-    CHECK(ui::Theme().coloresActivos() == false);
+    // EL TEMA ELEGIDO A MANO
+    ui::Theme::establecerTema(ui::Tema::Claro);
+    CHECK(ui::Theme().tema() == ui::Tema::Claro);
 
     // RECARGAR EL ENTORNO VUELVE A LO QUE DICE EL ENTORNO (no a lo que el
-    // usuario habia apagado a mano).
+    // usuario habia elegido a mano).
     ui::Theme::recargarEntorno();
-    CHECK(ui::Theme().coloresActivos() == true);
+    CHECK(ui::Theme().tema() == ui::Tema::Oscuro);
 
     // Y CON `NO_COLOR` DEFINIDO, RECARGAR LOS APAGA.
     definirNoColor("1");
     ui::Theme::recargarEntorno();
-    CHECK(ui::Theme().coloresActivos() == false);
+    CHECK(ui::Theme().tema() == ui::Tema::Apagados);
 
     borrarNoColor();
     ui::Theme::recargarEntorno();
 }
 
 TEST_CASE("un tema forzado no toca el estado compartido", tema_forzado_no_toca_el_compartido) {
-    // El estado compartido arranca con los colores ENCENDIDOS: el test
-    // comprueba que un tema forzado NO lo toca.
-    ui::Theme::establecerColoresActivos(true);
+    // El estado compartido arranca con el tema OSCURO: el test comprueba que
+    // un tema forzado NO lo toca.
+    ui::Theme::establecerTema(ui::Tema::Oscuro);
 
     // EL TEMA FORZADO (lo usan los tests)
-    const ui::Theme sin(false);
-    CHECK(sin.coloresActivos() == false);
-    CHECK(sin.colorDe(ui::Rol::Titulo).has_value() == false);
+    const ui::Theme apagado(ui::Tema::Apagados);
+    CHECK(apagado.coloresActivos() == false);
+    CHECK(apagado.colorDe(ui::Rol::Titulo).has_value() == false);
 
-    // EL ESTADO COMPARTIDO NO SE TOCO: otra instancia sigue con los colores.
-    CHECK(ui::Theme().coloresActivos() == true);
+    // EL ESTADO COMPARTIDO NO SE TOCO: otra instancia sigue con el tema.
+    CHECK(ui::Theme().tema() == ui::Tema::Oscuro);
     CHECK(ui::Theme().colorDe(ui::Rol::Titulo).has_value() == true);
 
     // Se restaura el valor del ENTORNO para el test que sigue: si `NO_COLOR`
@@ -6134,9 +6154,9 @@ TEST_CASE("un tema forzado no toca el estado compartido", tema_forzado_no_toca_e
 // EL MENU PRINCIPAL
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el menu principal muestra las ocho opciones",
-           menu_principal_las_ocho_opciones) {
-    EscenarioCierre escenario("menu_principal_las_ocho_opciones");
+TEST_CASE("el menu principal muestra las nueve opciones",
+           menu_principal_las_nueve_opciones) {
+    EscenarioCierre escenario("menu_principal_las_nueve_opciones");
     ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
 
     const std::string texto = menu.textoPlano();
@@ -6147,10 +6167,11 @@ TEST_CASE("el menu principal muestra las ocho opciones",
     CHECK(texto.find("5. Calendario") != std::string::npos);
     CHECK(texto.find("6. Configuracion") != std::string::npos);
     CHECK(texto.find("7. Acerca de") != std::string::npos);
+    CHECK(texto.find("8. Tema") != std::string::npos);
     CHECK(texto.find("0. Salir") != std::string::npos);
 
-    // Y son ocho: ni una mas ni una menos.
-    CHECK(cantidadDeOpciones(menu.textoPlano()) == 8);
+    // Y son nueve: ni una mas ni una menos.
+    CHECK(cantidadDeOpciones(menu.textoPlano()) == 9);
 }
 
 TEST_CASE("los atajos del menu principal abren los modulos y el cero sale",
@@ -6249,12 +6270,12 @@ TEST_CASE("el contexto comparte el estado entre las pantallas",
     //
     // No vive en el contexto, pero se comparte igual: lo que cambia en una
     // pantalla se ve en todas las demas.
-    ui::Theme::establecerColoresActivos(false);
+    ui::Theme::establecerTema(ui::Tema::Apagados);
     CHECK(ui::Theme().coloresActivos() == false);
-    // Se restaura el valor del ENTORNO (no un true a secas): si `NO_COLOR`
+    // Se restaura el valor del ENTORNO (no un tema a secas): si `NO_COLOR`
     // esta definida, el valor del entorno es "sin colores".
     ui::Theme::recargarEntorno();
-    CHECK(ui::Theme().coloresActivos() == ui::Theme::coloresActivosPorDefecto());
+    CHECK(ui::Theme().tema() == ui::Theme::temaPorDefecto());
 }
 
 // ---------------------------------------------------------------------------
@@ -6270,30 +6291,66 @@ TEST_CASE("el menu de configuracion muestra las dos acciones y el cero de volver
     CHECK(pantalla.titulo() == "CONFIGURACION");
 
     const std::string texto = pantalla.vistaTextoPlano();
-    CHECK(texto.find("1. Activar / desactivar colores") != std::string::npos);
+    CHECK(texto.find("1. Tema de color") != std::string::npos);
     CHECK(texto.find("2. Cargar datos de ejemplo") != std::string::npos);
     CHECK(texto.find("0. Volver") != std::string::npos);
     CHECK(cantidadDeOpciones(texto) == 3);
 }
 
-TEST_CASE("el toggle de los colores cambia el estado compartido y avisa",
-           configuracion_el_toggle) {
-    EscenarioCierre escenario("configuracion_el_toggle");
+TEST_CASE("la pantalla de configuracion abre la pantalla del tema",
+           configuracion_abre_el_tema) {
+    EscenarioCierre escenario("configuracion_abre_el_tema");
     ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
 
-    ui::Theme::establecerColoresActivos(false);
-
     pantalla.manejar(eventoCaracter('1'));
-    CHECK(ui::Theme().coloresActivos() == true);
+
+    // La pantalla del tema esta ARRIBA de la de configuracion.
+    CHECK(escenario.aplicacion.textoPlanoActual().find("TEMA") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// LA PANTALLA DEL TEMA
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la pantalla del tema muestra los tres temas y el que esta activo",
+           tema_la_pantalla_del_tema) {
+    EscenarioCierre escenario("tema_la_pantalla_del_tema");
+    ui::Theme::establecerTema(ui::Tema::Oscuro);
+
+    ui::Pantallas::PantallaTema pantalla(escenario.aplicacion);
+
+    const std::string texto = pantalla.vistaTextoPlano();
+    CHECK(texto.find("1. Apagados") != std::string::npos);
+    CHECK(texto.find("2. Oscuro") != std::string::npos);
+    CHECK(texto.find("3. Claro") != std::string::npos);
+    CHECK(texto.find("0. Volver") != std::string::npos);
+    CHECK(texto.find("Tema activo: Oscuro") != std::string::npos);
+
+    // Y EL '0' SACA LA PANTALLA DE LA PILA
+    pantalla.manejar(eventoCaracter('0'));
+    CHECK(escenario.aplicacion.textoPlanoActual().find("TEMA") == std::string::npos);
+
+    ui::Theme::recargarEntorno();
+}
+
+TEST_CASE("elegir un tema cambia el estado compartido y avisa", tema_elegir_un_tema) {
+    EscenarioCierre escenario("tema_elegir_un_tema");
+    ui::Theme::establecerTema(ui::Tema::Oscuro);
+
+    ui::Pantallas::PantallaTema pantalla(escenario.aplicacion);
+
+    pantalla.manejar(eventoCaracter('3'));
+    CHECK(ui::Theme().tema() == ui::Tema::Claro);
     CHECK(escenario.contexto.mensaje().esExito());
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Colores activados.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Tema Claro.");
+    CHECK(pantalla.vistaTextoPlano().find("Tema activo: Claro") != std::string::npos);
 
+    // Y EL TEMA APAGADO DEJA DE PINTAR COLOR
     pantalla.manejar(eventoCaracter('1'));
+    CHECK(ui::Theme().tema() == ui::Tema::Apagados);
     CHECK(ui::Theme().coloresActivos() == false);
-    CHECK(escenario.contexto.mensaje().texto() == "OK  Colores desactivados.");
+    CHECK(escenario.contexto.mensaje().texto() == "OK  Tema Apagados.");
 
-    // Se restaura el valor del ENTORNO (no un true a secas): si `NO_COLOR`
-    // esta definida, el valor del entorno es "sin colores".
     ui::Theme::recargarEntorno();
 }
 
@@ -6737,11 +6794,11 @@ TEST_CASE("el cero y el escape del estado vacio vuelven",
 }
 
 // ---------------------------------------------------------------------------
-// EL CONTEO DE 38 PANTALLAS DEL EPICO
+// EL CONTEO DE 39 pantallas del epico
 // ---------------------------------------------------------------------------
 
-TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
-           cierre_las_38_pantallas) {
+TEST_CASE("el epico cuenta 39 pantallas y cada menu lista sus opciones",
+           cierre_las_39_pantallas) {
     // CADA OPCION DE UN MENU ES UNA PANTALLA DEL EPICO
     //
     // El menu principal y la pantalla de "acerca de" son UNA cada una (no
@@ -6750,7 +6807,7 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 1. EL MENU PRINCIPAL (una pantalla)
     {
-        EscenarioCierre escenario("cierre_38_menu_principal");
+        EscenarioCierre escenario("cierre_39_menu_principal");
         ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
         const std::string texto = menu.textoPlano();
         CHECK(texto.find("1. Pacientes") != std::string::npos);
@@ -6760,13 +6817,14 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
         CHECK(texto.find("5. Calendario") != std::string::npos);
         CHECK(texto.find("6. Configuracion") != std::string::npos);
         CHECK(texto.find("7. Acerca de") != std::string::npos);
+        CHECK(texto.find("8. Tema") != std::string::npos);
         CHECK(texto.find("0. Salir") != std::string::npos);
         total += 1;
     }
 
     // 2. PACIENTES (siete pantallas)
     {
-        EscenarioCrudConCarpeta escenario("cierre_38_pacientes");
+        EscenarioCrudConCarpeta escenario("cierre_39_pacientes");
         const std::string texto = escenario.puntero->vistaTextoPlano();
         CHECK(texto.find("1. Registrar paciente") != std::string::npos);
         CHECK(texto.find("2. Modificar paciente") != std::string::npos);
@@ -6781,7 +6839,7 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 3. MEDICOS (siete pantallas)
     {
-        EscenarioCrudMedicosConCarpeta escenario("cierre_38_medicos");
+        EscenarioCrudMedicosConCarpeta escenario("cierre_39_medicos");
         const std::string texto = escenario.puntero->vistaTextoPlano();
         CHECK(texto.find("1. Registrar medico") != std::string::npos);
         CHECK(texto.find("2. Modificar medico") != std::string::npos);
@@ -6796,7 +6854,7 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 4. TURNOS (ocho pantallas)
     {
-        EscenarioCierre escenario("cierre_38_turnos");
+        EscenarioCierre escenario("cierre_39_turnos");
         auto pantalla = std::make_unique<ui::Pantallas::PantallaTurnos>(
             escenario.aplicacion, escenario.turnos, escenario.pacientes, escenario.medicos,
             escenario.servicio);
@@ -6815,7 +6873,7 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 5. REPORTES (siete pantallas)
     {
-        EscenarioCierre escenario("cierre_38_reportes");
+        EscenarioCierre escenario("cierre_39_reportes");
         auto pantalla = std::make_unique<ui::Pantallas::PantallaReportes>(
             escenario.aplicacion, escenario.pacientes, escenario.medicos, escenario.servicio);
         const std::string texto = pantalla->vistaTextoPlano();
@@ -6832,7 +6890,7 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 6. CALENDARIO (cuatro pantallas)
     {
-        EscenarioCierre escenario("cierre_38_calendario");
+        EscenarioCierre escenario("cierre_39_calendario");
         auto pantalla = std::make_unique<ui::Pantallas::PantallaCalendario>(
             escenario.aplicacion, escenario.pacientes, escenario.medicos, escenario.servicio,
             Fecha(2027, 3, 10));
@@ -6847,26 +6905,45 @@ TEST_CASE("el epico cuenta 38 pantallas y cada menu lista sus opciones",
 
     // 7. CONFIGURACION (tres pantallas)
     {
-        EscenarioCierre escenario("cierre_38_configuracion");
+        EscenarioCierre escenario("cierre_39_configuracion");
         ui::Pantallas::PantallaConfiguracion pantalla(escenario.aplicacion);
         const std::string texto = pantalla.vistaTextoPlano();
-        CHECK(texto.find("1. Activar / desactivar colores") != std::string::npos);
+        CHECK(texto.find("1. Tema de color") != std::string::npos);
         CHECK(texto.find("2. Cargar datos de ejemplo") != std::string::npos);
         CHECK(texto.find("0. Volver") != std::string::npos);
         CHECK(cantidadDeOpciones(texto) == 3);
         total += 3;
     }
 
-    // 8. ACERCA DE (una pantalla)
+    // 8. EL TEMA (una pantalla)
+    //
+    // La pantalla del tema de color: es la que elige entre apagados, oscuro
+    // y claro. Vive sola (la usan el menu principal y la configuracion).
     {
-        EscenarioCierre escenario("cierre_38_acerca_de");
+        EscenarioCierre escenario("cierre_39_tema");
+        ui::Pantallas::PantallaTema pantalla(escenario.aplicacion);
+        const std::string texto = pantalla.vistaTextoPlano();
+        CHECK(texto.find("1. Apagados") != std::string::npos);
+        CHECK(texto.find("2. Oscuro") != std::string::npos);
+        CHECK(texto.find("3. Claro") != std::string::npos);
+        CHECK(texto.find("0. Volver") != std::string::npos);
+        CHECK(cantidadDeOpciones(texto) == 4);
+        total += 1;
+    }
+
+    // 9. ACERCA DE (una pantalla)
+    {
+        EscenarioCierre escenario("cierre_39_acerca_de");
         ui::Pantallas::PantallaAcercaDe pantalla(escenario.aplicacion);
         CHECK(pantalla.titulo() == "ACERCA DE");
         total += 1;
     }
 
     // EL CONTEO DEL EPICO
-    CHECK(total == 38);
+    //
+    // Son 39: las 38 del epico mas la pantalla del tema, que se agrego con
+    // los dos temas de la paleta (el issue #63).
+    CHECK(total == 39);
 }
 
 // ---------------------------------------------------------------------------
@@ -6985,5 +7062,469 @@ TEST_CASE("los errores que la aplicacion produce usan el formato unico",
 
         const std::string mensaje = escenario.contexto.mensaje().texto();
         CHECK(mensaje.compare(0, 4, "ERR ") == 0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LA PALETA SEMANTICA (el issue #63)
+//
+// QUE SE VERIFICA ACa
+//
+//   - los roles por intencion existen, proponen su color con el tema
+//     encendido y `nullopt` con el tema apagado;
+//   - el tema claro usa los valores claros (y la rampa del mapa de calor no
+//     cambia);
+//   - el DIBUJO: la etiqueta del campo y el valor usan roles distintos, la
+//     linea de ayuda usa el rol de ayuda, el digito del menu usa el de realce
+//     y la celda del estado usa el color de su estado;
+//   - la TABLA: la cabecera va con su color y en negrita, y las celdas con
+//     el color por defecto.
+// ---------------------------------------------------------------------------
+namespace {
+
+// UN SCREEN CON LO DIBUJADO
+//
+// El render de una pantalla es un `ftxui::Element`: para verificar el color
+// de UNA celda hay que dibujarlo en un screen y mirar la celda.
+ftxui::Screen pantallaDe(const ftxui::Element& elemento, int ancho = 120, int alto = 40) {
+    ftxui::Screen pantalla = ftxui::Screen::Create(ftxui::Dimension::Fixed(ancho),
+                                                   ftxui::Dimension::Fixed(alto));
+    ftxui::Render(pantalla, elemento);
+    return pantalla;
+}
+
+// LA FILA QUE EMPIEZA CON UN TEXTO
+//
+// Devuelve la fila de la primera linea que empieza con el texto, o -1 si no
+// hay ninguna. Es lo que permite verificar el color de UNA linea sin saber
+// en que fila queda.
+//
+// LOS ESPACIOS VACIOS
+//
+// Una celda que nadie escribio tiene el caracter VACIO, no un espacio: la
+// terminal lo imprime como un espacio, asi que la linea se arma con un
+// espacio en su lugar (si no, las columnas no casarian).
+int filaQueEmpiezaCon(const ftxui::Screen& lienzo, const std::string& prefijo) {
+    for (int y = 0; y < lienzo.dimy(); ++y) {
+        std::string linea;
+        for (int x = 0; x < lienzo.dimx(); ++x) {
+            const std::string& caracter = lienzo.PixelAt(x, y).character;
+            linea += caracter.empty() ? " " : caracter;
+        }
+        if (linea.compare(0, prefijo.size(), prefijo) == 0) {
+            return y;
+        }
+    }
+    return -1;
+}
+
+// LA COLUMNA DE UN TEXTO EN UNA FILA
+//
+// Devuelve la columna del primer caracter del texto en la fila, o -1 si el
+// texto no esta en esa fila.
+int columnaDe(const ftxui::Screen& lienzo, int y, const std::string& texto) {
+    std::string linea;
+    for (int x = 0; x < lienzo.dimx(); ++x) {
+        const std::string& caracter = lienzo.PixelAt(x, y).character;
+        linea += caracter.empty() ? " " : caracter;
+    }
+    const std::size_t posicion = linea.find(texto);
+    if (posicion == std::string::npos) {
+        return -1;
+    }
+    return static_cast<int>(posicion);
+}
+
+} // namespace
+
+TEST_CASE("los roles por intencion proponen su color", tema_los_roles_por_intencion) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    // LOS ROLES QUE TIENEN COLOR PROPIO
+    CHECK(tema.colorDe(ui::Rol::Realce).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::Secundario).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::EtiquetaDeCampo).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::Ayuda).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::EstadoActivo).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::EstadoCancelado).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::EstadoReprogramado).has_value() == true);
+
+    // LOS ROLES SIN COLOR PROPIO
+    //
+    // El valor de un campo y la celda de una tabla van con el color por
+    // defecto de la terminal: no proponen ningun color.
+    CHECK(tema.colorDe(ui::Rol::ValorDeCampo).has_value() == false);
+    CHECK(tema.colorDe(ui::Rol::TablaCelda).has_value() == false);
+
+    // LOS ROLES DE LOS MENSAJES NO CAMBIAN
+    CHECK(tema.colorDe(ui::Rol::Exito).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::Error).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::Advertencia).has_value() == true);
+
+    // NI LA RAMPA DEL MAPA DE CALOR
+    CHECK(tema.colorDe(ui::Rol::CalorBajo).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::CalorMedio).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::CalorAlto).has_value() == true);
+    CHECK(tema.colorDe(ui::Rol::CalorMaximo).has_value() == true);
+
+    // Y CON EL TEMA APAGADO, NINGUN ROL PROPONE COLOR
+    const ui::Theme apagado(ui::Tema::Apagados);
+    CHECK(apagado.colorDe(ui::Rol::Realce).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::Secundario).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::EtiquetaDeCampo).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::Ayuda).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::EstadoActivo).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::EstadoCancelado).has_value() == false);
+    CHECK(apagado.colorDe(ui::Rol::EstadoReprogramado).has_value() == false);
+}
+
+TEST_CASE("el tema claro usa los valores claros", tema_el_tema_claro_usa_los_valores_claros) {
+    const ui::Theme oscuro(ui::Tema::Oscuro);
+    const ui::Theme claro(ui::Tema::Claro);
+
+    // EL TITULO
+    //
+    // El oscuro es el cian (#5ED6FF) y el claro es el azul oscuro (#145A96):
+    // los dos se leen, pero el claro esta afinado para un fondo blanco.
+    CHECK(oscuro.titulo()->r == 94);
+    CHECK(oscuro.titulo()->g == 214);
+    CHECK(oscuro.titulo()->b == 255);
+
+    CHECK(claro.titulo()->r == 20);
+    CHECK(claro.titulo()->g == 90);
+    CHECK(claro.titulo()->b == 150);
+
+    // Y LOS OTROS ROLES CON COLOR PROPIO
+    CHECK(claro.realce()->r == 138);        // #8A6D1F
+    CHECK(claro.secundario()->r == 95);     // #5F6975
+    CHECK(claro.etiquetaDeCampo()->r == 47);  // #2F5C8A
+    CHECK(claro.ayuda()->r == 138);         // #8A949F
+    CHECK(claro.estadoActivo()->r == 26);   // #1A7F37
+    CHECK(claro.estadoCancelado()->r == 179);  // #B3261E
+    CHECK(claro.estadoReprogramado()->r == 170);  // #AA6B00
+    CHECK(claro.tablaHeader()->r == 20);    // #145A96
+    CHECK(claro.tablaBorde()->r == 195);    // #C3CAD2
+
+    // LA RAMPA DEL MAPA DE CALOR NO CAMBIA
+    CHECK(claro.calorBajo()->r == oscuro.calorBajo()->r);
+    CHECK(claro.calorMedio()->g == oscuro.calorMedio()->g);
+    CHECK(claro.calorAlto()->r == oscuro.calorAlto()->r);
+    CHECK(claro.calorMaximo()->r == oscuro.calorMaximo()->r);
+}
+
+TEST_CASE("el estado de una celda decide su color", dibujo_el_rol_del_estado) {
+    // EL ESTADO DE UN TURNO
+    CHECK(ui::rolDeEstado("Activo") == ui::Rol::EstadoActivo);
+    CHECK(ui::rolDeEstado("Cancelado") == ui::Rol::EstadoCancelado);
+    CHECK(ui::rolDeEstado("Reprogramado") == ui::Rol::EstadoReprogramado);
+
+    // Y EL DE UNA PERSONA (el flag `activo`)
+    CHECK(ui::rolDeEstado("activo") == ui::Rol::EstadoActivo);
+    CHECK(ui::rolDeEstado("inactivo") == ui::Rol::EstadoCancelado);
+
+    // UN TEXTO QUE NO ES UN ESTADO NO INVENTA UN SIGNIFICADO
+    CHECK(ui::rolDeEstado("algo raro") == ui::Rol::TablaCelda);
+}
+
+TEST_CASE("los roles de una fila son los de sus columnas con significado",
+           dibujo_los_roles_de_una_fila) {
+    const std::vector<std::string> cabeceras = {"id", "fecha", "estado"};
+    const std::vector<ui::Rol> roles =
+        ui::rolesDeFila(cabeceras, {"31", "2027-03-10", "Cancelado"});
+
+    CHECK(roles.size() == 3);
+    if (roles.size() == 3) {
+        // EL ID ES UNA REFERENCIA
+        CHECK(roles[0] == ui::Rol::Secundario);
+        // LA FECHA ES UN DATO
+        CHECK(roles[1] == ui::Rol::TablaCelda);
+        // Y EL ESTADO DICE COMO ESTA
+        CHECK(roles[2] == ui::Rol::EstadoCancelado);
+    }
+
+    // UNA TABLA SIN COLUMNAS CON SIGNIFICADO
+    const std::vector<ui::Rol> rolesDeLaOcupacion =
+        ui::rolesDeFila({"fecha", "dia", "turnos"}, {"2027-03-10", "lunes", "3"});
+    CHECK(rolesDeLaOcupacion.size() == 3);
+    for (const ui::Rol rol : rolesDeLaOcupacion) {
+        CHECK(rol == ui::Rol::TablaCelda);
+    }
+}
+
+TEST_CASE("la etiqueta del campo y el valor usan roles distintos", dibujo_el_campo) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    // LA LINEA DEL CAMPO
+    //
+    // La etiqueta ("Fecha") va con el color de etiqueta de campo y el valor
+    // ("2027-03-10") con el color por defecto de la terminal.
+    const ftxui::Screen linea = pantallaDe(ui::lineaDeCampo(tema, "Fecha", "2027-03-10"));
+    CHECK(linea.PixelAt(2, 0).foreground_color == ui::aFtxui(*tema.etiquetaDeCampo()));
+    CHECK(linea.PixelAt(9, 0).foreground_color == ftxui::Color::Default);
+
+    // Y EN LA PANTALLA REAL
+    //
+    // El formulario de registrar un paciente: la primera linea es la del
+    // campo "nombre".
+    EscenarioCrudConCarpeta escenario("dibujo_el_campo");
+    ui::CrudPersonas<Paciente>& motor = *escenario.puntero;
+    motor.manejar(eventoCaracter('1'));
+    CHECK(motor.vista() == "Formulario");
+
+    const ftxui::Screen formulario = pantallaDe(motor.renderizar());
+    // LA ETIQUETA DEL PRIMER CAMPO
+    CHECK(formulario.PixelAt(2, 2).foreground_color == ui::aFtxui(*tema.etiquetaDeCampo()));
+    // Y SU VALOR (el cursor) CON EL COLOR POR DEFECTO
+    CHECK(formulario.PixelAt(10, 2).foreground_color == ftxui::Color::Default);
+}
+
+TEST_CASE("la linea de atajos del pie va con el color de ayuda", dibujo_la_linea_de_ayuda) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+    EscenarioCierre escenario("dibujo_la_linea_de_ayuda");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    const ftxui::Screen lienzo = pantallaDe(menu.renderizar());
+    const int fila = filaQueEmpiezaCon(lienzo, "Flechas: mover");
+    CHECK(fila >= 0);
+    if (fila >= 0) {
+        CHECK(lienzo.PixelAt(0, fila).foreground_color == ui::aFtxui(*tema.ayuda()));
+    }
+}
+
+TEST_CASE("el digito de una opcion de menu va con el color de realce",
+           dibujo_el_digito_del_menu) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+    EscenarioCierre escenario("dibujo_el_digito_del_menu");
+    ui::Pantallas::MenuPrincipal menu(escenario.aplicacion);
+
+    const ftxui::Screen lienzo = pantallaDe(menu.renderizar());
+    const int fila = filaQueEmpiezaCon(lienzo, "  1.");
+    CHECK(fila >= 0);
+    if (fila >= 0) {
+        // EL DIGITO
+        CHECK(lienzo.PixelAt(2, fila).foreground_color == ui::aFtxui(*tema.realce()));
+        // Y LA ETIQUETA CON EL COLOR POR DEFECTO
+        CHECK(lienzo.PixelAt(5, fila).foreground_color == ftxui::Color::Default);
+    }
+}
+
+TEST_CASE("la celda del estado va con el color de su estado", dibujo_la_celda_del_estado) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    ui::Tabla tabla({"id", "estado"});
+    tabla.agregarFila(ui::filaDeTabla({"id", "estado"}, {"1", "Activo"}));
+    tabla.agregarFila(ui::filaDeTabla({"id", "estado"}, {"2", "Cancelado"}));
+    tabla.agregarFila(ui::filaDeTabla({"id", "estado"}, {"3", "Reprogramado"}));
+
+    const ftxui::Screen lienzo = pantallaDe(tabla.renderizar());
+
+    // CADA FILA CON EL COLOR DE SU ESTADO
+    const std::pair<std::string, ui::Rol> estados[] = {
+        {"Activo", ui::Rol::EstadoActivo},
+        {"Cancelado", ui::Rol::EstadoCancelado},
+        {"Reprogramado", ui::Rol::EstadoReprogramado}};
+    const char ids[] = {'1', '2', '3'};
+    for (std::size_t i = 0; i < 3; ++i) {
+        const int fila = filaQueEmpiezaCon(lienzo, std::string("| ") + ids[i] + " ");
+        CHECK(fila >= 0);
+        if (fila < 0) {
+            continue;
+        }
+        const int columna = columnaDe(lienzo, fila, estados[i].first);
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, fila).foreground_color
+                  == ui::aFtxui(*tema.colorDe(estados[i].second)));
+        }
+    }
+
+    // EL ID VA CON EL ROL SECUNDARIO
+    const int filaDelId = filaQueEmpiezaCon(lienzo, "| 1");
+    CHECK(filaDelId >= 0);
+    if (filaDelId >= 0) {
+        const int columna = columnaDe(lienzo, filaDelId, "1");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, filaDelId).foreground_color
+                  == ui::aFtxui(*tema.secundario()));
+        }
+    }
+}
+
+TEST_CASE("las filas de las entidades dadas de baja van atenuadas",
+           dibujo_las_filas_atenuadas) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    ui::Tabla tabla({"id", "nombre", "estado"});
+    tabla.agregarFila(ui::filaDeTabla({"id", "nombre", "estado"}, {"1", "Ana", "activo"}));
+    // LA FILA DE LA ENTIDAD DADA DE BAJA
+    tabla.agregarFila(
+        ui::filaDeTabla({"id", "nombre", "estado"}, {"2", "Beto", "inactivo"}, true));
+
+    const ftxui::Screen lienzo = pantallaDe(tabla.renderizar());
+
+    // EL NOMBRE DE LA FILA ATENUADA VA CON EL ROL SECUNDARIO
+    const int fila = filaQueEmpiezaCon(lienzo, "| 2");
+    CHECK(fila >= 0);
+    if (fila >= 0) {
+        const int columna = columnaDe(lienzo, fila, "Beto");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, fila).foreground_color
+                  == ui::aFtxui(*tema.secundario()));
+        }
+
+        // Y EL ESTADO CONSERVA SU COLOR: es lo que mas dice de la fila.
+        const int columnaEstado = columnaDe(lienzo, fila, "inactivo");
+        CHECK(columnaEstado >= 0);
+        if (columnaEstado >= 0) {
+            CHECK(lienzo.PixelAt(columnaEstado, fila).foreground_color
+                  == ui::aFtxui(*tema.estadoCancelado()));
+        }
+    }
+}
+
+TEST_CASE("la cabecera de la tabla va con su color y las celdas con el color por defecto",
+           tabla_la_cabecera_y_las_celdas) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    ui::Tabla tabla({"id", "nombre"});
+    tabla.agregarFila(ui::filaDeTabla({"id", "nombre"}, {"1", "Ana"}));
+
+    const ftxui::Screen lienzo = pantallaDe(tabla.renderizar());
+
+    // LA CABECERA
+    const int filaCabecera = filaQueEmpiezaCon(lienzo, "| id");
+    CHECK(filaCabecera >= 0);
+    if (filaCabecera >= 0) {
+        CHECK(lienzo.PixelAt(2, filaCabecera).foreground_color
+              == ui::aFtxui(*tema.tablaHeader()));
+        // Y EN NEGRITA: es el rotulo de la columna.
+        CHECK(lienzo.PixelAt(2, filaCabecera).bold == true);
+    }
+
+    // Y LA CELDA CON EL COLOR POR DEFECTO
+    const int filaCelda = filaQueEmpiezaCon(lienzo, "| 1 ");
+    CHECK(filaCelda >= 0);
+    if (filaCelda >= 0) {
+        const int columna = columnaDe(lienzo, filaCelda, "Ana");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, filaCelda).foreground_color == ftxui::Color::Default);
+        }
+    }
+}
+
+TEST_CASE("la columna del estado de la lista de turnos va con su color",
+           dibujo_la_columna_del_estado_de_los_turnos) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    EscenarioTurnos escenario("dibujo_la_columna_del_estado_de_los_turnos");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+    escenario.turnos.alta(
+        Turno(31, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(8, 0), 60, "A-1"));
+    escenario.turnos.alta(Turno(32, 1, 1, Especialidad::CARD, Fecha(2027, 3, 10), Hora(9, 0),
+                                60, "A-2", EstadoTurno::Cancelado));
+
+    ui::Pantallas::PantallaTurnos& turnos = *escenario.puntero;
+    turnos.manejar(eventoCaracter('5'));
+    CHECK(turnos.vista() == "Listado");
+
+    const ftxui::Screen lienzo = pantallaDe(turnos.renderizar());
+
+    // EL TURNO ACTIVO Y EL CANCELADO
+    const int filaActivo = filaQueEmpiezaCon(lienzo, "| 31");
+    CHECK(filaActivo >= 0);
+    if (filaActivo >= 0) {
+        const int columna = columnaDe(lienzo, filaActivo, "Activo");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, filaActivo).foreground_color
+                  == ui::aFtxui(*tema.estadoActivo()));
+        }
+    }
+
+    const int filaCancelado = filaQueEmpiezaCon(lienzo, "| 32");
+    CHECK(filaCancelado >= 0);
+    if (filaCancelado >= 0) {
+        const int columna = columnaDe(lienzo, filaCancelado, "Cancelado");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, filaCancelado).foreground_color
+                  == ui::aFtxui(*tema.estadoCancelado()));
+        }
+    }
+}
+
+TEST_CASE("el flujo de agendar muestra lo que la pantalla trata",
+           dibujo_el_agendar_muestra_lo_elegido) {
+    borrarNoColor();
+    ui::Theme::recargarEntorno();
+
+    const ui::Theme tema;
+
+    EscenarioTurnos escenario("dibujo_el_agendar_muestra_lo_elegido");
+    escenario.pacientes.alta(pacienteDePrueba(1, "Ana", "Gomez", "2020391"));
+    escenario.medicos.alta(
+        medicoConEspecialidad(1, "Beto", "Perez", "LEG-1001", Especialidad::CARD));
+
+    ui::Pantallas::PantallaTurnos& turnos = *escenario.puntero;
+
+    // EL FLUJO: PACIENTE -> ESPECIALIDAD -> MEDICO -> FORMULARIO
+    turnos.manejar(eventoCaracter('1'));
+    agendarConLasPersonasElegidas(turnos, "Ana", "Beto", "2027-03-10", "10:00");
+    CHECK(turnos.vista() == "Formulario");
+
+    // EL TEXTO PLANO DICE QUE SE ESTA RESERVANDO
+    const std::string texto = turnos.vistaTextoPlano();
+    CHECK(texto.find("Paciente: Ana Gomez (#1)") != std::string::npos);
+    CHECK(texto.find("Especialidad: " + descripcionDe(Especialidad::CARD))
+          != std::string::npos);
+    CHECK(texto.find("Medico: Beto Perez (#1)") != std::string::npos);
+
+    // Y EL VALOR DE CADA UNO VA CON EL COLOR DE REALCE
+    const ftxui::Screen lienzo = pantallaDe(turnos.renderizar());
+    const int fila = filaQueEmpiezaCon(lienzo, "  Paciente:");
+    CHECK(fila >= 0);
+    if (fila >= 0) {
+        const int columna = columnaDe(lienzo, fila, "Ana Gomez");
+        CHECK(columna >= 0);
+        if (columna >= 0) {
+            CHECK(lienzo.PixelAt(columna, fila).foreground_color
+                  == ui::aFtxui(*tema.realce()));
+        }
+        // Y EL ID CON EL ROL SECUNDARIO
+        const int columnaId = columnaDe(lienzo, fila, "(#1)");
+        CHECK(columnaId >= 0);
+        if (columnaId >= 0) {
+            CHECK(lienzo.PixelAt(columnaId, fila).foreground_color
+                  == ui::aFtxui(*tema.secundario()));
+        }
     }
 }

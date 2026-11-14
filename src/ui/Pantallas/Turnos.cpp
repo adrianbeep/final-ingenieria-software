@@ -1916,15 +1916,14 @@ ftxui::Element PantallaTurnos::encabezado() const {
 }
 
 ftxui::Element PantallaTurnos::lineaOpcion(const Menu& menu, int indice) const {
-    const std::string atajo(1, menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + menu.etiquetas()[static_cast<std::size_t>(indice)]);
-    if (indice == menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, menu.atajoDe(indice)),
+                          menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == menu.seleccion());
 }
 
 ftxui::Element PantallaTurnos::lineaNumeroSelector() const {
@@ -1932,12 +1931,27 @@ ftxui::Element PantallaTurnos::lineaNumeroSelector() const {
     //
     // Va a la vista porque es lo que el usuario esta TECLEANDO: si no se
     // mostrara, escribir "12" seria indistinguible de no escribir nada.
-    return ftxui::text("  Numero: " + _selector->numeroDigitado() + "|");
+    //
+    // EL ROTULO VA CON EL COLOR DE ETIQUETA DE CAMPO
+    //
+    // Es el nombre del campo, como en el formulario: el numero que se esta
+    // escribiendo es el valor, y el valor va con el color por defecto.
+    ftxui::Elements partes;
+    ftxui::Element rotulo = ftxui::text("  Numero:");
+    if (const auto color = _tema.colorDe(Rol::EtiquetaDeCampo)) {
+        rotulo = rotulo | ftxui::color(aFtxui(*color));
+    }
+    partes.push_back(rotulo);
+    partes.push_back(ftxui::text(" " + _selector->numeroDigitado() + "|"));
+    return ftxui::hbox(std::move(partes));
 }
 
 ftxui::Element PantallaTurnos::lineaCampo(const Campo& campo, bool enfocado) const {
-    ftxui::Element elemento =
-        ftxui::text("  " + campo.etiqueta() + ": " + campo.textoEnPantalla());
+    // LA ETIQUETA Y EL VALOR CON ROLES DISTINTOS
+    //
+    // Se lee de un vistazo que parte de la linea es el rotulo y que parte es
+    // el dato (ver `ui/Dibujo.h`).
+    ftxui::Element elemento = lineaDeCampo(_tema, campo.etiqueta(), campo.textoEnPantalla());
     if (enfocado) {
         elemento = elemento | ftxui::inverted;
     }
@@ -1968,7 +1982,7 @@ ftxui::Element PantallaTurnos::lineaMensaje() const {
     const Mensaje& mensaje = mensajeActual();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {
@@ -1982,6 +1996,17 @@ ftxui::Element PantallaTurnos::lineaMensaje() const {
 
 ftxui::Element PantallaTurnos::lineaFormulario() const {
     ftxui::Elements lineas;
+
+    // LO QUE LA PANTALLA TRATA
+    //
+    // En el flujo de "agendar" el paciente, la especialidad y el medico ya
+    // estan elegidos: se muestran arriba del formulario, con el color de
+    // realce, para que se vea sobre que se esta reservando. Sus ids van con
+    // el color secundario: son una referencia, no el dato.
+    for (const ftxui::Element& elemento : lineasDeLoElegido()) {
+        lineas.push_back(elemento);
+    }
+
     for (std::size_t i = 0; i < _campos.size(); ++i) {
         lineas.push_back(lineaCampo(*_campos[i], i == _indiceCampo));
         // EL ERROR VA DEBAJO DEL CAMPO
@@ -2021,19 +2046,97 @@ ftxui::Element PantallaTurnos::lineaConfirmacionEjemplo() const {
     return ftxui::vbox(std::move(lineas));
 }
 
-ftxui::Element PantallaTurnos::tablaDe(const std::vector<std::vector<std::string>>& filas,
+ftxui::Element PantallaTurnos::tablaDe(const std::vector<Tabla::Fila>& filas,
                                        const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
-    for (const std::vector<std::string>& fila : filas) {
+    for (const Tabla::Fila& fila : filas) {
         tabla.agregarFila(fila);
     }
     return tabla.renderizar();
 }
 
+// ---------------------------------------------------------------------------
+// LO QUE LA PANTALLA TRATA
+//
+// En el flujo de "agendar" el paciente, la especialidad y el medico YA estan
+// elegidos cuando se abre el formulario. El formulario solo pide lo demas
+// (la fecha, la hora, la duracion y el consultorio), asi que sin esto el
+// usuario no veria sobre que esta reservando.
+//
+// LOS DATOS ELEGIDOS VAN CON EL COLOR DE REALCE
+//
+// Son lo que la pantalla trata: tienen que saltar a la vista. Sus ids van
+// con el color secundario, porque un id es una referencia y no un dato.
+//
+// SOLO EN EL FLUJO DE AGENDAR
+//
+// En los demas flujos (cancelar, reprogramar, modificar) no hay nada elegido
+// todavia: las lineas serian ruido.
+// ---------------------------------------------------------------------------
+std::vector<ftxui::Element> PantallaTurnos::lineasDeLoElegido() const {
+    std::vector<ftxui::Element> lineas;
+
+    if (_accion != Accion::Agendar) {
+        return lineas;
+    }
+
+    if (_idPacienteElegido >= 0) {
+        lineas.push_back(lineaDeRealce(_tema, "Paciente",
+                                       nombreDelPaciente(_idPacienteElegido, _pacientes),
+                                       std::to_string(_idPacienteElegido)));
+    }
+
+    if (_especialidadElegida.has_value()) {
+        lineas.push_back(
+            lineaDeRealce(_tema, "Especialidad", descripcionDe(*_especialidadElegida)));
+    }
+
+    if (_idMedicoElegido >= 0) {
+        lineas.push_back(lineaDeRealce(_tema, "Medico",
+                                       nombreDelMedico(_idMedicoElegido, _medicos),
+                                       std::to_string(_idMedicoElegido)));
+    }
+
+    return lineas;
+}
+
+// LO QUE LA PANTALLA TRATA, EN TEXTO PLANO
+//
+// Es el MISMO contenido que las lineas del formulario (el paciente, la
+// especialidad y el medico ya elegidos), pero en texto plano: el modo sin
+// terminal tiene que mostrar lo mismo que la terminal.
+std::string PantallaTurnos::textoDeLoElegido() const {
+    std::string salida;
+
+    if (_accion != Accion::Agendar) {
+        return salida;
+    }
+
+    if (_idPacienteElegido >= 0) {
+        salida += "  Paciente: " + nombreDelPaciente(_idPacienteElegido, _pacientes) + " (#"
+            + std::to_string(_idPacienteElegido) + ")\n";
+    }
+
+    if (_especialidadElegida.has_value()) {
+        salida += "  Especialidad: " + descripcionDe(*_especialidadElegida) + "\n";
+    }
+
+    if (_idMedicoElegido >= 0) {
+        salida += "  Medico: " + nombreDelMedico(_idMedicoElegido, _medicos) + " (#"
+            + std::to_string(_idMedicoElegido) + ")\n";
+    }
+
+    return salida;
+}
+
 ftxui::Element PantallaTurnos::lineaListado() const {
-    std::vector<std::vector<std::string>> filas;
+    // LAS FILAS CON SUS ROLES
+    //
+    // El id va con el rol secundario y la celda del estado con el color de su
+    // estado: se ve de un vistazo que turnos estan cancelados.
+    std::vector<Tabla::Fila> filas;
     for (const Turno& turno : _turnos.listar()) {
-        filas.push_back(filaDe(turno, _pacientes, _medicos));
+        filas.push_back(filaDeTabla(cabecerasDeTurno(), filaDe(turno, _pacientes, _medicos)));
     }
     return tablaDe(filas, cabecerasDeTurno());
 }
@@ -2055,7 +2158,11 @@ ftxui::Element PantallaTurnos::lineaResultados() const {
     if (_filasResultado.empty()) {
         return ftxui::text("  No hay coincidencias. 0: volver al menu.");
     }
-    return tablaDe(_filasResultado, cabecerasDeTurno());
+    // LAS COINCIDENCIAS CON SUS ROLES
+    //
+    // La celda del estado va con el color de su estado: un turno cancelado
+    // se ve de un vistazo, sin leer la palabra.
+    return tablaDe(filasDeTabla(cabecerasDeTurno(), _filasResultado), cabecerasDeTurno());
 }
 
 ftxui::Element PantallaTurnos::lineaDetalle() const {
@@ -2067,8 +2174,9 @@ ftxui::Element PantallaTurnos::lineaDetalle() const {
     //
     // Todos los campos del turno, en las diez columnas de la
     // especificacion.
-    std::vector<std::vector<std::string>> filas;
-    filas.push_back(filaCompletaDe(_turno, _pacientes, _medicos));
+    std::vector<Tabla::Fila> filas;
+    filas.push_back(
+        filaDeTabla(cabecerasCompletasDeTurno(), filaCompletaDe(_turno, _pacientes, _medicos)));
     lineas.push_back(tablaDe(filas, cabecerasCompletasDeTurno()));
 
     // EL AVISO DE LA ESPECIALIDAD
@@ -2148,7 +2256,7 @@ ftxui::Element PantallaTurnos::renderizar() {
             // Es el mismo que usa el motor CRUD (ver `ui/RenderDeSelector.h`):
             // asi el resaltado de la opcion elegida es el mismo en toda la
             // aplicacion.
-            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+            for (ftxui::Element& elemento : lineasDeBuscador(_tema, *_buscador)) {
                 lineas.push_back(elemento);
             }
             if (!_buscador->error().empty()) {
@@ -2173,7 +2281,7 @@ ftxui::Element PantallaTurnos::renderizar() {
             // Es el mismo que usa el motor CRUD (ver `ui/RenderDeSelector.h`):
             // asi el resaltado de la opcion elegida es el mismo en toda la
             // aplicacion.
-            for (ftxui::Element& elemento : lineasDeSelector(*_selector)) {
+            for (ftxui::Element& elemento : lineasDeSelector(_tema, *_selector)) {
                 lineas.push_back(elemento);
             }
             if (!_selector->error().empty()) {
@@ -2226,7 +2334,7 @@ ftxui::Element PantallaTurnos::renderizar() {
     if (!mensajeActual().esVacio()) {
         lineas.push_back(lineaMensaje());
     }
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }
@@ -2366,6 +2474,11 @@ std::string PantallaTurnos::textoDeLaVista() const {
             return salida;
         }
         case Vista::Formulario: {
+            // LO QUE LA PANTALLA TRATA
+            //
+            // Las mismas lineas que van arriba del formulario (el paciente,
+            // la especialidad y el medico ya elegidos).
+            salida += textoDeLoElegido();
             for (std::size_t i = 0; i < _campos.size(); ++i) {
                 salida +=
                     "  " + _campos[i]->etiqueta() + ": " + _campos[i]->textoEnPantalla() + "\n";

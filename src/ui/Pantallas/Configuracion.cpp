@@ -3,6 +3,8 @@
 #include "ui/CargarEjemplo.h"
 #include "ui/ColorFtxui.h"
 #include "ui/Contexto.h"
+#include "ui/Dibujo.h"
+#include "ui/Pantallas/Tema.h"
 
 #include <ftxui.hpp>
 
@@ -25,7 +27,13 @@ PantallaConfiguracion::PantallaConfiguracion(Aplicacion& aplicacion)
     //
     // El atajo es el numero que se escribe (decision D28) y el '0' es
     // "Volver" en todos los niveles.
-    _menu.agregar('1', "Activar / desactivar colores", [this]() { alternarColores(); });
+    //
+    // EL TEMA SE ELIGE EN UNA PANTALLA PROPIA
+    //
+    // La pantalla del tema (ver `ui/Pantallas/Tema.h`) tiene los tres
+    // temas: apagados, oscuro y claro. Es la misma pantalla a la que se llega
+    // desde el menu principal, asi que el usuario la ve siempre igual.
+    _menu.agregar('1', "Tema de color", [this]() { abrirTema(); });
     _menu.agregar('2', "Cargar datos de ejemplo", [this]() { pedirCargaDeEjemplo(); });
     _menu.agregar('0', "Volver", [this]() { volverAtras(); });
 
@@ -134,20 +142,15 @@ bool PantallaConfiguracion::manejarConfirmacion(const Evento& evento) {
 // Las acciones
 // ---------------------------------------------------------------------------
 
-void PantallaConfiguracion::alternarColores() {
-    // EL TOGGLE ES DEL ESTADO COMPARTIDO
+void PantallaConfiguracion::abrirTema() {
+    // LA PANTALLA DEL TEMA
     //
-    // No es un bool de esta pantalla: es el estado que comparten TODAS las
-    // pantallas (ver `ui::Theme::establecerColoresActivos`). Por eso el
-    // efecto es inmediato en las que ya estan abiertas.
-    const bool nuevoValor = !_tema.coloresActivos();
-    Theme::establecerColoresActivos(nuevoValor);
-
-    if (nuevoValor) {
-        avisarExito("Colores activados.");
-    } else {
-        avisarExito("Colores desactivados.");
-    }
+    // Es la MISMA pantalla a la que se llega desde el menu principal: asi el
+    // usuario ve siempre los tres temas (apagados, oscuro y claro) en el
+    // mismo lugar.
+    _aplicacion.ir([](ui::Aplicacion& app) {
+        return crearPantallaTema(app);
+    });
 }
 
 void PantallaConfiguracion::pedirCargaDeEjemplo() {
@@ -205,15 +208,14 @@ ftxui::Element PantallaConfiguracion::encabezado() const {
 }
 
 ftxui::Element PantallaConfiguracion::lineaOpcion(int indice) const {
-    const std::string atajo(1, _menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + _menu.etiquetas()[static_cast<std::size_t>(indice)]);
-    if (indice == _menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, _menu.atajoDe(indice)),
+                          _menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == _menu.seleccion());
 }
 
 ftxui::Element PantallaConfiguracion::lineaConfirmacion() const {
@@ -235,7 +237,7 @@ ftxui::Element PantallaConfiguracion::lineaMensaje() const {
     const Mensaje& mensaje = mensajeActual();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {
@@ -284,7 +286,7 @@ ftxui::Element PantallaConfiguracion::renderizar() {
     if (!mensajeActual().esVacio()) {
         lineas.push_back(lineaMensaje());
     }
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }

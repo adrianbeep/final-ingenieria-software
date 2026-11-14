@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/Aplicacion.h"
+#include "ui/Dibujo.h"
 #include "ui/Pantalla.h"
 #include "ui/Tabla.h"
 #include "ui/Theme.h"

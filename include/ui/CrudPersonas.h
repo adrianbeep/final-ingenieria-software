@@ -9,6 +9,7 @@
 #include "ui/ColorFtxui.h"
 #include "ui/Confirmacion.h"
 #include "ui/CriterioBusqueda.h"
+#include "ui/Dibujo.h"
 #include "ui/Menu.h"
 #include "ui/Mensaje.h"
 #include "ui/Pantalla.h"
@@ -332,7 +333,7 @@ private:
     ftxui::Element lineaMenuVacio() const;
     ftxui::Element lineaResultados() const;
     ftxui::Element lineaFicha() const;
-    ftxui::Element tablaDe(const std::vector<std::vector<std::string>>& filas,
+    ftxui::Element tablaDe(const std::vector<Tabla::Fila>& filas,
                            const std::vector<std::string>& cabeceras) const;
     std::string ayuda() const;
     std::string vacio(const std::string& queFalta) const;
@@ -1490,7 +1491,7 @@ ftxui::Element CrudPersonas<T>::renderizar() {
             // Es el mismo que usa la pantalla de turnos (ver
             // `ui/RenderDeSelector.h`): asi el resaltado de la opcion
             // elegida es el mismo en toda la aplicacion.
-            for (ftxui::Element& elemento : lineasDeSelector(*_selector)) {
+            for (ftxui::Element& elemento : lineasDeSelector(_tema, *_selector)) {
                 lineas.push_back(elemento);
             }
             if (!_selector->error().empty()) {
@@ -1507,7 +1508,7 @@ ftxui::Element CrudPersonas<T>::renderizar() {
             // La coincidencia `i` queda en la fila `filaInicial + i`: el
             // hit-testing del raton lo necesita.
             _buscador->definirFilaInicial(static_cast<int>(lineas.size()));
-            for (ftxui::Element& elemento : lineasDeBuscador(*_buscador)) {
+            for (ftxui::Element& elemento : lineasDeBuscador(_tema, *_buscador)) {
                 lineas.push_back(elemento);
             }
             if (!_buscador->error().empty()) {
@@ -1551,7 +1552,7 @@ ftxui::Element CrudPersonas<T>::renderizar() {
     if (!mensajeActual().esVacio()) {
         lineas.push_back(lineaMensaje());
     }
-    lineas.push_back(ftxui::text(ayuda()));
+    lineas.push_back(lineaDeAyuda(_tema, ayuda()));
 
     return ftxui::vbox(std::move(lineas));
 }
@@ -1567,15 +1568,14 @@ ftxui::Element CrudPersonas<T>::encabezado() const {
 
 template <class T>
 ftxui::Element CrudPersonas<T>::lineaOpcion(const Menu& menu, int indice) const {
-    const std::string atajo(1, menu.atajoDe(indice));
-    ftxui::Element elemento =
-        ftxui::text("  " + atajo + ". " + menu.etiquetas()[static_cast<std::size_t>(indice)]);
-    if (indice == menu.seleccion()) {
-        // El resaltado de la opcion seleccionada. `inverted` funciona SIN
-        // color, asi que el menu se ve igual con `NO_COLOR` definido.
-        elemento = elemento | ftxui::inverted;
-    }
-    return elemento;
+    // EL DIGITO CON EL COLOR DE REALCE
+    //
+    // Es la tecla que hay que apretar: la linea la dibuja el helper
+    // compartido (ver `ui/Dibujo.h`), asi que es la misma en toda la
+    // aplicacion.
+    return lineaDeOpcion(_tema, std::string(1, menu.atajoDe(indice)),
+                          menu.etiquetas()[static_cast<std::size_t>(indice)],
+                          indice == menu.seleccion());
 }
 
 template <class T>
@@ -1590,8 +1590,11 @@ ftxui::Element CrudPersonas<T>::lineaNumeroSelector() const {
 
 template <class T>
 ftxui::Element CrudPersonas<T>::lineaCampo(const Campo& campo, bool enfocado) const {
-    ftxui::Element elemento =
-        ftxui::text("  " + campo.etiqueta() + ": " + campo.textoEnPantalla());
+    // LA ETIQUETA Y EL VALOR CON ROLES DISTINTOS
+    //
+    // Se lee de un vistazo que parte de la linea es el rotulo y que parte es
+    // el dato (ver `ui/Dibujo.h`).
+    ftxui::Element elemento = lineaDeCampo(_tema, campo.etiqueta(), campo.textoEnPantalla());
     if (enfocado) {
         elemento = elemento | ftxui::inverted;
     }
@@ -1625,7 +1628,7 @@ ftxui::Element CrudPersonas<T>::lineaMensaje() const {
     const Mensaje& mensaje = mensajeActual();
     ftxui::Element elemento = ftxui::text("  " + mensaje.texto());
 
-    Rol rol = Rol::Subtitulo;
+    Rol rol = Rol::Secundario;
     if (mensaje.esExito()) {
         rol = Rol::Exito;
     } else if (mensaje.esError()) {
@@ -1683,9 +1686,15 @@ ftxui::Element CrudPersonas<T>::lineaConfirmacionEjemplo() const {
 
 template <class T>
 ftxui::Element CrudPersonas<T>::lineaListado() const {
-    std::vector<std::vector<std::string>> filas;
+    // LAS FILAS CON SUS ROLES
+    //
+    // El id va con el rol secundario, la celda del estado con el color de su
+    // estado, y las filas de las entidades DADAS DE BAJA van atenuadas: se ve
+    // que estan, pero no compiten con las que estan vivas.
+    std::vector<Tabla::Fila> filas;
     for (const T& entidad : _repositorio.listar()) {
-        filas.push_back(_config.fila(entidad));
+        filas.push_back(filaDeTabla(_config.cabeceras, _config.fila(entidad),
+                                    !_config.esActivo(entidad)));
     }
     return tablaDe(filas, _config.cabeceras);
 }
@@ -1709,7 +1718,17 @@ ftxui::Element CrudPersonas<T>::lineaResultados() const {
     if (_filasResultado.empty()) {
         return ftxui::text("  No hay coincidencias. 0: volver al menu.");
     }
-    return tablaDe(_filasResultado, _config.cabeceras);
+    // LAS COINCIDENCIAS CON SUS ROLES
+    //
+    // La celda del estado va con el color de su estado: una coincidencia que
+    // es de una persona dada de baja se ve al instante. La fila NO va
+    // atenuada: el buscador muestra las celdas, no las entidades, asi que
+    // no sabe si la persona esta dada de baja (lo dice el estado).
+    std::vector<Tabla::Fila> filas;
+    for (const std::vector<std::string>& fila : _filasResultado) {
+        filas.push_back(filaDeTabla(_config.cabeceras, fila));
+    }
+    return tablaDe(filas, _config.cabeceras);
 }
 
 template <class T>
@@ -1719,8 +1738,9 @@ ftxui::Element CrudPersonas<T>::lineaFicha() const {
     if (_entidad) {
         lineas.push_back(ftxui::text("  Ficha de " + _config.singular + " #"
                                      + std::to_string(_entidad->getId())));
-        std::vector<std::vector<std::string>> filas;
-        filas.push_back(_config.fila(*_entidad));
+        std::vector<Tabla::Fila> filas;
+        filas.push_back(filaDeTabla(_config.cabeceras, _config.fila(*_entidad),
+                                    !_config.esActivo(*_entidad)));
         lineas.push_back(tablaDe(filas, _config.cabeceras));
         lineas.push_back(ftxui::separator());
     }
@@ -1736,7 +1756,8 @@ ftxui::Element CrudPersonas<T>::lineaFicha() const {
         if (filas.empty()) {
             lineas.push_back(ftxui::text("    No tiene turnos vigentes."));
         } else {
-            lineas.push_back(tablaDe(filas, _config.turnos.cabeceras));
+            lineas.push_back(tablaDe(filasDeTabla(_config.turnos.cabeceras, filas),
+                                      _config.turnos.cabeceras));
         }
     }
 
@@ -1746,7 +1767,8 @@ ftxui::Element CrudPersonas<T>::lineaFicha() const {
         if (filas.empty()) {
             lineas.push_back(ftxui::text("    No tiene turnos."));
         } else {
-            lineas.push_back(tablaDe(filas, _config.turnos.cabeceras));
+            lineas.push_back(tablaDe(filasDeTabla(_config.turnos.cabeceras, filas),
+                                      _config.turnos.cabeceras));
         }
     }
 
@@ -1765,10 +1787,10 @@ ftxui::Element CrudPersonas<T>::lineaFicha() const {
 }
 
 template <class T>
-ftxui::Element CrudPersonas<T>::tablaDe(const std::vector<std::vector<std::string>>& filas,
+ftxui::Element CrudPersonas<T>::tablaDe(const std::vector<Tabla::Fila>& filas,
                                          const std::vector<std::string>& cabeceras) const {
     Tabla tabla(cabeceras);
-    for (const std::vector<std::string>& fila : filas) {
+    for (const Tabla::Fila& fila : filas) {
         tabla.agregarFila(fila);
     }
     return tabla.renderizar();
