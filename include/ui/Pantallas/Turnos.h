@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,17 @@
 //
 //   - "Modificar turno" cambia el consultorio, la duracion y la
 //     especialidad, pero NO la fecha ni la hora (moverlas es reprogramar).
+//
+// EL FLUJO DE "AGENDAR": LA ESPECIALIDAD ANTES DEL MEDICO
+//
+// Agendar es: paciente -> especialidad -> medico -> formulario. La
+// especialidad se elige ANTES del medico, asi que el buscador de medicos
+// sale FILTRADO por ella y el turno sale con la especialidad del medico POR
+// CONSTRUCCION: la regla 2b no se puede violar desde la interfaz.
+//
+// "Modificar turno" NO cambia: ahi la especialidad se sigue preguntando al
+// final del formulario, porque ahi se corrige el dato HISTORICO del turno
+// (decision D21).
 //
 // LA PANTALLA NO REIMPLEMENTA NINGUNA REGLA
 //
@@ -133,6 +145,12 @@ private:
     // Los pasos son consecutivos: cuando se elige el paciente, el buscador se
     // vuelve a abrir para el medico. Un solo widget alcanza: lo que cambia
     // es DE QUIEN se esta eligiendo.
+    //
+    // ENTRE LOS DOS PASOS ESTA EL SELECTOR DE LA ESPECIALIDAD
+    //
+    // El orden es paciente -> especialidad -> medico: el buscador del
+    // medico se abre DESPUES de elegir la especialidad, y sale filtrado por
+    // ella.
     enum class PasoDelBuscador { Turno, Paciente, Medico };
 
     // LOS CRITERIOS DE BUSQUEDA
@@ -160,6 +178,10 @@ private:
         std::string duracion;
         std::string consultorio;
         // El CODIGO de la especialidad ("CARD"): lo elige el selector.
+        //
+        // En "modificar" lo elige el selector que va DESPUES del formulario;
+        // en "agendar" lo pone la especialidad que ya se habia elegido antes
+        // del medico.
         std::string especialidad;
     };
 
@@ -215,6 +237,12 @@ private:
     //
     // Los criterios son los compartidos (ver `ui::CriteriosDePersonas.h`):
     // buscar un paciente tiene que comportarse igual en todas las pantallas.
+    //
+    // EL BUSCADOR DE MEDICOS DE ESTA PANTALLA FILTRA POR ESPECIALIDAD
+    //
+    // Es el filtro del flujo de "agendar" (la especialidad se elige antes
+    // del medico). Los buscadores de medicos de las OTRAS pantallas no se
+    // filtran: la regla compartida no se toca.
     void abrirBuscadorDePacientes();
     void abrirBuscadorDeMedicos();
     void confirmarPersona();
@@ -236,6 +264,13 @@ private:
     bool laFilaContiene(const Turno& turno, const std::string& buscado) const;
 
     // --- El selector ---
+    //
+    // EL MISMO SELECTOR PARA LOS DOS FLUJOS
+    //
+    // En "agendar" elige la especialidad que filtra el buscador de medicos;
+    // en "modificar" elige la especialidad que se le pone al turno. Es el
+    // mismo widget y la misma lista: lo que cambia es lo que se hace con
+    // lo elegido.
     void abrirSelector();
     void confirmarSeleccion();
 
@@ -333,6 +368,20 @@ private:
     // rechazada por el servicio y el usuario vuelve al formulario, la
     // especialidad que habia elegido siga siendo la que arranca elegida.
     int _indiceEspecialidad = 0;
+
+    // LA ESPECIALIDAD QUE FILTRA EL BUSCADOR DE MEDICOS
+    //
+    // Es la que se elige en el paso del selector del flujo de "agendar": el
+    // buscador de medicos muestra SOLO los de esa especialidad, asi que el
+    // turno sale con la del medico POR CONSTRUCCION (la regla 2b no se
+    // puede violar desde la interfaz).
+    //
+    // Se guarda como `Especialidad` (y no como el indice del selector): es
+    // el dato que viaja al turno, y el indice es solo la forma de pedirlo.
+    //
+    // VA SIN VALOR HASTA QUE SE ELIGE UNA: antes de ese paso no hay filtro
+    // que aplicar (el buscador de medicos todavia no se abrio).
+    std::optional<Especialidad> _especialidadElegida;
 
     // El buscador de turnos (el de "Cancelar", "Reprogramar", "Modificar" y
     // "Ver detalle"), y el de las personas (el de "Agendar turno").
