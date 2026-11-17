@@ -1,4 +1,4 @@
-#PACIENTES|2|13
+#PACIENTES|2|19
 id|nombre|apellido|email|telefono|activo|dni
 1|García|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391
 2|López|Martín|martin.lopez@unlp.edu.ar|2214889900|1|2020392
@@ -13,3 +13,9 @@ id|nombre|apellido|email|telefono|activo|dni
 11|Escobar|Julieta|julieta.escobar@unlp.edu.ar|2214889909|1|2020401
 12|Ojeda|Benjamín|benjamin.ojeda@unlp.edu.ar|2214889910|1|2020402
 13|Ibarra|Valentina|valentina.ibarra@unlp.edu.ar|2214889911|0|2020403
+14|Medina|Antonella|antonella.medina@unlp.edu.ar|2214889912|1|2020404
+15|Peralta|Joaquín|joaquin.peralta@unlp.edu.ar|2214889913|1|2020405
+16|Miranda|Florencia|florencia.miranda@unlp.edu.ar|2214889914|1|2020406
+17|Vázquez|Santiago|santiago.vazquez@unlp.edu.ar|2214889915|1|2020407
+18|Ríos|Paula|paula.rios@unlp.edu.ar|2214889916|1|2020408
+19|Salinas|Martín|martin.salinas@unlp.edu.ar|2214889917|1|2020409
