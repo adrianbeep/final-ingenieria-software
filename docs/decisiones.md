@@ -5,9 +5,11 @@ por que, y que alternativa se descarto**. Es un entregable de la Fase 8, pero
 se mantiene al dia desde el primer commit: si una decision cambia, se cambia
 aca.
 
-La tabla canonica vive en el
-[issue #1](https://github.com/adrianbeep/final-ingenieria-software/issues/1),
-que es el roadmap. Las decisiones de la Fase 6 (la interfaz) estan en el
+Este archivo ES la tabla canonica: las **53 decisiones**, con su alternativa
+descartada y el por que. El
+[issue #1](https://github.com/adrianbeep/final-ingenieria-software/issues/1)
+(el roadmap) tiene el resumen de las primeras, y el detalle de las de la
+Fase 6 (la interfaz) esta en el
 [issue #16](https://github.com/adrianbeep/final-ingenieria-software/issues/16).
 
 ## Decisiones del dominio y del proyecto
@@ -105,3 +107,59 @@ booleano) y COMO se elige (una pantalla, no un interruptor).
 | 51 | **El ESTADO se pinta con su color y las filas de las entidades DADAS DE BAJA van atenuadas**: la columna del estado va con `EstadoActivo`, `EstadoCancelado` o `EstadoReprogramado` segun el texto de la celda, y una fila de una entidad dada de baja se dibuja con el rol `Secundario`. El estado de un TURNO es el `EstadoTurno` ("Activo", "Cancelado", "Reprogramado") y el de una PERSONA es el flag `activo` ("activo", "inactivo"): los dos son legibles | (a) pintar el estado con el color del texto (verde si esta activo, rojo si no) sin un rol por estado; (b) dejar la columna del estado con el color por defecto | (a) "Verde si esta vivo" es una convencion, no un contrato: no dice que el usuario pueda confiar en ella ni queSignifica el color. Con un rol por estado, el significado esta escrito (y los tests lo verifican). (b) La columna del estado es la que mas se mira de una tabla de turnos: sin color, hay que leer la palabra de cada fila |
 | 52 | **La paleta tiene DOS juegos de valores (oscuro y claro) y el tema activo es UN estado COMPARTIDO** (`ui::Theme::establecerTema`, `ui::Tema`): los roles son los mismos en los dos temas, lo que cambia es el numero. El tema reemplaza al booleano de la decision 36 | (a) una paleta sola, afinada para fondo oscuro; (b) que cada pantalla tenga su propio tema; (c) un tema por archivo de configuracion | (a) La paleta de hoy esta afinada para un fondo oscuro: en una terminal clara el cian del titulo y los grises se lavan, y la tabla no se distingue del texto. Con dos juegos de valores el usuario elige el suyo. (b) Con una copia por pantalla, el cambio del tema solo alcanzaria a las pantallas que se arman DESPUES: las abiertas seguirian con el tema viejo (es el problema que resolvio la decision 36 con el flag). (c) La configuracion del proyecto es EN MEMORIA (decision 7): el tema tampoco se persiste |
 | 53 | **La pantalla de Configuracion deja de ser un interruptor y el TEMA se elige en una pantalla propia** (`ui::Pantallas::Tema`: `1` Apagados, `2` Oscuro, `3` Claro, `0` Volver), que se abre desde el menu principal (opcion `8`) y desde la configuracion (opcion `1`). `NO_COLOR` definido (y no vacio) deja el tema INICIAL en "Apagados", pero el usuario puede cambiarlo (como en la decision 37) | (a) un interruptor "activar / desactivar colores"; (b) un interruptor con tres posiciones; (c) una lista de temas dentro de la configuracion | (a) Un interruptor no puede expresar tres estados, y ademas el "color apagado" no es un tema: es la ausencia de color. Con tres temas se ve CUAL esta activo. (b) Un interruptor de tres posiciones no dice el NOMBRE de cada posicion: el usuario ve "1", "2", "3" y tiene que acordarse de que es cada una. (c) La configuracion ya tiene una accion ("cargar datos de ejemplo") y el tema es una pantalla con sus propios tres estados: mezclarlos en un solo menu deja al usuario adivinando que hace cada numero |
+
+## La verificacion de `main.cpp` (requisito 9 de la consigna)
+
+La consigna pide que `main.cpp` **solo arme y despache**: ninguna regla de
+negocio, ninguna validacion, ninguna regla de formato. Esta seccion es el
+registro de esa verificacion: **que se reviso, donde esta y como se
+comprueba**. No es una promesa: la comprueba el CI, en cada PR.
+
+### Que hay en `src/main.cpp`
+
+Son **57 lineas** (48 con contenido). Completo, hace esto y nada mas:
+
+| Que hace | Donde |
+|---|---|
+| Arma los tres repositorios concretos (`Pacientes`, `Medicos`, `Turnos`) | `src/main.cpp:26-28` |
+| Carga los tres archivos de datos | `src/main.cpp:33-35` |
+| Arma el servicio de reglas de negocio | `src/main.cpp:38` |
+| Arma el contexto (lo que todas las pantallas necesitan) | `src/main.cpp:41` |
+| Arma la aplicacion y empuja la pantalla principal | `src/main.cpp:43-47` |
+| Corre el ciclo de eventos (o imprime el menu en texto plano si no hay terminal) | `src/main.cpp:52` |
+| Captura la excepcion global y la informa | `src/main.cpp:53-55` |
+
+### Que NO hay, y donde vive
+
+| Lo que no esta en `main.cpp` | Donde vive | Por que |
+|---|---|---|
+| Las validaciones de la entrada | `ui::Consola` (`include/ui/Consola.h`) | el punto de entrada no valida: validan las pantallas |
+| Las reglas de negocio | `ServicioTurnos` (`include/services/ServicioTurnos.h`) | el servicio las expone; `main.cpp` solo lo instancia |
+| El formato de fechas y horas | `Fecha` y `Hora` (`include/utils/Fecha.h:20` y `:111`) | `main.cpp` no formatea nada |
+| La validacion de los datos | `Utils` (`include/utils/Utils.h`) | las validaciones viven con el dato que validan |
+| El formato de los archivos | `ArchivoTexto<T>` (`include/persistence/ArchivoTexto.h`) | la persistencia es de la capa de repositorio |
+
+El `try/catch` global vive en `main.cpp` **a proposito**: la capa `ui` no
+decide como se le informa un error al usuario, y el `catch` es el unico punto
+que puede decidir eso (`src/main.cpp:20-22` y `:53-55`).
+
+### Como se comprueba
+
+El CI tiene una regla que **falla** si `main.cpp` vuelve a decidir algo
+(`.github/workflows/ci.yml`, paso "main.cpp no tiene logica de negocio"). Es
+la tercera de la familia: el dominio no toca I/O, el dominio no depende de
+FTXUI, y ahora el punto de entrada no decide.
+
+La regla verifica dos cosas:
+
+1. **Sin control de flujo.** Un `if`, un `for`, un `while` o un `switch` en
+   `main.cpp` es una decision, y una decision en el punto de entrada es
+   logica de negocio.
+2. **Sin la capa de validacion.** `main.cpp` no incluye `Consola.h`,
+   `Fecha.h`, `Utils.h` ni `ArchivoTexto.h`: el punto de entrada no valida ni
+   formatea.
+
+> **Por que un `grep` y no una prueba unitaria.** La regla no es "el
+> comportamiento de `main.cpp`": es "la FORMA de `main.cpp`". Una prueba
+> unitaria no puede afirmar que no hay un `if` escondido; un `grep` si. Y el
+> costo es cero: el CI ya corria.
