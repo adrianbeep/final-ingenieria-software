@@ -49,6 +49,22 @@ TEST_SRCS := $(wildcard tests/*.cpp)
 
 ALL_SRCS := $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(MAIN_SRCS)
 
+# Los HEADERS son prerrequisitos de los dos ejecutables.
+#
+# Sin esto, cambiar un `.h` NO recompilaba nada. Este Makefile compila TODOS
+# los `.cpp` en un SOLO comando (no hay un objeto por archivo), asi que el
+# unico disparador del rebuild era la lista de `.cpp`. Tocar un header
+# dejaba el binario viejo en su lugar y `make test` daba un VERDE FALSO: los
+# tests pasaban porque se estaba ejecutando el codigo de ANTES del cambio.
+#
+# Con los headers como prerrequisitos, cualquier cambio recompila. Como no
+# hay compilacion incremental, el costo es el mismo que ya se pagaba.
+#
+# CMake+Ninja ya rastrea las dependencias de los headers: esto es lo que le
+# faltaba al Makefile de fallback (el camino del profesor en una maquina sin
+# CMake).
+HEADERS := $(wildcard include/*.h) $(wildcard include/*/*.h) $(wildcard include/*/*/*.h)
+
 ifeq ($(OS),Windows_NT)
   EXE := .exe
 else
@@ -87,7 +103,7 @@ $(VENDOR_OBJ): third_party/ftxui/ftxui.cpp | $(BUILD_DIR)
 # El ejecutable linkea REPOSITORIES_SRCS y SERVICES_SRCS porque el `main` arma
 # el CONTEXTO: los tres repositorios (los objetos que implementan el CRUD y la
 # baja logica) y el servicio de turnos.
-$(TARGET): $(ALL_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
+$(TARGET): $(ALL_SRCS) $(HEADERS) $(VENDOR_OBJ) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(ALL_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 
 run: $(TARGET)
@@ -109,7 +125,7 @@ test: $(TEST_TARGET)
 # Linkea `$(VENDOR_OBJ)` porque `UI_SRCS` ya usa simbolos de FTXUI (el motor
 # y las pantallas), y `$(DEFS)` porque los headers de FTXUI tienen dos
 # `#error` duros en Windows sin `UNICODE`/`_UNICODE`/`NOMINMAX`.
-$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) | $(BUILD_DIR)
+$(TEST_TARGET): $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(HEADERS) $(VENDOR_OBJ) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCLUDES) $(TEST_SRCS) $(CORE_SRCS) $(UI_SRCS) $(ENTITIES_SRCS) $(REPOSITORIES_SRCS) $(SERVICES_SRCS) $(VENDOR_OBJ) -o $@ $(LDFLAGS)
 
 # El prefijo `-` hace que make NO falle si el archivo no existe: `del` y
