@@ -63,6 +63,27 @@ jobs:
             exit 1
           fi
 
+      # `main.cpp` SOLO arma y despacha (requisito 9 de la consigna). Si
+      # vuelve a DECIDIR algo, la logica de negocio se colo en el punto de
+      # entrada. Se verifica con un grep, como las dos reglas de arriba.
+      #
+      #   - control de flujo: un `if` en `main.cpp` es una decision, y una
+      #     decision en el punto de entrada es logica de negocio.
+      #   - la capa de validacion: `main.cpp` no valida ni formatea. Eso es de
+      #     `ui::Consola`, de `Fecha`/`Hora`, de `Utils` y de la persistencia.
+      #
+      # El registro de esta verificacion esta en `docs/decisiones.md`.
+      - name: "main.cpp no tiene logica de negocio"
+        run: |
+          if grep -nE '\b(if|for|while|switch)\b' src/main.cpp; then
+            echo "::error::main.cpp no puede decidir nada: el control de flujo es logica de negocio."
+            exit 1
+          fi
+          if grep -nE '#include .*(Consola|Fecha|Utils|ArchivoTexto)\.h' src/main.cpp; then
+            echo "::error::main.cpp no puede incluir la capa de validacion ni la de persistencia."
+            exit 1
+          fi
+
       - name: Compilar con CMake
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
