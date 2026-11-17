@@ -222,7 +222,24 @@ void RepositorioCRUD<T>::alta(const T& entidad) {
 
     // Se persiste DESPUES de cada mutacion, no solo al salir: si el
     // programa se cuelga, no se pierde la sesion.
-    persistir();
+    //
+    // Y si la escritura FALLA, la mutacion se DESHACE.
+    //
+    // El archivo se escribe de forma ATOMICA (a un temporal y despues se
+    // renombra), asi que cuando la escritura falla el archivo destino
+    // conserva la version anterior. Si la memoria se quedara con la entidad
+    // nueva, el repositorio quedaria con la MEMORIA y el DISCO
+    // DESINCRONIZADOS: la entidad existiria en memoria pero no en el
+    // archivo, y el proximo `persistir()` la escribiria como si fuera
+    // nueva. Deshacer la insercion deja los dos de acuerdo: el archivo tiene
+    // la version anterior y la memoria tambien.
+    try {
+        persistir();
+    } catch (...) {
+        _arbol.eliminar(entidad);
+        rebalancear();
+        throw;
+    }
 }
 
 template <class T>
@@ -255,7 +272,19 @@ void RepositorioCRUD<T>::modificar(const T& entidad) {
     // desbalanceado, y la busqueda por clave es O(altura).
     rebalancear();
 
-    persistir();
+    // Misma regla que en `alta()`: si la escritura falla, la memoria vuelve
+    // a la entidad ANTERIOR, que es la que el archivo conserva (la
+    // escritura es atomica). Si no, memoria y disco quedarian
+    // desincronizados: la memoria tendria la version nueva y el archivo la
+    // vieja.
+    try {
+        persistir();
+    } catch (...) {
+        _arbol.eliminar(entidad);
+        _arbol.insertar(anterior);
+        rebalancear();
+        throw;
+    }
 }
 
 template <class T>
