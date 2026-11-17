@@ -12,6 +12,7 @@
 #include "utils/Utils.h"
 
 #include <cstddef>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -185,6 +186,26 @@ std::string versionDelHeader(const std::string& ruta) {
         return std::string();
     }
     return campos[1];
+}
+
+// Devuelve el campo de la CANTIDAD del header de un archivo ("#ENTIDAD|
+// VERSION|CANTIDAD"), o -1 si el header no esta o el campo no es un numero.
+//
+// Es el invariante real de un archivo de datos: el header dice cuantos
+// registros tiene el archivo. Un test que verifica "cuantos registros se
+// leyeron" tiene que compararlo contra ESTE numero y no contra un literal
+// quemado: si la semilla crece, el literal se rompe, y si el header y el
+// contenido se desincronizan, el literal no lo detectaria.
+int cantidadDelHeader(const std::string& ruta) {
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    if (lineas.empty()) {
+        return -1;
+    }
+    const std::vector<std::string> campos = Utils::separar(lineas[0], '|');
+    if (campos.size() < 3 || !Utils::esEntero(campos[2])) {
+        return -1;
+    }
+    return std::stoi(campos[2]);
 }
 
 // ---------------------------------------------------------------------------
@@ -577,7 +598,9 @@ TEST_CASE("la semilla se relee y se reescribe byte a byte igual por la ruta de l
 
     ArchivoTexto<Paciente> archivo(rutaSemilla, "PACIENTES");
     const ListaEnlazada<Paciente> cargados = archivo.cargarEnLista();
-    CHECK(cargados.size() == 13);
+    // Tantos registros como declara el header (no un literal: la semilla
+    // crece y el header es la fuente de verdad).
+    CHECK(cargados.size() == static_cast<std::size_t>(cantidadDelHeader(rutaSemilla)));
 
     // Se relee con la lista y se reescribe con la lista: el archivo que sale
     // tiene que ser IDENTICO al commiteado.
@@ -1815,6 +1838,116 @@ TEST_CASE("el archivo de ejemplo de pacientes tiene el header esperado",
     CHECK(lineas.size() >= 2);
     CHECK(lineas[0].compare(0, 11, "#PACIENTES|") == 0);
     CHECK(lineas[1] == Paciente::esquema());
+}
+
+// ---------------------------------------------------------------------------
+// LA SEMILLA USA LAS DOCE ESPECIALIDADES
+//
+// Antes la semilla tenia SEIS medicos: seis de las doce especialidades
+// tenian medico y las otras seis no. Eso hacia que el catalogo de las doce
+// pareciera decorativo en los datos de ejemplo: la mitad de las opciones del
+// selector de especialidad noiannaba a nadie.
+//
+// El test no mira CUALES son los medicos: mira la PROPIEDAD. Para cada
+// especialidad del catalogo tiene que haber AL MENOS UN medico y AL MENOS UN
+// turno. Asi el test sigue valiendo si manana la semilla cambia de nombres.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("la semilla usa las doce especialidades", persistencia_semilla_doce) {
+    const std::string rutaMedicos = rutaDeSemilla("medicos.dat");
+    const std::string rutaTurnos = rutaDeSemilla("turnos.dat");
+    CHECK(!rutaMedicos.empty());
+    CHECK(!rutaTurnos.empty());
+    if (rutaMedicos.empty() || rutaTurnos.empty()) {
+        return;
+    }
+
+    const std::vector<Medico> medicos = ArchivoTexto<Medico>(rutaMedicos, "MEDICOS").cargar();
+    const std::vector<Turno> turnos = ArchivoTexto<Turno>(rutaTurnos, "TURNOS").cargar();
+
+    const std::vector<Especialidad>& catalogo = todasLasEspecialidades();
+    CHECK(catalogo.size() == 12);
+
+    for (const Especialidad& especialidad : catalogo) {
+        // Al menos UN medico de esa especialidad.
+        int medicosDeLaEspecialidad = 0;
+        for (const Medico& medico : medicos) {
+            if (medico.getEspecialidad() == especialidad) {
+                ++medicosDeLaEspecialidad;
+            }
+        }
+        CHECK(medicosDeLaEspecialidad >= 1);
+
+        // Y al menos UN turno de esa especialidad.
+        int turnosDeLaEspecialidad = 0;
+        for (const Turno& turno : turnos) {
+            if (turno.getEspecialidad() == especialidad) {
+                ++turnosDeLaEspecialidad;
+            }
+        }
+        CHECK(turnosDeLaEspecialidad >= 1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LOS ARCHIVOS VIVOS Y LA SEMILLA SON IDENTICOS BYTE A BYTE
+//
+// La semilla (`data/ejemplo/`) es el juego de archivos que la pantalla de
+// "cargar datos de ejemplo" copia sobre los archivos vivos (`data/`). Si los
+// dos se desincronizan, la pantalla "restaura" datos que no son los de
+// ejemplo: el usuario cree que limpio y en realidad cargo otra cosa.
+//
+// Por eso tienen que ser el MISMO archivo, byte a byte. No "equivalentes" ni
+// "con el mismo contenido": LOS MISMOS BYTES.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("los archivos vivos y la semilla son identicos byte a byte",
+          persistencia_vivos_igual_semilla) {
+    const char* NOMBRES[] = {"medicos.dat", "pacientes.dat", "turnos.dat"};
+    for (const char* nombre : NOMBRES) {
+        const std::string rutaVivos = rutaDeEjemplo(nombre);
+        const std::string rutaSemilla = rutaDeSemilla(nombre);
+        CHECK(!rutaVivos.empty());
+        CHECK(!rutaSemilla.empty());
+        if (rutaVivos.empty() || rutaSemilla.empty()) {
+            continue;
+        }
+
+        std::ifstream vivos(rutaVivos, std::ios::in | std::ios::binary);
+        std::ifstream semilla(rutaSemilla, std::ios::in | std::ios::binary);
+        CHECK(vivos.good());
+        CHECK(semilla.good());
+        if (!vivos.good() || !semilla.good()) {
+            continue;
+        }
+
+        // Se comparan por BLOQUE: asi el archivo entero se compara sin
+        // cargarlo en memoria de golpe, y la diferencia sale en el primer
+        // byte que no coincide.
+        const std::size_t BLOQUE = 4096;
+        std::vector<char> bufferVivos(BLOQUE);
+        std::vector<char> bufferSemilla(BLOQUE);
+        bool iguales = true;
+        while (true) {
+            vivos.read(bufferVivos.data(), static_cast<std::streamsize>(BLOQUE));
+            semilla.read(bufferSemilla.data(), static_cast<std::streamsize>(BLOQUE));
+            const std::streamsize leidosVivos = vivos.gcount();
+            const std::streamsize leidosSemilla = semilla.gcount();
+            if (leidosVivos != leidosSemilla) {
+                iguales = false;
+                break;
+            }
+            if (leidosVivos == 0) {
+                break;
+            }
+            if (std::memcmp(bufferVivos.data(), bufferSemilla.data(),
+                            static_cast<std::size_t>(leidosVivos)) != 0) {
+                iguales = false;
+                break;
+            }
+        }
+        CHECK(iguales);
+    }
 }
 
 TEST_CASE("la API expone la ruta y el nombre de la entidad", persistencia_api) {
