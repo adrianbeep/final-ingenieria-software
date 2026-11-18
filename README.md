@@ -26,6 +26,7 @@ classDiagram
     }
     class Paciente {
         +String dni
+        +String observaciones
     }
     class Turno {
         +int id
@@ -62,7 +63,7 @@ Con Make (fallback, sin CMake; en Windows con MinGW el comando es `mingw32-make`
 make && make test && make run
 ```
 Verificacion: `ctest --test-dir build` da 100% tests passed (0 tests failed out of 1) y
-`mingw32-make test` da 608 casos y 0 fallos.
+`mingw32-make test` da 621 casos y 0 fallos.
 
 ## La aplicacion
 
@@ -81,15 +82,17 @@ definido la aplicacion arranca sin color, pero el usuario puede elegir el tema.
 2. **La especialidad del turno es la del medico que lo atiende** (la regla 2B): es lo que hace que la especialidad deje de ser decorativa, y la interfaz hace que sea **imposible de violarla** (en "Agendar turno" se elige primero la especialidad y despues el medico, con el buscador filtrado).
 3. **La persistencia es en TEXTO con un formato versionado**, no binaria: con `fwrite` de un `std::string` se mide el **objeto** (puntero + tamanho) y no los caracteres, asi que el resultado es basura; en texto los bytes son identicos en cualquier sistema operativo.
 4. **El arbol binario de busqueda es propio** (no `std::map`): la busqueda por id es O(log n) **garantizado por construccion** (el arbol del repositorio esta balanceado siempre) y los tests fijan la complejidad **contando comparaciones**, no midiendo el reloj.
-5. **La lista enlazada propia es la estructura de la capa de persistencia**: es el TAD del requisito de la consigna, y por ella pasan todas las lecturas y escrituras de `data/*.dat`. El **formato en disco no cambio** y la **forma del arbol no se persiste**: se reconstruye balanceado.
+5. **La lista enlazada propia es la estructura de la capa de persistencia**: es el TAD del requisito de la consigna, y por ella pasan todas las lecturas y escrituras de `data/*.dat`. La **forma del arbol no se persiste**: se reconstruye balanceado.
 6. **La interfaz es una TUI propia sobre FTXUI vendorizada**, no el framework de la terminal del sistema: teclado primero, y sin terminal interactiva imprime el menu en texto plano y sale con codigo 0, que es lo que permite que el CI lo ejecute sin colgarse.
 7. **La interfaz no pide ids**: donde antes habia un id de base de datos, hay un buscador (se escribe un nombre, un DNI, un legajo o una especialidad y se elige de la lista). Un id es una clave primaria de un archivo: nadie lo tiene en la cabeza.
+8. **El formato de archivo es versionado y el loader entiende la version anterior**: el paciente tiene un campo opcional (`observaciones`) y el formato paso a la v3, pero un archivo v2 **se sigue leyendo** (el campo nuevo queda vacio) y uno v1 se rechaza con un error que dice que version espera. Agregar un campo no invalida los datos de los demas.
 
-Las 53 decisiones, con su alternativa descartada, estan en [docs/decisiones.md](docs/decisiones.md).
+Las 54 decisiones, con su alternativa descartada, estan en [docs/decisiones.md](docs/decisiones.md).
 
 ## Los datos
 
 `data/` son los archivos de trabajo (los modifica la aplicacion) y `data/ejemplo/` es la semilla, que no se toca.
+La semilla trae **un medico por cada una de las doce especialidades** (con sus turnos, coherentes con la regla del dominio), asi que el catalogo completo se ve desde el primer arranque.
 Los bytes son **LF, UTF-8 sin BOM** y la persistencia escribe en modo **binario**: el archivo es **identico en
 cualquier sistema operativo**. En Configuracion (opcion `6`) esta la accion "Cargar datos de ejemplo".
 
@@ -99,12 +102,13 @@ cualquier sistema operativo**. En Configuracion (opcion `6`) esta la accion "Car
 include/    domain, entities, structures, persistence, repositories, services, ui
 src/        espejo .cpp de include/       tests/  arnes de tests propio, sin framework externo
 data/       los archivos de trabajo; data/ejemplo/ la semilla
-third_party/  FTXUI, vendorizada           docs/  el diagrama, las decisiones y la trazabilidad
+third_party/  FTXUI, vendorizada           docs/  el diagrama, las decisiones, la trazabilidad y la defensa
 ```
 
 ## Estado del proyecto
 
 El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/final-ingenieria-software/issues/1).
+Para la defensa, [docs/defensa.md](docs/defensa.md) tiene las ocho preguntas con su respuesta, la alternativa descartada y la evidencia (archivo y linea).
 
 | Fase | Contenido | Issue | Estado |
 |---|---|---|---|
@@ -115,5 +119,5 @@ El plan completo por fases vive en el [issue #1](https://github.com/adrianbeep/f
 | 4 | Persistencia | [#4](https://github.com/adrianbeep/final-ingenieria-software/issues/4) | Completada |
 | 5 | Repositorios y reglas de negocio | [#14](https://github.com/adrianbeep/final-ingenieria-software/issues/14) | Completada |
 | 6 | Interfaz de consola TUI: 39 pantallas | [#16](https://github.com/adrianbeep/final-ingenieria-software/issues/16) | Completada |
-| 7 | Extras y cierre tecnico | — | Pendiente |
-| 8 | Documentacion y defensa | — | En curso |
+| 7 | Extras y cierre tecnico | [#65](https://github.com/adrianbeep/final-ingenieria-software/issues/65) | Completada |
+| 8 | Documentacion y defensa | [#65](https://github.com/adrianbeep/final-ingenieria-software/issues/65) | Completada |
