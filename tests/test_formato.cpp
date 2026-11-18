@@ -56,8 +56,17 @@ TEST_CASE("el medico escribe el registro canonico", formato_medico_registro) {
 TEST_CASE("el paciente escribe el registro canonico", formato_paciente_registro) {
     const Paciente paciente(7, "Lopez", "Martin", "martin.lopez@unlp.edu.ar", "2214889900",
                              "20391001");
+    // EL CAMPO OPCIONAL VIAJA SIEMPRE, AUNQUE ESTE VACIO: el registro tiene
+    // que tener la misma cantidad de campos que el esquema.
     CHECK(serializar(paciente)
-          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001");
+          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001|");
+
+    // Y con contenido, el campo va con su texto.
+    const Paciente conObservaciones(7, "Lopez", "Martin", "martin.lopez@unlp.edu.ar",
+                                     "2214889900", "20391001", "alergia a la penicilina");
+    CHECK(serializar(conObservaciones)
+          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001|"
+             "alergia a la penicilina");
 }
 
 TEST_CASE("el turno escribe el registro canonico", formato_turno_registro) {
@@ -100,11 +109,11 @@ TEST_CASE("el round trip del medico conserva todos los campos", formato_medico_r
 
 TEST_CASE("el round trip del paciente conserva todos los campos", formato_paciente_round_trip) {
     const Paciente original(7, "Lopez", "Martin", "martin.lopez@unlp.edu.ar", "2214889900",
-                             "20391001");
+                             "20391001", "obsesion de control");
     const std::string registro = serializar(original);
 
     const std::vector<std::string> campos = Utils::separar(registro, '|');
-    CHECK(campos.size() == 7);
+    CHECK(campos.size() == 8);
     CHECK(campos[0] == "7");
     CHECK(campos[1] == original.getNombre());
     CHECK(campos[2] == original.getApellido());
@@ -112,6 +121,7 @@ TEST_CASE("el round trip del paciente conserva todos los campos", formato_pacien
     CHECK(campos[4] == original.getTelefono());
     CHECK(campos[5] == "1");
     CHECK(campos[6] == original.getDni());
+    CHECK(campos[7] == original.getObservaciones());
 
     const Paciente releido = Paciente::fromRegistro(registro);
     CHECK(releido.getId() == original.getId());
@@ -121,6 +131,7 @@ TEST_CASE("el round trip del paciente conserva todos los campos", formato_pacien
     CHECK(releido.getTelefono() == original.getTelefono());
     CHECK(releido.esActivo() == original.esActivo());
     CHECK(releido.getDni() == original.getDni());
+    CHECK(releido.getObservaciones() == original.getObservaciones());
 }
 
 TEST_CASE("el round trip del turno conserva todos los campos", formato_turno_round_trip) {
@@ -170,8 +181,29 @@ TEST_CASE("el esquema y el registro tienen la misma cantidad de campos", formato
 
     // Y que el esquema diga las mismas cosas que el registro.
     CHECK(Medico::esquema() == "id|nombre|apellido|email|telefono|activo|legajo|especialidad");
-    CHECK(Paciente::esquema() == "id|nombre|apellido|email|telefono|activo|dni");
+    CHECK(Paciente::esquema() == "id|nombre|apellido|email|telefono|activo|dni|observaciones");
     CHECK(Turno::esquema()
+          == "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante");
+}
+
+// EL ESQUEMA ANTERIOR DE CADA ENTIDAD
+//
+// El esquema que el tipo TENIA en la version anterior del formato (la v2).
+// El loader lo usa para leer los archivos v2: por eso el del paciente NO
+// tiene `observaciones` y los de medico y turno son los mismos que los
+// actuales (su esquema no cambio entre v2 y v3).
+TEST_CASE("el esquema anterior de cada entidad es el de la version 2", formato_esquema_anterior) {
+    CHECK(Paciente::esquemaAnterior() == "id|nombre|apellido|email|telefono|activo|dni");
+    CHECK(Medico::esquemaAnterior() == Medico::esquema());
+    CHECK(Turno::esquemaAnterior() == Turno::esquema());
+
+    // El esquema anterior tiene UN campo menos: el que se sumo despues.
+    CHECK(Utils::separar(Paciente::esquemaAnterior(), '|').size()
+          == Utils::separar(Paciente::esquema(), '|').size() - 1);
+
+    // Y los de medico y turno son IGUALES al actual: no cambiaron.
+    CHECK(Medico::esquemaAnterior() == "id|nombre|apellido|email|telefono|activo|legajo|especialidad");
+    CHECK(Turno::esquemaAnterior()
           == "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante");
 }
 
@@ -189,8 +221,13 @@ TEST_CASE("fromRegistro lanza con una cantidad de campos incorrecta", formato_ca
                     "1|Garcia|Ana|ana@mail.com|2214556677|1|LEG-1042|CARD|extra");
             },
             "registro"));
-    CHECK(lanzaConCampo([] { Paciente::fromRegistro("7|Lopez|Martin|a@mail.com|2214889900|1|20391001|x"); },
-                        "registro"));
+    // Con 9 campos el paciente tiene UN campo de mas: el `observaciones` es
+    // el septimo, asi que el octavo y el noveno sobran.
+    CHECK(lanzaConCampo([] {
+                Paciente::fromRegistro(
+                    "7|Lopez|Martin|a@mail.com|2214889900|1|20391001|algo|extra");
+            },
+            "registro"));
     CHECK(lanzaConCampo([] {
                 Turno::fromRegistro("14|3|7|TRAU|2026-10-08|09:00|60|A-3|Activo|-1|extra");
             },
@@ -244,6 +281,44 @@ TEST_CASE("el separador no puede aparecer dentro de un campo", formato_separador
     CHECK(lanzaConCampo([&] { turno.setConsultorio("A-3|B"); }, "consultorio"));
 }
 
+// LA VALIDACION DE LAS OBSERVACIONES
+//
+// El campo es OPCIONAL: la cadena vacia es valida. Lo que no puede es
+// romper el archivo: ni el separador (que desalinea los registros) ni un
+// salto de linea (que parte el registro en dos) ni un largo sin fin.
+TEST_CASE("las observaciones validan el separador, los saltos de linea y el largo",
+           formato_observaciones_validas) {
+    Paciente paciente;
+
+    // LA CADENA VACIA ES VALIDA: el campo es opcional.
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones(""); }, "observaciones") == false);
+    CHECK(paciente.getObservaciones().empty());
+
+    // Un texto normal tambien.
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("alergia a la penicilina"); },
+                        "observaciones") == false);
+    CHECK(paciente.getObservaciones() == "alergia a la penicilina");
+
+    // EL SEPARADOR NO PUEDE APARECER.
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("algo | otra cosa"); }, "observaciones"));
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("|"); }, "observaciones"));
+
+    // NI LOS SALTOS DE LINEA.
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("una\ndos"); }, "observaciones"));
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("una\r\ndos"); }, "observaciones"));
+    // Tampoco al final: el archivo es por lineas.
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("una\n"); }, "observaciones"));
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones("una\r"); }, "observaciones"));
+
+    // EL LARGO MAXIMO ES 200 CARACTERES.
+    const std::string doscientos(200, 'a');
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones(doscientos); }, "observaciones") == false);
+    CHECK(paciente.getObservaciones() == doscientos);
+
+    const std::string doscientosUno(201, 'a');
+    CHECK(lanzaConCampo([&] { paciente.setObservaciones(doscientosUno); }, "observaciones"));
+}
+
 TEST_CASE("los estados tienen texto y vuelven desde el texto", formato_estados) {
     CHECK(estadoATexto(EstadoTurno::Activo) == "Activo");
     CHECK(estadoATexto(EstadoTurno::Cancelado) == "Cancelado");
@@ -282,8 +357,19 @@ TEST_CASE("los ejemplos del contrato de formato se parsean", formato_ejemplos) {
         "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001");
     CHECK(paciente.getId() == 7);
     CHECK(paciente.getDni() == "20391001");
+    // El registro de 7 campos es del formato ANTERIOR: las observaciones
+    // quedan vacias y el campo se escribe igual (con su separador).
+    CHECK(paciente.getObservaciones().empty());
     CHECK(serializar(paciente)
-          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001");
+          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001|");
+
+    // Y el de 8 campos (el formato actual) trae las observaciones.
+    const Paciente conObservaciones = Paciente::fromRegistro(
+        "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001|control cada 6 meses");
+    CHECK(conObservaciones.getObservaciones() == "control cada 6 meses");
+    CHECK(serializar(conObservaciones)
+          == "7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|20391001|"
+             "control cada 6 meses");
 
     const Turno turno = Turno::fromRegistro("14|3|7|TRAU|2026-10-08|09:00|60|A-3|Activo|-1");
     CHECK(turno.getId() == 14);

@@ -273,6 +273,9 @@ public:
 
     static std::string esquema() { return "id|valor"; }
 
+    // EL ESQUEMA ANTERIOR DE ESTE TIPO NO CAMBIO ENTRE v2 Y v3
+    static std::string esquemaAnterior() { return esquema(); }
+
     static RegistroQueFalla fromRegistro(const std::string& linea) {
         RegistroQueFalla registro;
         registro.id = 1;
@@ -312,6 +315,9 @@ struct RegistroFicticio {
     }
 
     static std::string esquema() { return "id|valor"; }
+
+    // EL ESQUEMA ANTERIOR DE ESTE TIPO NO CAMBIO ENTRE v2 Y v3
+    static std::string esquemaAnterior() { return esquema(); }
 
     static RegistroFicticio fromRegistro(const std::string& linea) {
         RegistroFicticio registro;
@@ -675,9 +681,9 @@ TEST_CASE("el archivo arranca con el header y la linea de esquema",
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 5);
-    CHECK(lineas[0] == "#PACIENTES|2|3");
+    CHECK(lineas[0] == "#PACIENTES|3|3");
     CHECK(lineas[1] == Paciente::esquema());
-    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001");
+    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001|");
 }
 
 TEST_CASE("el encabezado declara la cantidad de registros",
@@ -686,10 +692,10 @@ TEST_CASE("el encabezado declara la cantidad de registros",
     ArchivoTexto<Medico> archivo(ruta, "MEDICOS");
 
     archivo.guardar({});
-    CHECK(leerLineas(ruta)[0] == "#MEDICOS|2|0");
+    CHECK(leerLineas(ruta)[0] == "#MEDICOS|3|0");
 
     archivo.guardar({medicoDePrueba(1)});
-    CHECK(leerLineas(ruta)[0] == "#MEDICOS|2|1");
+    CHECK(leerLineas(ruta)[0] == "#MEDICOS|3|1");
 }
 
 TEST_CASE("los registros salen ordenados por id", persistencia_orden_por_id) {
@@ -797,15 +803,16 @@ TEST_CASE("los nombres con tilde y enye sobreviven al round trip",
 TEST_CASE("un archivo con finales CRLF carga igual que uno con LF",
           persistencia_fin_de_linea) {
     const std::string esquema = Paciente::esquema();
-    const std::string registro = "1|Jos\xc3\xa9|Perez|jose@unlp.edu.ar|2214556677|1|2030001";
-    const std::string cuerpo = "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|2020001";
+    const std::string registro =
+        "1|Jos\xc3\xa9|Perez|jose@unlp.edu.ar|2214556677|1|2030001|";
+    const std::string cuerpo = "1|Ana|Gomez|ana@unlp.edu.ar|2214556677|1|2020001|";
 
     const std::string rutaCrlf = rutaDePrueba("crlf.dat");
-    escribirBytes(rutaCrlf, "#PACIENTES|2|2\r\n" + esquema + "\r\n" + registro + "\r\n" + cuerpo
+    escribirBytes(rutaCrlf, "#PACIENTES|3|2\r\n" + esquema + "\r\n" + registro + "\r\n" + cuerpo
                                    + "\r\n");
 
     const std::string rutaLf = rutaDePrueba("lf.dat");
-    escribirBytes(rutaLf, "#PACIENTES|2|2\n" + esquema + "\n" + registro + "\n" + cuerpo + "\n");
+    escribirBytes(rutaLf, "#PACIENTES|3|2\n" + esquema + "\n" + registro + "\n" + cuerpo + "\n");
 
     ArchivoTexto<Paciente> archivoCrlf(rutaCrlf, "PACIENTES");
     ArchivoTexto<Paciente> archivoLf(rutaLf, "PACIENTES");
@@ -858,7 +865,7 @@ TEST_CASE("un archivo sin header lanza FormatoDesconocidoException",
 TEST_CASE("un archivo de otra entidad lanza FormatoDesconocidoException",
           persistencia_error_otra_entidad) {
     const std::string ruta = rutaDePrueba("otra_entidad.dat");
-    escribirBytes(ruta, "#TURNOS|2|0\n" + Turno::esquema() + "\n");
+    escribirBytes(ruta, "#TURNOS|3|0\n" + Turno::esquema() + "\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
@@ -871,17 +878,18 @@ TEST_CASE("un archivo de otra entidad lanza FormatoDesconocidoException",
 TEST_CASE("una version distinta lanza FormatoDesconocidoException",
           persistencia_error_version) {
     const std::string ruta = rutaDePrueba("version.dat");
-    escribirBytes(ruta, "#PACIENTES|3|0\n" + Paciente::esquema() + "\n");
+    // La version 4 no existe todavia: es una version de OTRO programa.
+    escribirBytes(ruta, "#PACIENTES|4|0\n" + Paciente::esquema() + "\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
     CHECK(fallo.lanzo);
-    // El mensaje menciona la version del archivo y la que lee el codigo.
-    CHECK(fallo.mensaje.find("formato v3") != std::string::npos);
-    CHECK(fallo.mensaje.find("lee v2") != std::string::npos);
+    // El mensaje menciona la version del archivo y las que lee el codigo.
+    CHECK(fallo.mensaje.find("formato v4") != std::string::npos);
+    CHECK(fallo.mensaje.find("lee la v2 y la v3") != std::string::npos);
 }
 
-TEST_CASE("un archivo de la version anterior se rechaza con un error claro",
+TEST_CASE("un archivo de una version que no se entiende se rechaza con un error claro",
           persistencia_error_version_anterior) {
     // Un archivo de la version 1 (la `matricula` alfanumerica y la
     // especialidad por descripcion) NO se puede leer con el codigo de hoy.
@@ -901,16 +909,18 @@ TEST_CASE("un archivo de la version anterior se rechaza con un error claro",
     CHECK(fallo.lanzo);
     CHECK(!fallo.lanzoOtro);
 
-    // El mensaje dice LAS DOS versiones: la del archivo (v1) y la que lee el
-    // codigo (v2). Sin las dos, el usuario no sabe que tiene que regenerar.
+    // El mensaje dice la version del archivo (v1) y las que lee el codigo
+    // (la v2 y la v3). Sin las dos, el usuario no sabe que tiene que
+    // regenerar.
     CHECK(fallo.mensaje.find("formato v1") != std::string::npos);
-    CHECK(fallo.mensaje.find("lee v2") != std::string::npos);
+    CHECK(fallo.mensaje.find("lee la v2 y la v3") != std::string::npos);
 }
 
 TEST_CASE("un esquema distinto lanza FormatoDesconocidoException",
           persistencia_error_esquema) {
     const std::string ruta = rutaDePrueba("esquema.dat");
-    escribirBytes(ruta, "#PACIENTES|2|0\nid|nombre|apellido|email|telefono|activo|dni|extra\n");
+    escribirBytes(ruta,
+                  "#PACIENTES|3|0\nid|nombre|apellido|email|telefono|activo|dni|observaciones|extra\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
@@ -918,11 +928,50 @@ TEST_CASE("un esquema distinto lanza FormatoDesconocidoException",
     CHECK(fallo.mensaje.find("extra") != std::string::npos);
 }
 
+// EL ESQUEMA QUE NO CORRESPONDE A LA VERSION
+//
+// El esquema esperado sale de la VERSION del header: un archivo v3 con el
+// esquema de la v2 (o al reves) NO calza y se rechaza con un error claro.
+// Sin este control, un archivo v3 con el esquema viejo se leeria con la
+// cantidad de campos de la v3 y los datos quedarian desalineados.
+TEST_CASE("un archivo v3 con el esquema de la v2 se rechaza", persistencia_error_esquema_cruzado) {
+    const std::string ruta = rutaDePrueba("esquema_cruzado.dat");
+    // El header dice v3, pero la linea de esquema es la de la v2.
+    escribirBytes(ruta, "#PACIENTES|3|0\nid|nombre|apellido|email|telefono|activo|dni\n");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
+    CHECK(fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    // El mensaje dice los DOS esquemas: el del archivo y el que espera el
+    // codigo para esa version.
+    CHECK(fallo.mensaje.find("id|nombre|apellido|email|telefono|activo|dni") != std::string::npos);
+    CHECK(fallo.mensaje.find("observaciones") != std::string::npos);
+}
+
+TEST_CASE("un archivo v2 con el esquema de la v3 se rechaza", persistencia_error_esquema_cruzado_v2) {
+    const std::string ruta = rutaDePrueba("esquema_cruzado_v2.dat");
+    // El header dice v2, pero la linea de esquema es la de la v3.
+    escribirBytes(ruta,
+                  "#PACIENTES|2|0\nid|nombre|apellido|email|telefono|activo|dni|observaciones\n");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const Fallo fallo = capturarTipo<FormatoDesconocidoException>([&] { archivo.cargar(); });
+    CHECK(fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+
+    // El mensaje dice el esquema que el archivo declara (el de la v3) y el que
+    // el codigo espera para un archivo v2 (el de la v2).
+    CHECK(fallo.mensaje.find("observaciones") != std::string::npos);
+    CHECK(fallo.mensaje.find("id|nombre|apellido|email|telefono|activo|dni") != std::string::npos);
+}
+
 TEST_CASE("una linea con pocos campos lanza DatoInvalidoException con el numero de linea",
           persistencia_error_cantidad_campos) {
     const std::string ruta = rutaDePrueba("pocos_campos.dat");
     escribirBytes(ruta,
-                  "#TURNOS|2|1\n" + Turno::esquema()
+                  "#TURNOS|3|1\n" + Turno::esquema()
                       + "\n1|3|7|ING1|2026-10-08|09:00|60|A-3|Activo\n");
 
     ArchivoTexto<Turno> archivo(ruta, "TURNOS");
@@ -938,7 +987,7 @@ TEST_CASE("una especialidad inexistente lanza DatoInvalidoException con archivo 
           persistencia_error_especialidad) {
     const std::string ruta = rutaDePrueba("especialidad_mala.dat");
     escribirBytes(ruta,
-                  "#TURNOS|2|1\n" + Turno::esquema()
+                  "#TURNOS|3|1\n" + Turno::esquema()
                       + "\n1|3|7|XXX|2026-10-08|09:00|60|A-3|Activo|-1\n");
 
     ArchivoTexto<Turno> archivo(ruta, "TURNOS");
@@ -969,10 +1018,10 @@ TEST_CASE("un header que declara mas registros de los que hay lanza DatoInvalido
           persistencia_error_truncado) {
     const std::string ruta = rutaDePrueba("truncado.dat");
     escribirBytes(ruta,
-                  "#PACIENTES|2|5\n" + Paciente::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n"
-                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003\n");
+                  "#PACIENTES|3|5\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|\n"
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002|\n"
+                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003|\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
@@ -986,10 +1035,10 @@ TEST_CASE("un header que declara menos registros de los que hay no dice truncado
     // El header declara 2, pero el archivo tiene 3 registros: NO esta
     // truncado, le SOBRAN registros. Decir "truncado" seria mentir.
     escribirBytes(ruta,
-                  "#PACIENTES|2|2\n" + Paciente::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n"
-                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003\n");
+                  "#PACIENTES|3|2\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|\n"
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002|\n"
+                        "3|Caro|Sosa|caro@unlp.edu.ar|2214556677|1|2020003|\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
@@ -1006,8 +1055,8 @@ TEST_CASE("un id que no entra en un int lanza DatoInvalidoException con archivo 
     const std::string ruta = rutaDePrueba("desborde.dat");
     // El id es un numero valido como TEXTO, pero no entra en un `int`.
     escribirBytes(ruta,
-                  "#PACIENTES|2|1\n" + Paciente::esquema()
-                      + "\n99999999999|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n");
+                  "#PACIENTES|3|1\n" + Paciente::esquema()
+                      + "\n99999999999|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
 
@@ -1033,10 +1082,10 @@ TEST_CASE("un id que no entra en un int lanza DatoInvalidoException con archivo 
 TEST_CASE("una linea en blanco intercalada se ignora", persistencia_linea_en_blanco) {
     const std::string ruta = rutaDePrueba("linea_blanca.dat");
     escribirBytes(ruta,
-                  "#PACIENTES|2|2\n" + Paciente::esquema()
-                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
+                  "#PACIENTES|3|2\n" + Paciente::esquema()
+                      + "\n1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|\n"
                         "\n"
-                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002\n");
+                        "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002|\n");
 
     ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     const std::vector<Paciente> cargados = archivo.cargar();
@@ -1310,7 +1359,7 @@ TEST_CASE("el archivo escrito usa solo LF y es identico en cualquier plataforma"
     // donde tienen que estar).
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 4);
-    CHECK(lineas[0] == "#PACIENTES|2|2");
+    CHECK(lineas[0] == "#PACIENTES|3|2");
     CHECK(lineas[1] == Paciente::esquema());
 }
 
@@ -1644,7 +1693,7 @@ TEST_CASE("guardar reemplaza el archivo y no lo agrega al final",
     archivo.guardar({pacienteDePrueba(9)});
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#PACIENTES|2|1");
+    CHECK(lineas[0] == "#PACIENTES|3|1");
     CHECK(Utils::separar(lineas[2], '|')[0] == "9");
 }
 
@@ -1657,9 +1706,132 @@ TEST_CASE("el contenido del archivo es exactamente el esperado",
 
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 3);
-    CHECK(lineas[0] == "#PACIENTES|2|1");
-    CHECK(lineas[1] == "id|nombre|apellido|email|telefono|activo|dni");
-    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001");
+    CHECK(lineas[0] == "#PACIENTES|3|1");
+    CHECK(lineas[1] == "id|nombre|apellido|email|telefono|activo|dni|observaciones");
+    CHECK(lineas[2] == "1|Beto|Perez|paciente1@unlp.edu.ar|2214556677|1|2020001|");
+}
+
+// ---------------------------------------------------------------------------
+// LAS VERSIONES DEL FORMATO
+//
+// El loader entiende DOS versiones: la actual (v3, con `observaciones`) y
+// la anterior (v2, sin `observaciones`). Un archivo v2 SE LEE: el campo
+// nuevo queda vacio y los demas datos intactos.
+//
+// ESTOS ARCHIVOS SE ARMAN A MANO
+//
+// No se generan con `guardar()` (que siempre escribe la version actual):
+// se escriben con `escribirBytes`, como los archivos editados a mano, para
+// que el test sea del archivo y no del escritor.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("un archivo de la version anterior se lee y deja las observaciones vacias",
+          persistencia_lee_version_anterior) {
+    const std::string ruta = rutaDePrueba("version_anterior.dat");
+    // Un archivo v2 AUTENTICO: su linea de esquema es la de la v2 (sin
+    // `observaciones`) y sus registros tienen 7 campos.
+    escribirBytes(ruta,
+                  "#PACIENTES|2|2\n"
+                  "id|nombre|apellido|email|telefono|activo|dni\n"
+                  "1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n"
+                  "2|Beto|Perez|beto@unlp.edu.ar|2214556677|0|2020002\n");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const std::vector<Paciente> cargados = archivo.cargar();
+    CHECK(cargados.size() == 2);
+
+    // EL RESTO DE LOS DATOS ESTA INTACTO.
+    if (cargados.size() >= 2) {
+        CHECK(cargados[0].getId() == 1);
+        CHECK(cargados[0].getNombre() == "Ana");
+        CHECK(cargados[0].getApellido() == "Gomez");
+        CHECK(cargados[0].getEmail() == "ana1@unlp.edu.ar");
+        CHECK(cargados[0].getTelefono() == "2214556677");
+        CHECK(cargados[0].getDni() == "2020001");
+        CHECK(cargados[0].esActivo() == true);
+
+        CHECK(cargados[1].getId() == 2);
+        CHECK(cargados[1].getNombre() == "Beto");
+        CHECK(cargados[1].getDni() == "2020002");
+        CHECK(cargados[1].esActivo() == false);
+    }
+
+    // Y EL CAMPO NUEVO QUEDA VACIO: el archivo viejo no lo tiene.
+    for (const Paciente& paciente : cargados) {
+        CHECK(paciente.getObservaciones().empty());
+    }
+}
+
+TEST_CASE("un archivo de la version anterior se puede volver a guardar en la version actual",
+          persistencia_version_anterior_se_reescribe) {
+    const std::string ruta = rutaDePrueba("version_anterior_reescrita.dat");
+    escribirBytes(ruta,
+                  "#PACIENTES|2|1\n"
+                  "id|nombre|apellido|email|telefono|activo|dni\n"
+                  "1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001\n");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const std::vector<Paciente> cargados = archivo.cargar();
+    CHECK(cargados.size() == 1);
+
+    // Se reescribe: el archivo nuevo esta en la version ACTUAL y el campo
+    // nuevo viaja (vacio).
+    const std::string rutaNueva = rutaDePrueba("version_actual.dat");
+    ArchivoTexto<Paciente> salida(rutaNueva, "PACIENTES");
+    salida.guardar(cargados);
+
+    const std::vector<std::string> lineas = leerLineas(rutaNueva);
+    CHECK(lineas[0] == "#PACIENTES|3|1");
+    CHECK(lineas[1] == Paciente::esquema());
+    CHECK(lineas[2] == "1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|");
+}
+
+TEST_CASE("un archivo de la version actual con observaciones hace round trip",
+          persistencia_round_trip_observaciones) {
+    const std::string ruta = rutaDePrueba("observaciones.dat");
+
+    const Paciente conTexto(1, "Ana", "Gomez", "ana1@unlp.edu.ar", "2214556677", "2020001",
+                             "alergia a la penicilina");
+    const Paciente sinTexto(2, "Beto", "Perez", "beto@unlp.edu.ar", "2214556677", "2020002");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    archivo.guardar({conTexto, sinTexto});
+
+    // EN EL ARCHIVO EL CAMPO VIAJA SIEMPRE, AUNQUE ESTE VACIO.
+    const std::vector<std::string> lineas = leerLineas(ruta);
+    CHECK(lineas[2] == "1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|alergia a la penicilina");
+    CHECK(lineas[3] == "2|Beto|Perez|beto@unlp.edu.ar|2214556677|1|2020002|");
+
+    // Y EL ROUND TRIP DEVUELVE LOS DATOS INTACTOS.
+    const std::vector<Paciente> cargados = archivo.cargar();
+    CHECK(cargados.size() == 2);
+    if (cargados.size() >= 2) {
+        CHECK(cargados[0].getObservaciones() == "alergia a la penicilina");
+        CHECK(cargados[1].getObservaciones().empty());
+        CHECK(cargados[0].getNombre() == "Ana");
+        CHECK(cargados[0].getDni() == "2020001");
+        CHECK(cargados[1].getNombre() == "Beto");
+        CHECK(cargados[1].getDni() == "2020002");
+    }
+}
+
+TEST_CASE("un archivo de la version anterior con ocho campos se rechaza",
+          persistencia_version_anterior_con_ocho_campos) {
+    // Un archivo v2 NO puede traer el campo `observaciones`: ese campo es de
+    // la v3. Si lo trae, el archivo esta mal formado.
+    const std::string ruta = rutaDePrueba("version_anterior_con_ocho.dat");
+    escribirBytes(ruta,
+                  "#PACIENTES|2|1\n"
+                  "id|nombre|apellido|email|telefono|activo|dni\n"
+                  "1|Ana|Gomez|ana1@unlp.edu.ar|2214556677|1|2020001|algo\n");
+
+    ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
+    const Fallo fallo = capturarTipo<DatoInvalidoException>([&] { archivo.cargar(); });
+    CHECK(fallo.lanzo);
+    CHECK(!fallo.lanzoOtro);
+    // El error dice cuantos campos se esperaban (los de la v2) y cuantos hay.
+    CHECK(fallo.mensaje.find("se esperaban 7 campos") != std::string::npos);
+    CHECK(fallo.mensaje.find("y hay 8") != std::string::npos);
 }
 
 TEST_CASE("crearVacio crea el archivo y no pisa uno existente",
@@ -1673,7 +1845,7 @@ TEST_CASE("crearVacio crea el archivo y no pisa uno existente",
     CHECK(existeArchivo(ruta));
     const std::vector<std::string> lineas = leerLineas(ruta);
     CHECK(lineas.size() == 2);
-    CHECK(lineas[0] == "#PACIENTES|2|0");
+    CHECK(lineas[0] == "#PACIENTES|3|0");
     CHECK(lineas[1] == Paciente::esquema());
 
     // El archivo recien creado se puede cargar: da cero registros.
@@ -1799,7 +1971,7 @@ TEST_CASE("los archivos de ejemplo se cargan y cada turno es de la especialidad 
     verificarCoherenciaDeTurnos(rutaTurnos, rutaMedicos, rutaPacientes);
 }
 
-TEST_CASE("la semilla de data/ejemplo esta en la version 2 y es coherente",
+TEST_CASE("la semilla de data/ejemplo esta en la version 3 y es coherente",
           persistencia_semilla) {
     // La SEMILLA es el juego de archivos que se copia sobre `data/` para
     // empezar de cero (lo hace la pantalla de "cargar datos de ejemplo", que
@@ -1815,11 +1987,11 @@ TEST_CASE("la semilla de data/ejemplo esta en la version 2 y es coherente",
         return;
     }
 
-    // Los tres archivos de la semilla estan en la version 2 del formato: el
+    // Los tres archivos de la semilla estan en la version 3 del formato: el
     // segundo campo del header es la version.
-    CHECK(versionDelHeader(rutaTurnos) == "2");
-    CHECK(versionDelHeader(rutaMedicos) == "2");
-    CHECK(versionDelHeader(rutaPacientes) == "2");
+    CHECK(versionDelHeader(rutaTurnos) == "3");
+    CHECK(versionDelHeader(rutaMedicos) == "3");
+    CHECK(versionDelHeader(rutaPacientes) == "3");
 
     // Y la semilla cumple la MISMA regla que los archivos vivos: cada turno
     // es de la especialidad de SU medico.
@@ -1955,5 +2127,7 @@ TEST_CASE("la API expone la ruta y el nombre de la entidad", persistencia_api) {
     const ArchivoTexto<Paciente> archivo(ruta, "PACIENTES");
     CHECK(archivo.ruta() == ruta);
     CHECK(archivo.nombreEntidad() == "PACIENTES");
-    CHECK(ArchivoTexto<Paciente>::VERSION_FORMATO == 2);
+    // La version del formato y la anterior: las dos que el loader entiende.
+    CHECK(ArchivoTexto<Paciente>::VERSION_FORMATO == 3);
+    CHECK(ArchivoTexto<Paciente>::VERSION_ANTERIOR == 2);
 }

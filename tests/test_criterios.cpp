@@ -107,13 +107,16 @@ TEST_CASE("los criterios de pacientes devuelven las mismas coincidencias que ant
     if (!porId.empty()) {
         CHECK(porId[0].first == 2);
         // LA FILA COMPLETA DE LA ENTIDAD (id, nombre, apellido, email,
-        // telefono, dni y estado).
-        CHECK(porId[0].second.size() == 7);
+        // telefono, dni, estado y observaciones).
+        CHECK(porId[0].second.size() == 8);
         CHECK(celda(porId[0], 0) == "2");
         CHECK(celda(porId[0], 1) == "Beto");
         CHECK(celda(porId[0], 2) == "Diaz");
         CHECK(celda(porId[0], 5) == "2020392");
         CHECK(celda(porId[0], 6) == "activo");
+        // La celda nueva va AL FINAL y esta vacia (el paciente no tiene
+        // observaciones).
+        CHECK(celda(porId[0], 7).empty());
     }
     // Un id que no existe no devuelve nada.
     CHECK(criterios[0].buscar("9").empty() == true);

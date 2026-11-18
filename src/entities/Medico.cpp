@@ -97,3 +97,12 @@ Medico Medico::fromRegistro(const std::string& linea) {
 std::string Medico::esquema() {
     return "id|nombre|apellido|email|telefono|activo|legajo|especialidad";
 }
+
+std::string Medico::esquemaAnterior() {
+    // EL ESQUEMA DE ESTE TIPO NO CAMBIO ENTRE v2 Y v3
+    //
+    // El medico no sumo ningun campo: el unico cambio del formato v3 fue
+    // el `observaciones` del paciente. Por eso el esquema anterior es el
+    // mismo que el actual.
+    return esquema();
+}

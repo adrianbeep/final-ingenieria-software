@@ -50,12 +50,12 @@ documento.
 
 | Que | Donde esta resuelto | Como se verifica | Decision |
 |---|---|---|---|
-| Las dos entidades principales y la clase de la relacion | `include/entities/Medico.h:40`, `include/entities/Paciente.h:27`, `include/entities/Turno.h:43`, con la base comun `include/entities/Persona.h:36` | `tests/test_entidades.cpp` | 1 |
+| Las dos entidades principales y la clase de la relacion | `include/entities/Medico.h:40`, `include/entities/Paciente.h:37`, `include/entities/Turno.h:43`, con la base comun `include/entities/Persona.h:36` | `tests/test_entidades.cpp` | 1 |
 | Encapsulamiento | los datos son privados y los setters validan y lanzan `DatoInvalidoException`: no se puede construir una entidad invalida | `tests/test_entidades.cpp` | 4 |
-| Constructores | `Medico.h:53`, `Paciente.h:39`, `Turno.h:55` (validan **todos** los datos a traves de los setters) | `tests/test_entidades.cpp` | 1 |
-| Destructores | `Persona.h:53` (virtual, es una base polimorfica), `Medico.h:48`, `Paciente.h:35`, `Turno.h:51` | compila con `-Wnon-virtual-dtor` (uno de los seis flags del proyecto) | 1 |
-| Sobrecarga de operador | `operator<<` (friend) en `Medico.h:72`, `Paciente.h:55`, `Turno.h:102`; `operator==` y `operator<` en `Persona.h:117` y `Persona.h:123`, y en `Turno.h:98` y `Turno.h:99` | `tests/test_entidades.cpp`, `tests/test_formato.cpp` | 1 |
-| La funcion friend, **justificada** | `Medico.h:72`; el porque esta en `Medico.h:33-38` (las dos alternativas descartadas: exponer getters publicos, o hacer `operator<<` miembro y perder el ADL). Los mismos argumentos en `Paciente.h:23` y `Turno.h:39` | la lectura del codigo | 1 |
+| Constructores | `Medico.h:53`, `Paciente.h:52`, `Turno.h:55` (validan **todos** los datos a traves de los setters) | `tests/test_entidades.cpp` | 1 |
+| Destructores | `Persona.h:53` (virtual, es una base polimorfica), `Medico.h:48`, `Paciente.h:45`, `Turno.h:51` | compila con `-Wnon-virtual-dtor` (uno de los seis flags del proyecto) | 1 |
+| Sobrecarga de operador | `operator<<` (friend) en `Medico.h:72`, `Paciente.h:71`, `Turno.h:102`; `operator==` y `operator<` en `Persona.h:117` y `Persona.h:123`, y en `Turno.h:98` y `Turno.h:99` | `tests/test_entidades.cpp`, `tests/test_formato.cpp` | 1 |
+| La funcion friend, **justificada** | `Medico.h:72`; el porque esta en `Medico.h:33-38` (las dos alternativas descartadas: exponer getters publicos, o hacer `operator<<` miembro y perder el ADL). Los mismos argumentos en `Paciente.h:33` y `Turno.h:39` | la lectura del codigo | 1 |
 
 **Nota sobre `operator==`:** compara el id **y** el tipo, porque el id es unico
 *por entidad* y no global. Sin eso, el `ArbolBST` no tendria el *strict weak
@@ -70,10 +70,10 @@ ordering* que necesita (`Persona.h:112`).
 
 | Que | Donde esta resuelto | Como se verifica | Decision |
 |---|---|---|---|
-| La capa de archivos | `include/persistence/ArchivoTexto.h:237` (`ArchivoTexto<T>`) | `tests/test_persistencia.cpp` | 11 |
-| Guardar | `ArchivoTexto.h:261` (la secuencia), `:262` (la lista enlazada), `:273` (initializer_list) | `tests/test_persistencia.cpp` | 45 |
-| Cargar | `ArchivoTexto.h:283` (la secuencia), `:284` (la lista enlazada) | `tests/test_persistencia.cpp` | 45 |
-| El formato, versionado | `ArchivoTexto.h:250` (`VERSION_FORMATO = 2`), mas el header y la linea de esquema de `data/*.dat` | `tests/test_persistencia.cpp`: un archivo de la version anterior se rechaza con un error claro | 11, 3 |
+| La capa de archivos | `include/persistence/ArchivoTexto.h:256` (`ArchivoTexto<T>`) | `tests/test_persistencia.cpp` | 11 |
+| Guardar | `ArchivoTexto.h:290` (la secuencia), `:291` (la lista enlazada), `:302` (initializer_list) | `tests/test_persistencia.cpp` | 45 |
+| Cargar | `ArchivoTexto.h:312` (la secuencia), `:313` (la lista enlazada) | `tests/test_persistencia.cpp` | 45 |
+| El formato, versionado | `ArchivoTexto.h:272` (`VERSION_FORMATO = 3`) y `:279` (`VERSION_ANTERIOR = 2`), mas el header y la linea de esquema de `data/*.dat` | `tests/test_persistencia.cpp`: un archivo de la version anterior SE LEE (con el campo nuevo vacio) y uno de una version que no se entiende se rechaza con un error claro | 11, 3 |
 | Se recupera al iniciar | `src/main.cpp:33-35` (los tres `cargar()`) | el arranque de la app, y el CI lo corre en cada build | 13 |
 | Los bytes son iguales en cualquier sistema operativo | la escritura en modo **binario** de `ArchivoTexto.h` (por eso `.gitattributes` los marca `-text`) | `tests/test_persistencia.cpp` | 13 |
 
@@ -94,7 +94,7 @@ basura. Ademas, agregar un campo invalidaria todos los archivos anteriores.
 | Las cinco acciones de las entidades | `include/ui/CrudPersonas.h:438` (alta), `:439` (modificacion), `:440` (baja / reactivar), `:441` (listado), `:442` (busqueda) | `tests/test_ui.cpp` | 5, 39 |
 | Las de los turnos | `src/ui/Pantallas/Turnos.cpp:494` (agendar), `:495` (cancelar), `:496` (reprogramar), `:497` (modificar), `:498` (listado), `:499` (buscar), `:500` (ver detalle) | `tests/test_ui.cpp` | 41, 43 |
 | La **baja logica** | el flag `activo` (`include/entities/Persona.h:261`) con su setter (`:101`), y la implementacion compartida en `include/repositories/BajaLogicaCompartida.h:38` (`darDeBaja` en `:51`, `reactivar` en `:59`) | `tests/test_repositorio.cpp` | 10 |
-| El registro **sigue existiendo** | `include/persistence/ArchivoTexto.h:116` ("No filtra inactivos": el `activo` es un DATO, no una condicion de carga) | `tests/test_persistencia.cpp` | 10 |
+| El registro **sigue existiendo** | `include/persistence/ArchivoTexto.h:135` ("No filtra inactivos": el `activo` es un DATO, no una condicion de carga) | `tests/test_persistencia.cpp` | 10 |
 | La baja logica de los turnos | `EstadoTurno` (`include/entities/Turno.h:12`) y `ServicioTurnos::cancelar` (`src/services/ServicioTurnos.cpp:121`), que cambia el estado y **no borra** el registro | `tests/test_servicio.cpp` | 10 |
 
 **Ojo:** hay una baja logica en las **tres** entidades, no solo en una: el
@@ -139,7 +139,7 @@ Hay **cinco**, y todos se usan:
 |---|---|---|
 | `ArbolBST<T>` | `include/structures/ArbolBST.h:56` | la coleccion ordenada por clave |
 | `ListaEnlazada<T>` | `include/structures/ListaEnlazada.h:51` | la estructura de la capa de persistencia |
-| `ArchivoTexto<T>` | `include/persistence/ArchivoTexto.h:237` | la lectura y la escritura de los archivos |
+| `ArchivoTexto<T>` | `include/persistence/ArchivoTexto.h:256` | la lectura y la escritura de los archivos |
 | `RepositorioCRUD<T>` | `include/repositories/RepositorioCRUD.h:95` | el CRUD de las tres entidades |
 | `CrudPersonas<T>` | `include/ui/CrudPersonas.h:146` | el motor de las pantallas de personas |
 
@@ -158,7 +158,7 @@ hay `.cpp` que compilar) ✓.
 |---|---|---|---|
 | La clase propia | `include/exceptions/ExcepcionesSistema.h:24` (`ExcepcionSistema`, de `std::runtime_error`) y sus siete derivadas: `:30` (archivo no encontrado), `:36` (id duplicado), `:44` (dato invalido), `:65` (la entidad no existe), `:71` (turno ocupado), `:77` (el turno no existe), `:92` (formato desconocido) | `tests/test_excepciones.cpp` | 1 |
 | Los `catch` | 22 en `src/`; el global en `src/main.cpp:53` | `tests/test_excepciones.cpp` | 27 |
-| La red de seguridad | `include/persistence/ArchivoTexto.h:682`: cualquier excepcion cruda se traduce a una del proyecto, con el archivo y la linea | `tests/test_persistencia.cpp` | 11 |
+| La red de seguridad | `include/persistence/ArchivoTexto.h:740`: cualquier excepcion cruda se traduce a una del proyecto, con el archivo y la linea | `tests/test_persistencia.cpp` | 11 |
 
 **Por que alcanza un solo `catch` global:** todas las excepciones del
 proyecto cuelgan de `ExcepcionSistema`, asi que el `catch` de `main.cpp:53`
@@ -176,7 +176,7 @@ sin reinterpretar el mensaje.
 | Que | Donde esta resuelto | Como se verifica | Decision |
 |---|---|---|---|
 | El **arbol binario de busqueda**, que es el backing real de las tres colecciones | `include/structures/ArbolBST.h:56`, y el miembro `_arbol` en `include/repositories/RepositorioCRUD.h:193` | `tests/test_arbol.cpp`, `tests/test_repositorio.cpp` | 46 |
-| La **lista enlazada**, que es la estructura de la capa de persistencia | `include/structures/ListaEnlazada.h:51`, usada por `include/persistence/ArchivoTexto.h:262` y `:284` | `tests/test_lista.cpp`, `tests/test_persistencia.cpp` | 45 |
+| La **lista enlazada**, que es la estructura de la capa de persistencia | `include/structures/ListaEnlazada.h:51`, usada por `include/persistence/ArchivoTexto.h:291` y `:313` | `tests/test_lista.cpp`, `tests/test_persistencia.cpp` | 45 |
 | La justificacion | la seccion "Decisiones de los TADs y de la capa de persistencia" de `docs/decisiones.md` (filas 45 y 46) | la lectura | 45, 46 |
 
 **Por que un arbol y no un vector o una lista:** las busquedas son por clave y
@@ -198,11 +198,11 @@ aleatorio seria O(n), peor que un vector: el puente es `aVector()`.
 
 | Que | Donde esta resuelto | Como se verifica | Decision |
 |---|---|---|---|
-| Los validadores del dominio | `include/entities/Persona.h:171` (nombre), `:181` (email), `:201` (telefono); `src/entities/Paciente.cpp:42` (dni); `src/entities/Medico.cpp:54` (legajo); `src/entities/Turno.cpp:112` (duracion) y `:122` (consultorio) | `tests/test_entidades.cpp`, `tests/test_turno.cpp` | 16 |
+| Los validadores del dominio | `include/entities/Persona.h:171` (nombre), `:181` (email), `:201` (telefono); `src/entities/Paciente.cpp:53` (dni); `src/entities/Medico.cpp:54` (legajo); `src/entities/Turno.cpp:112` (duracion) y `:122` (consultorio) | `tests/test_entidades.cpp`, `tests/test_turno.cpp` | 16 |
 | La fecha y la hora | `include/utils/Fecha.h:39` (la fecha existe en el calendario, con bisiestos) y `:128` (la hora esta en el horario de atencion) | `tests/test_fecha.cpp` | 15 |
 | Los helpers | `include/utils/Utils.h:31` (`esEntero`), `:39` (`esAlfabetico`), `:96` (`esFormatoFecha`), `:101` (`esFormatoHora`) | `tests/test_utils.cpp` | 4 |
 | La pantalla **no reimplementa** la regla | `src/ui/Pantallas/Pacientes.cpp:64`: el validador del campo **envuelve al setter** de la entidad y devuelve el motivo | `tests/test_ui.cpp` | 27 |
-| La red | `src/main.cpp:53` y `include/persistence/ArchivoTexto.h:682` | `tests/test_persistencia.cpp` | 11 |
+| La red | `src/main.cpp:53` y `include/persistence/ArchivoTexto.h:740` | `tests/test_persistencia.cpp` | 11 |
 
 **El caso del enunciado:** `31/02`, `29/02/2025` y `"abc"` no rompen el
 programa: el primer caso es una fecha que no existe, el segundo un anio que no

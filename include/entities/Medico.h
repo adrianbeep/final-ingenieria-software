@@ -78,6 +78,16 @@ public:
     // Nombres de los campos del formato canonico, separados por '|'.
     static std::string esquema();
 
+    // Nombres de los campos del formato ANTERIOR (la v2), separados por '|'.
+    //
+    // EL ESQUEMA DE ESTE TIPO NO CAMBIO ENTRE v2 Y v3
+    //
+    // El medico no sumo ningun campo: el unico cambio del formato v3 fue
+    // el `observaciones` del PACIENTE. Por eso su esquema anterior es el
+    // mismo que el actual: la capa de persistencia no tiene que saber esto,
+    // lo declara la entidad.
+    static std::string esquemaAnterior();
+
     // --- Limites de los campos, con nombre ---
     static constexpr std::size_t LEGAJO_LONGITUD_MINIMA = 4;
     static constexpr std::size_t LEGAJO_LONGITUD_MAXIMA = 12;

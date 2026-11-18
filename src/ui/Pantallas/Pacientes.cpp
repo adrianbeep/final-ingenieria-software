@@ -92,6 +92,10 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
     //
     // El nombre de cada campo es el nombre de su columna: asi el formulario
     // de modificar se carga con los valores de la entidad que se edita.
+    //
+    // `observaciones` va AL FINAL: el motor arma el vector de valores en el
+    // orden de los campos, asi que el campo nuevo queda en la ultima
+    // posicion (la del `observaciones` del formato canonico).
     config.campos = {
         {"nombre", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
              paciente.setNombre(texto);
@@ -107,17 +111,20 @@ CrudPersonas<Paciente>::Config configDePacientes(RepositorioPacientes& repositor
          })},
         {"dni", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
              paciente.setDni(texto);
+         })},
+        {"observaciones", "", validadorDelCampo([](Paciente& paciente, const std::string& texto) {
+             paciente.setObservaciones(texto);
          })}};
 
     // EL CONSTRUCTOR DE LA ENTIDAD
     //
     // El vector que llega es [id, nombre, apellido, email, telefono,
-    // dni]: el id va adelante porque lo PROPONE el repositorio (o es el
-    // id de la entidad que se esta modificando) y nunca lo escribe el
-    // usuario.
+    // dni, observaciones]: el id va adelante porque lo PROPONE el
+    // repositorio (o es el id de la entidad que se esta modificando) y
+    // nunca lo escribe el usuario.
     config.construir = [](const std::vector<std::string>& valores) {
         return Paciente(std::stoi(valores[0]), valores[1], valores[2], valores[3], valores[4],
-                      valores[5]);
+                      valores[5], valores[6]);
     };
 
     config.esActivo = [](const Paciente& paciente) { return paciente.esActivo(); };

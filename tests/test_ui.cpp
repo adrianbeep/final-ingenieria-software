@@ -5825,7 +5825,7 @@ std::string leerArchivo(const std::filesystem::path& ruta) {
 // LA SEMILLA DE PRUEBA
 //
 // Los tres archivos de la semilla, con UN registro cada uno (alcanza para
-// probar que la carga funciona). Son archivos VALIDOS del formato v2: lo que
+// probar que la carga funciona). Son archivos VALIDOS del formato v3: lo que
 // se copia se recarga despues, asi que tiene que poder leerse.
 void escribirSemilla(const std::filesystem::path& base) {
     const std::filesystem::path semilla = base / "ejemplo";
@@ -5833,15 +5833,15 @@ void escribirSemilla(const std::filesystem::path& base) {
     std::filesystem::create_directories(semilla, error);
 
     escribirArchivo(semilla / "pacientes.dat",
-                    "#PACIENTES|2|1\n"
-                    "id|nombre|apellido|email|telefono|activo|dni\n"
-                    "1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391\n");
+                    "#PACIENTES|3|1\n"
+                    "id|nombre|apellido|email|telefono|activo|dni|observaciones\n"
+                    "1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391|\n");
     escribirArchivo(semilla / "medicos.dat",
-                    "#MEDICOS|2|1\n"
+                    "#MEDICOS|3|1\n"
                     "id|nombre|apellido|email|telefono|activo|legajo|especialidad\n"
                     "1|Gomez|Laura|laura.gomez@unlp.edu.ar|2214556677|1|LEG-1001|CARD\n");
     escribirArchivo(semilla / "turnos.dat",
-                    "#TURNOS|2|1\n"
+                    "#TURNOS|3|1\n"
                     "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|"
                     "estado|idTurnoReemplazante\n"
                     "1|1|1|CARD|2027-03-10|10:00|45|A-1|Activo|-1\n");

@@ -35,20 +35,33 @@
 //
 // Un archivo = 1 header + 1 linea de esquema + N lineas de registro:
 //
-//     #PACIENTES|2|2
-//     id|nombre|apellido|email|telefono|activo|dni
-//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391
-//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|2020398
+//     #PACIENTES|3|2
+//     id|nombre|apellido|email|telefono|activo|dni|observaciones
+//     1|Garcia|Ana|ana.garcia@unlp.edu.ar|2214556677|1|2020391|
+//     7|Lopez|Martin|martin.lopez@unlp.edu.ar|2214889900|1|2020398|
 //
 // El header es POSICIONAL (la primera linea SIEMPRE es el header): es mas
 // simple y no depende de que ningun dato pueda parecerse a un header.
 //
-// El `2` del header es la VERSION DEL FORMATO (no la del programa). La
-// version 2 es la del esquema medico: el `dni` del paciente es NUMERICO
-// (en la version 1 era una matricula alfanumerica) y la especialidad se
-// guarda POR CODIGO ("CARD"), no por descripcion. Un archivo de version 1
-// se RECHAZA: el loader no adivina como migrarlo, dice que version es y
-// deja la decision al usuario.
+// El `3` del header es la VERSION DEL FORMATO (no la del programa).
+//
+// LAS VERSIONES QUE EL LOADER ENTIENDE
+//
+//   - v3: el esquema ACTUAL. El paciente tiene el campo `observaciones`.
+//   - v2: el esquema ANTERIOR. El paciente NO tiene `observaciones`: el
+//     `dni` ya era numerico y la especialidad ya viajaba por codigo.
+//
+// Un archivo v2 SE LEE: el campo nuevo se carga VACIO y los demas datos
+// quedan intactos. Un archivo de otra version se RECHAZA: el loader no
+// adivina como migrarlo, dice que version es y deja la decision al usuario.
+//
+// EL ESQUEMA QUE SE ESPERA DEPENDE DE LA VERSION DEL ARCHIVO
+//
+// Un archivo v2 declara el esquema de v2 y un v3 el de v3: compararlos
+// contra el esquema del codigo (que es el de v3) rechazaria los archivos
+// v2 aunque sus datos sean correctos. Por eso el esquema EFECTIVO se
+// calcula segun la version del header, y cada entidad declara el suyo
+// con `esquemaAnterior()`.
 //
 // ---------------------------------------------------------------------------
 // POR QUE TEXTO DELIMITADO POR '|' Y NO BINARIO
@@ -69,10 +82,16 @@
 //     friend std::ostream& operator<<(std::ostream&, const T&);  // escribe el registro
 //     static T fromRegistro(const std::string& linea);            // parsea el registro
 //     static std::string esquema();                               // "id|nombre|..."
+//     static std::string esquemaAnterior();                       // el esquema de la v2
 //
 // Y nada mas. Si `T` necesita mas, el formato no esta bien disenado: esa
 // es la prueba de que el dominio esta desacoplado del storage.
 //
+// `esquemaAnterior()` es el esquema que el tipo TENIA en la version anterior
+// del formato. Si el tipo no cambio entre esa version y la actual, devuelve
+// lo mismo que `esquema()`: asi la capa de persistencia no tiene que saber
+// NADA del dominio (no hay una tabla de "que campos tiene cada entidad") y
+// cada entidad es la que sabe cual era su formato anterior.
 // ---------------------------------------------------------------------------
 // POR QUE ES HEADER-ONLY
 //
@@ -240,14 +259,24 @@ public:
     // header: por eso el loader puede decir con precision que paso cuando
     // el archivo no se puede leer.
     //
-    // La version 2 es la del ESQUEMA MEDICO: el `dni` del `Paciente` es
-    // NUMERICO (en la version 1 era una matricula alfanumerica) y la
-    // especialidad se guarda POR CODIGO ("CARD"), no por descripcion.
+    // LA VERSION 3 ES LA DEL CAMPO `observaciones`
+    //
+    // El paciente suma un campo opcional (`observaciones`). La version 2 es
+    // la del esquema medico: el `dni` del paciente es NUMERICO (en la
+    // version 1 era una matricula alfanumerica) y la especialidad se
+    // guarda POR CODIGO ("CARD"), no por descripcion.
     //
     // Un archivo de version 1 se RECHAZA con un error claro: el loader dice
     // las DOS versiones (la del archivo y la que lee) en vez de adivinar
     // como migrarlo.
-    static constexpr int VERSION_FORMATO = 2;
+    static constexpr int VERSION_FORMATO = 3;
+
+    // La version ANTERIOR del formato: la que el loader todavia ENTIENDE.
+    //
+    // Un archivo de esta version SE LEE: se lee con el esquema de esa
+    // version (`T::esquemaAnterior()`) y los campos que no existian todavia
+    // quedan vacios. Por eso el campo nuevo no rompe los archivos viejos.
+    static constexpr int VERSION_ANTERIOR = 2;
 
     explicit ArchivoTexto(std::string ruta_, std::string nombreEntidad_);
 
@@ -322,7 +351,12 @@ private:
     // Parsea UN registro canonico. `numeroLinea` es el numero de linea REAL
     // del archivo (1 = header, 2 = esquema): va en el mensaje de error para
     // que el error se ubique sin debuggear a ciegas.
-    T leerRegistro(const std::string& linea, int numeroLinea) const;
+    //
+    // `esquemaEfectivo` es el esquema que TIENE el archivo (el de su
+    // version): la cantidad de campos esperados sale de ahi y no de
+    // `T::esquema()`, que es el de la version actual.
+    T leerRegistro(const std::string& linea, int numeroLinea,
+                   const std::string& esquemaEfectivo) const;
 
     // "#ENTIDAD|VERSION|CANTIDAD_REGISTROS".
     std::string construirHeader(std::size_t cantidadRegistros) const;
@@ -569,13 +603,34 @@ void ArchivoTexto<T>::leerVisitando(Visitante&& visitante) {
         throw FormatoDesconocidoException(_ruta + ": la version del header no es un numero: '"
                                           + partes[1] + "'");
     }
-    if (version != VERSION_FORMATO) {
+    // LAS DOS VERSIONES QUE EL LOADER ENTIENDE
+    //
+    // La actual y la anterior. Un archivo de cualquier otra version se
+    // RECHAZA: el loader no adivina como migrarlo.
+    //
+    // El mensaje nombra LAS DOS VERSIONES QUE SE LEEN, no solo la actual: si
+    // un archivo v1 dijera "esta version lee v3", el usuario concluiria que
+    // la v2 tambien se rechaza, y no es asi: la v2 se lee.
+    if (version != VERSION_FORMATO && version != VERSION_ANTERIOR) {
         throw FormatoDesconocidoException(_ruta
                                           + ": el archivo fue creado por otra version del programa "
                                             "(formato v"
-                                          + std::to_string(version) + ", esta version lee v"
+                                          + std::to_string(version) + ", esta version lee la v"
+                                          + std::to_string(VERSION_ANTERIOR) + " y la v"
                                           + std::to_string(VERSION_FORMATO) + ")");
     }
+
+    // EL ESQUEMA EFECTIVO: EL DE LA VERSION DEL ARCHIVO
+    //
+    // Un archivo v2 declara el esquema de v2 (sin `observaciones`) y uno v3
+    // el de v3. Compararlos contra el esquema del codigo (que es el de v3)
+    // rechazaria los archivos v2 aunque sus datos fueran correctos.
+    //
+    // Que esquema espera cada version lo sabe la ENTIDAD, no esta capa: por
+    // eso se le pregunta a `T::esquemaAnterior()` y no hay ninguna tabla de
+    // "que campos tiene cada entidad" en el codigo de persistencia.
+    const std::string esquemaEfectivo =
+        (version == VERSION_ANTERIOR) ? T::esquemaAnterior() : T::esquema();
 
     const long long cantidadDeclarada = enteroEstricto(partes[2]);
     if (cantidadDeclarada < 0) {
@@ -588,14 +643,17 @@ void ArchivoTexto<T>::leerVisitando(Visitante&& visitante) {
     // Es el checksum de la FORMA del registro: si el archivo declara 8 campos
     // y el codigo espera 9, el error dice exactamente eso en vez de
     // desalinear los datos en silencio.
+    //
+    // El esquema con el que se compara es el EFECTIVO (el de la version del
+    // archivo): asi un archivo v2 con el esquema de v2 calza, y un archivo v3
+    // con el esquema de v2 (o al reves) NO calza y se rechaza.
     if (!std::getline(entrada, linea)) {
         throw FormatoDesconocidoException(_ruta + ": falta la linea de esquema (la segunda linea)");
     }
     const std::string esquemaArchivo = Utils::trim(linea);
-    const std::string esquemaCodigo = T::esquema();
-    if (esquemaArchivo != esquemaCodigo) {
+    if (esquemaArchivo != esquemaEfectivo) {
         throw FormatoDesconocidoException(_ruta + ": el archivo declara el esquema '" + esquemaArchivo
-                                          + "' y el codigo espera '" + esquemaCodigo + "'");
+                                          + "' y el codigo espera '" + esquemaEfectivo + "'");
     }
 
     // --- PASO 3: los registros ---
@@ -610,7 +668,7 @@ void ArchivoTexto<T>::leerVisitando(Visitante&& visitante) {
         if (Utils::trim(linea).empty()) {
             continue;
         }
-        visitante(leerRegistro(linea, numeroLinea));
+        visitante(leerRegistro(linea, numeroLinea, esquemaEfectivo));
         ++leidos;
     }
 
@@ -660,10 +718,15 @@ void ArchivoTexto<T>::escribirRegistro(std::ostream& out, const T& registro) con
 }
 
 template <class T>
-T ArchivoTexto<T>::leerRegistro(const std::string& linea, int numeroLinea) const {
-    // La cantidad de campos se cuenta sobre el ESQUEMA (los nombres de los
-    // campos), no sobre su longitud.
-    const std::size_t camposEsperados = Utils::separar(T::esquema(), '|').size();
+T ArchivoTexto<T>::leerRegistro(const std::string& linea, int numeroLinea,
+                                const std::string& esquemaEfectivo) const {
+    // La cantidad de campos se cuenta sobre el ESQUEMA EFECTIVO (los nombres
+    // de los campos del archivo), no sobre su longitud.
+    //
+    // ES EL EFECTIVO Y NO `T::esquema()` PORQUE UN ARCHIVO v2 TIENE UN CAMPO
+    // MENOS: si se esperara la cantidad de campos de la version actual, un
+    // registro v2 (correcto) se rechazaria por tener los campos de antes.
+    const std::size_t camposEsperados = Utils::separar(esquemaEfectivo, '|').size();
     const std::vector<std::string> campos = Utils::separar(linea, '|');
     if (campos.size() != camposEsperados) {
         throw DatoInvalidoException("registro", linea,
