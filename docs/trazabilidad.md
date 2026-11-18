@@ -240,11 +240,13 @@ documentadas en [`docs/decisiones.md`](decisiones.md):
 | 39, 40, 41, 42 | La entidad se elige con un **buscador**, no escribiendo su id: **la app no le pide un id de base de datos a nadie** |
 | 43, 44 | El flujo de agendar es **paciente -> especialidad -> medico -> formulario**, con los medicos filtrados por la especialidad |
 | 45, 46 | La lista enlazada es el TAD propio del requisito 7 y es la estructura de la persistencia |
+| 54 | El formato de archivo es **versionado** y el loader **entiende la version anterior**: agregar el campo opcional `observaciones` (la v3) no invalida los archivos v2 |
 
 ## Las ocho preguntas de la defensa
 
-El [roadmap](https://github.com/adrianbeep/final-ingenieria-software/issues/1)
-las tiene escritas. Este documento es la evidencia de seis de las ocho:
+Las ocho estan contestadas, con su respuesta, su alternativa descartada y
+su evidencia, en [`docs/defensa.md`](defensa.md). Este documento es la
+evidencia cruda de seis de las ocho:
 
 | Pregunta | Donde esta la evidencia |
 |---|---|
@@ -257,12 +259,25 @@ las tiene escritas. Este documento es la evidencia de seis de las ocho:
 | 7. ¿Por que un solo `catch` alcanza? | `include/exceptions/ExcepcionesSistema.h:24` y el requisito 6 de este documento |
 | 8. ¿Como es el arbol? Mostralo en el papel | `include/structures/ArbolBST.h`: `construirDesdeOrdenados()` (divide y conqueras sobre la secuencia ordenada) |
 
-## Lo que sigue pendiente
+## Lo que queda, y lo que no
 
-Este documento mapea los nueve requisitos. Quedan pendientes (en el
-[issue de cierre](https://github.com/adrianbeep/final-ingenieria-software/issues/65)):
+Los nueve requisitos estan mapeados e implementados. De lo que el proyecto se
+propuso **ademas** de la consigna (la Fase 7, "Extras y cierre tecnico"), queda
+**una sola cosa**:
 
-- La **Fase 7**: el export de reportes a archivo, la semilla con las doce
-  especialidades, los tests de integracion del dominio completo y la
-  verificacion de que `main.cpp` quedo limpio.
-- La **Fase 8**: ensayar la modificacion en vivo y repasar las ocho preguntas.
+- El **export de reportes a archivo**: los seis reportes se muestran en
+  pantalla pero no se pueden guardar en un archivo. **La consigna NO lo pide**
+  (esta es la Fase 7, que es extras: los nueve requisitos van del POO a la
+  validacion de entradas). Se decidio **no hacerlo**: cuesta 1-2 dias, es lo
+  unico que agrega una funcion nueva, y deja abierto el formato del archivo
+  de salida. Es una decision, no un forgot.
+
+Lo que si se hizo de la Fase 7 y la Fase 8:
+
+| Que | Donde |
+|---|---|
+| La semilla con las **doce** especialidades (un medico y sus turnos por especialidad) | `data/ejemplo/` |
+| Los **tests de integracion** del dominio completo (el ciclo de vida entero, los borrados logicos y el error de persistencia) | `tests/test_integracion.cpp` |
+| La verificacion de que `main.cpp` quedo **sin logica de negocio**, y que el CI la hace cumplir | `docs/decisiones.md` y `.github/workflows/ci.yml` |
+| El **ensayo de la modificacion en vivo**: el campo opcional `observaciones` y el formato v3 que sigue leyendo la v2 | `docs/decisiones.md` (decision 54) |
+| Las **ocho preguntas** de la defensa, contestadas | `docs/defensa.md` |
