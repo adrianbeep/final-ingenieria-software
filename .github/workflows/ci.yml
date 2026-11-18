@@ -33,10 +33,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # La imagen del runner YA trae cmake, ninja y g++: instalarlos con apt
+      # es una red de seguridad, no un requisito.
+      #
+      # Por que no se instalan siempre: si el `apt-get update` falla (un
+      # mirror que no responde, una lista de paquetes incompleta), el build
+      # se cae por una causa que NO es del codigo. Ya paso: un run fallo con
+      # "E: Unable to locate package cmake" mientras el run anterior, con
+      # el mismo codigo, habia pasado. Un gate que depende de la red para
+      # algo que ya esta instalado es un gate que falla solo.
+      #
+      # Asi que: se usa lo que hay, y el apt queda para el caso de que
+      # falte algo de verdad.
       - name: Instalar toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++
+          if ! command -v cmake >/dev/null 2>&1 || \
+             ! command -v ninja >/dev/null 2>&1 || \
+             ! command -v g++   >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build g++
+          fi
+          cmake --version
+          ninja --version
+          g++ --version
 
       # El dominio es PURO: no puede abrir archivos, ni imprimir, ni llamar a
       # comandos del sistema. Si una entidad necesita hacer E/S, es que la
