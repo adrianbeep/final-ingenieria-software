@@ -5,7 +5,7 @@ por que, y que alternativa se descarto**. Es un entregable de la Fase 8, pero
 se mantiene al dia desde el primer commit: si una decision cambia, se cambia
 aca.
 
-Este archivo ES la tabla canonica: las **53 decisiones**, con su alternativa
+Este archivo ES la tabla canonica: las **54 decisiones**, con su alternativa
 descartada y el por que. El
 [issue #1](https://github.com/adrianbeep/final-ingenieria-software/issues/1)
 (el roadmap) tiene el resumen de las primeras, y el detalle de las de la
