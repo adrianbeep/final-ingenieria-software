@@ -58,16 +58,20 @@ namespace ui {
 //
 // La fila son las celdas en el ORDEN de estas columnas: si una cambiara y la
 // otra no, la proyeccion del buscador leeria una celda de otro lado.
+//
+// `observaciones` va AL FINAL: es el campo que se sumo en el formato v3 y
+// agregar una columna al final no mueve ninguna de las que ya estaban.
 inline const std::vector<std::string>& cabecerasDePacientes() {
     static const std::vector<std::string> cabeceras = {"id", "nombre", "apellido", "email",
-                                                        "telefono", "dni", "estado"};
+                                                        "telefono", "dni", "estado",
+                                                        "observaciones"};
     return cabeceras;
 }
 
 // LA FILA DE UN PACIENTE
 //
 // Son las celdas, en el orden de las cabeceras: `id`, `nombre`, `apellido`,
-// `email`, `telefono`, `dni` y `estado`.
+// `email`, `telefono`, `dni`, `estado` y `observaciones`.
 inline std::vector<std::string> filaDePaciente(const Paciente& paciente) {
     return {std::to_string(paciente.getId()),
             paciente.getNombre(),
@@ -75,7 +79,8 @@ inline std::vector<std::string> filaDePaciente(const Paciente& paciente) {
             paciente.getEmail(),
             paciente.getTelefono(),
             paciente.getDni(),
-            paciente.esActivo() ? "activo" : "inactivo"};
+            paciente.esActivo() ? "activo" : "inactivo",
+            paciente.getObservaciones()};
 }
 
 // EL BUSCADOR DE PACIENTES

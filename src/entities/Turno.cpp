@@ -170,6 +170,15 @@ std::string Turno::esquema() {
     return "id|idMedico|idPaciente|codigoEspecialidad|fecha|hora|duracionMin|consultorio|estado|idTurnoReemplazante";
 }
 
+std::string Turno::esquemaAnterior() {
+    // EL ESQUEMA DE ESTE TIPO NO CAMBIO ENTRE v2 Y v3
+    //
+    // El turno no sumo ningun campo: el unico cambio del formato v3 fue el
+    // `observaciones` del paciente. Por eso el esquema anterior es el mismo
+    // que el actual.
+    return esquema();
+}
+
 std::string estadoATexto(EstadoTurno estado) {
     switch (estado) {
         case EstadoTurno::Activo:
